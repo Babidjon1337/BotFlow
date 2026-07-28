@@ -73,6 +73,11 @@ class BotConfig(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft") # draft, active, archived
     users_count: Mapped[int] = mapped_column(Integer, default=0)
     is_token_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    display_name: Mapped[str] = mapped_column(String(255), default="Мой бот")
+    offer_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    offer_installments: Mapped[bool] = mapped_column(Boolean, default=False)
+    funnel_complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    media_sync_done: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Настройки платежной системы (например, ЮKassa)
     payment_provider: Mapped[Optional[str]] = mapped_column(String(50))
@@ -103,6 +108,8 @@ class Lead(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"))
     telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Состояние в воронке
     current_step_id: Mapped[str] = mapped_column(String(255), default="node_start")
@@ -155,6 +162,21 @@ async def init_models():
     # Создаем таблицы в БД
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Миграция новых колонок для существующих таблиц
+        from sqlalchemy import text
+        try:
+            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS display_name VARCHAR(255) DEFAULT 'Мой бот';"))
+            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS offer_url TEXT NULL;"))
+            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS offer_installments BOOLEAN DEFAULT FALSE;"))
+            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS funnel_complete BOOLEAN DEFAULT FALSE;"))
+            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS media_sync_done BOOLEAN DEFAULT FALSE;"))
+            
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS username VARCHAR(255) NULL;"))
+            await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_name VARCHAR(255) NULL;"))
+        except Exception as e:
+            logger.warning(f"Миграция колонок (ALTER TABLE) пропущена или не удалась: {e}")
+
         logger.info("✅ Подключение к БД успешно. Таблицы проверены!")
 
 

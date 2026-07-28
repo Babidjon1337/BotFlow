@@ -8,10 +8,10 @@ from aiogram.exceptions import (
     TelegramBadRequest,
     TelegramRetryAfter,
     TelegramAPIError,
-)  # Импортируем типы ошибок от Telegram
+)
 import asyncio
 
-from schemas.funnel import FunnelSchema, NodeConfig
+from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
 from database.requests import *
 from services.security import crypto
 from loggers import logger
@@ -39,15 +39,13 @@ async def check_reminders_job():
     ]
     grouped_results = await asyncio.gather(*coroutines)
 
-    # ⚡️ ПРАВИЛЬНЫЙ парсинг вложенных списков
     task_ids_to_delete = []
-    for bot_results in grouped_results:  # Перебираем списки ботов
-        for result_dict in bot_results:  # Перебираем словари результатов
+    for bot_results in grouped_results:
+        for result_dict in bot_results:
             for task_id, status in result_dict.items():
                 if status != "keep_for_retry":
                     task_ids_to_delete.append(task_id)
 
-    # Удаляем задачи пачкой, только если список не пустой
     if task_ids_to_delete:
         await delete_list_tasks(task_ids_to_delete)
 
@@ -67,28 +65,27 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
         step_id = task.step_to_send
 
         try:
+            node = None
             if task.raw_node_json:
-                node = NodeConfig.model_validate(task.raw_node_json)
+                node = task.raw_node_json
             else:
-                funnel = FunnelSchema.model_validate(bot_config.funnel_schema)
-                node = funnel.nodes.get(step_id)
+                funnel_schema = bot_config.funnel_schema
+                if isinstance(funnel_schema, dict):
+                    nodes = funnel_schema.get("nodes")
+                    if isinstance(nodes, list):
+                        node = next((n for n in nodes if n.get("id") == step_id), None)
+                    elif isinstance(nodes, dict):
+                        node = nodes.get(step_id)
 
             if node:
-                # 1. Физически отправляем сообщение
                 await send_funnel_node_message(bot, task.lead.telegram_id, node)
-
-                # 2. ⚡️ Вызываем функцию ВСЕГДА! Она сама обновит статус лида,
-                # а затем сама проверит, есть ли таймер дальше.
                 await create_reminder(
                     bot_id=bot_id, lead_id=task.lead.id, step_just_sent=step_id
                 )
-
                 results.append({task.id: "success"})
             else:
-                # Если узел почему-то исчез из воронки - это баг, удаляем таску чтобы не висела вечно
                 results.append({task.id: "delete"})
 
-        # --- Обработка ошибок Telegram ---
         except TelegramForbiddenError:
             logger.info(
                 f"🚫 Бот {bot_id} заблокирован пользователем {task.lead.telegram_id}. Удаляем задачу."
@@ -109,7 +106,6 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
 
         except Exception as e:
             logger.error(f"❌ Непредвиденная ошибка у бота {bot_id}: {e}")
-            # Непонятный сбой - НЕ удаляем, пусть крутится на следующем цикле
             results.append({task.id: "keep_for_retry"})
 
         finally:
@@ -119,21 +115,18 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
 
 
 def start_scheduler():
-    """Функция для запуска планировщика из main.py"""
     scheduler.add_job(
         check_reminders_job,
         trigger="interval",
         seconds=60,
         max_instances=1,
         coalesce=True,
-    )  # Запускать каждые 30 секунд
-
+    )
     scheduler.start()
     logger.info("⏳ Планировщик успешно запущен и следит за дожимами!")
 
 
 async def stop_scheduler():
-    """Функция для корректной остановки"""
     scheduler.shutdown()
-    await shared_scheduler_session.close()  # Обязательно закрываем соединения!
+    await shared_scheduler_session.close()
     logger.info("🛑 APScheduler и его сессия успешно остановлены.")

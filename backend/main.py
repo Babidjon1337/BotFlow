@@ -16,6 +16,7 @@ import shutil
 
 from handlers.main_bot import main_bot_router
 from handlers.user_bot import user_bot_router
+from api_router import api_router
 from database.requests import *
 from database.models import init_models
 from services.security import crypto
@@ -86,6 +87,7 @@ app.add_middleware(
 
 # Монтируем папку со статикой для доступа к загруженным файлам
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.include_router(api_router)
 
 
 @app.get("/", response_model=HealthCheckResponse)

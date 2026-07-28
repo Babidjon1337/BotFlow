@@ -1,13 +1,13 @@
-from sqlalchemy import select, update, delete
+from typing import Optional, Any
+from sqlalchemy import select, update, delete, func, or_, String
 from sqlalchemy.orm import selectinload
 from database.models import User, BotConfig, ScheduledTask, Lead, async_session
 from datetime import datetime, timedelta
 
-from schemas.funnel import *
+from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
 from loggers import logger
 
 
-# ⚡️ НОВАЯ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ГЕНЕРАЦИИ ОПЛАТ
 async def get_bot_by_tg_id(tg_bot_id: int):
     async with async_session() as session:
         bot = await session.scalar(
@@ -29,47 +29,62 @@ async def get_funnel_by_bot_id(tg_bot_id: int):
         result = await session.scalar(
             select(BotConfig).where(BotConfig.tg_bot_id == tg_bot_id)
         )
-        funnel = FunnelSchema.model_validate(result.funnel_schema) if result else None
+        if not result or not result.funnel_schema:
+            return None
+        if isinstance(result.funnel_schema.get("nodes"), dict):
+            return FunnelSchemaOld.model_validate(result.funnel_schema)
+        return FunnelSchemaV2.model_validate(result.funnel_schema)
 
-        return funnel
 
-
-async def create_lead(tg_bot_id: int, telegram_id: int, agreed: bool = False):
+async def create_lead(
+    tg_bot_id: int,
+    telegram_id: int,
+    agreed: bool = False,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+):
     async with async_session() as session:
         bot = await session.scalar(
             select(BotConfig).where(BotConfig.tg_bot_id == tg_bot_id)
         )
-
         if not bot:
             logger.warning(f"Бот с tg_bot_id {tg_bot_id} не найден в базе!")
             return None
 
-        # 2. Проверяем, существует ли уже такой лид у этого бота
         existing_lead = await session.scalar(
             select(Lead).where(Lead.bot_id == bot.id, Lead.telegram_id == telegram_id)
         )
 
-        # 3. ЗАЩИТА: Если лид уже есть, мы просто возвращаем его.
         if existing_lead:
+            updated = False
+            if username and existing_lead.username != username:
+                existing_lead.username = username
+                updated = True
+            if first_name and existing_lead.first_name != first_name:
+                existing_lead.first_name = first_name
+                updated = True
+            if updated:
+                await session.commit()
+                await session.refresh(existing_lead)
             return existing_lead
 
-        # 4. Если лида нет — создаем новую запись
+        start_step = "start" if not isinstance(bot.funnel_schema.get("nodes"), dict) else "node_start"
         new_lead = Lead(
             bot_id=bot.id,
             telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
             agreed_to_tos=agreed,
-            current_step_id="node_start" if agreed else "awaiting_agreement"
+            current_step_id=start_step if agreed else "awaiting_agreement",
         )
 
         session.add(new_lead)
         await session.flush()
-
         await session.commit()
-        logger.info(f"🔥 Создан новый лид {telegram_id} для бота {bot.id} (Согласие: {agreed})")
+        logger.info(f"🔥 Создан новый лид {telegram_id} ({username}) для бота {bot.id}")
 
-        # ⚡️ Если лид сразу согласился (или мы не требуем согласия), запускаем таймер
         if agreed:
-            await create_reminder(bot.id, new_lead.id, step_just_sent="node_start")
+            await create_reminder(bot.id, new_lead.id, step_just_sent=start_step)
 
         return new_lead
 
@@ -89,16 +104,13 @@ async def update_lead_agreement(tg_bot_id: int, telegram_id: int, agreed: bool =
 
         if lead and not lead.agreed_to_tos and agreed:
             lead.agreed_to_tos = True
+            start_step = "start" if not isinstance(bot.funnel_schema.get("nodes"), dict) else "node_start"
+            lead.current_step_id = start_step
             await session.commit()
             logger.info(f"✅ Лид {telegram_id} подтвердил согласие с офертой.")
-            
+
             # После согласия запускаем первый таймер
-            await create_reminder(bot.id, lead.id, step_just_sent="node_start")
-
-
-# ==============================
-#      ОБРАБОТКА ПОКУПКИ
-# ==============================
+            await create_reminder(bot.id, lead.id, step_just_sent=start_step)
 
 
 async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int):
@@ -129,17 +141,38 @@ async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int):
             logger.info(f"🎉 Лид {telegram_id} успешно оплатил! Дожимы отменены.")
 
 
-# ==============================
-#             TASK
-# ==============================
+async def get_leads_by_bot_id(
+    bot_id: int, search: Optional[str] = None, page: int = 1, limit: int = 20
+) -> tuple[list[Lead], int]:
+    """Возвращает список лидов для CRM с пагинацией и поиском."""
+    async with async_session() as session:
+        query = select(Lead).where(Lead.bot_id == bot_id)
+        if search:
+            search_str = f"%{search.lower()}%"
+            query = query.where(
+                or_(
+                    func.lower(Lead.username).like(search_str),
+                    func.lower(Lead.first_name).like(search_str),
+                    func.cast(Lead.telegram_id, String).like(search_str),
+                )
+            )
+        total_query = select(func.count()).select_from(query.subquery())
+        total = await session.scalar(total_query) or 0
+
+        items_query = (
+            query.order_by(Lead.created_at.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        items = await session.scalars(items_query)
+        return list(items.all()), total
 
 
 async def create_reminder(
     bot_id: int,
     lead_id: int,
-    step_just_sent: str,  # ⚡️ То, что мы ТОЛЬКО ЧТО отправили
+    step_just_sent: str,
 ):
-
     async with async_session() as session:
         lead = await session.scalar(
             select(Lead).options(selectinload(Lead.bot)).where(Lead.id == lead_id)
@@ -148,26 +181,41 @@ async def create_reminder(
         if not lead:
             return
 
-        # ЗАЩИТА: Если человек уже купил, мы больше не ведем его по воронке дожимов!
         if lead.has_purchased or lead.current_step_id == "node_success":
-            logger.info(
-                f"Лид {lead_id} уже совершил покупку. Игнорируем логику таймеров."
-            )
+            logger.info(f"Лид {lead_id} уже совершил покупку. Игнорируем логику таймеров.")
             return
 
-        # 1. ОБНОВЛЯЕМ ЛИДА: записываем шаг, на котором он сейчас реально находится
         lead.current_step_id = step_just_sent
         logger.info(f"Обновил запись лида: теперь он на шаге {step_just_sent}")
 
-        # 2. ИЩЕМ БУДУЩЕЕ: смотрим таймер у того шага, который только что ушел
-        bot_funnel = FunnelSchema.model_validate(lead.bot.funnel_schema)
-        step_now = bot_funnel.nodes.get(step_just_sent)
+        funnel_data = lead.bot.funnel_schema
+        step_to_send = None
+        reminder_after = 0
+        funnel_node_json = None
 
-        # Если у текущего шага есть таймер на следующий (например, у node_dozhim_2 его НЕТ)
-        if step_now and step_now.timer:
-            step_to_send = step_now.timer.next_node_id
+        if isinstance(funnel_data.get("nodes"), dict):
+            # Старая логика V1
+            old_funnel = FunnelSchemaOld.model_validate(funnel_data)
+            step_now = old_funnel.nodes.get(step_just_sent)
+            if step_now and step_now.timer:
+                step_to_send = step_now.timer.next_node_id
+                reminder_after = step_now.timer.delay_seconds
+                funnel_node = old_funnel.nodes.get(step_to_send)
+                if funnel_node:
+                    funnel_node_json = funnel_node.model_dump()
+        else:
+            # Новая логика V2
+            v2_funnel = FunnelSchemaV2.model_validate(funnel_data)
+            step_now = v2_funnel.get_node(step_just_sent)
+            next_node = v2_funnel.get_next_node(step_just_sent)
+            if step_now and next_node and next_node.kind != "payment":
+                step_to_send = next_node.id
+                reminder_after = next_node.delay_seconds
+                if reminder_after <= 0 and step_now.delay_seconds > 0:
+                    reminder_after = step_now.delay_seconds
+                funnel_node_json = next_node.model_dump(by_alias=True)
 
-            # Защита от дублирования задач
+        if step_to_send and reminder_after > 0:
             existing_task = await session.scalar(
                 select(ScheduledTask).where(
                     ScheduledTask.bot_id == bot_id,
@@ -177,23 +225,19 @@ async def create_reminder(
             )
 
             if not existing_task:
-                funnel_node = bot_funnel.nodes.get(step_to_send)
-                reminder_after: int = step_now.timer.delay_seconds
-
                 execute_at = datetime.now() + timedelta(seconds=reminder_after)
 
                 task = ScheduledTask(
                     bot_id=bot_id,
                     lead_id=lead_id,
-                    step_to_send=step_to_send,  # ⚡️ В таску пишем то, что ДОЛЖНО отправиться
-                    raw_node_json=funnel_node.model_dump() if funnel_node else None,
+                    step_to_send=step_to_send,
+                    raw_node_json=funnel_node_json,
                     execute_at=execute_at,
                 )
 
                 session.add(task)
-                logger.info(f"Новая задача запланирована: {step_to_send}")
+                logger.info(f"Новая задача запланирована: {step_to_send} через {reminder_after} сек")
 
-        # Сохраняем и лида, и новую задачу одним коммитом
         await session.commit()
 
 

@@ -24,5 +24,6 @@ test*
 gemini_image/
 FUNNEL_ARCHITECTURE.md
 funnel_redesign.md
+integration_plan.md
 
 .agents

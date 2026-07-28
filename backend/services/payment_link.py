@@ -197,25 +197,40 @@ async def _create_prodamus_link(
 
 async def send_success_message(tg_bot_id: int, telegram_id: int, http_session: Any):
     """
-    Вспомогательная функция: достает настройки бота и отправляет node_success.
-    Вынесено в сервис для чистоты main.py.
+    Вспомогательная функция: достает настройки бота и отправляет node_success или delivery ноду V2.
     """
     from database.requests.bot_rq import get_bot_by_tg_id
-    from schemas.funnel import FunnelSchema
     from services.funnel_message import send_funnel_node_message
     from aiogram import Bot
-
     from aiogram.client.default import DefaultBotProperties
 
     bot_config = await get_bot_by_tg_id(tg_bot_id)
-
     if not bot_config or not bot_config.funnel_schema:
         return
 
     try:
         token = crypto.decrypt(bot_config.bot_token_enc)
-        funnel = FunnelSchema.model_validate(bot_config.funnel_schema)
-        node_success = funnel.nodes.get("node_success")
+        funnel_schema = bot_config.funnel_schema
+        node_success = None
+
+        if isinstance(funnel_schema, dict):
+            nodes = funnel_schema.get("nodes")
+            if isinstance(nodes, list):
+                node_success = next((n for n in nodes if n.get("id") in ["success", "delivery", "node_success"]), None)
+                if not node_success:
+                    payment_node = next((n for n in nodes if n.get("id") == "payment"), None)
+                    if payment_node and payment_node.get("tariffs"):
+                        tariff = payment_node["tariffs"][0]
+                        if tariff.get("has_delivery", True) or tariff.get("hasDelivery", True):
+                            action_type = tariff.get("action_type") or tariff.get("actionType", "text")
+                            action_data = tariff.get("action_data") or tariff.get("actionData", "")
+                            node_success = {
+                                "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text"] else "✅ <b>Оплата успешно получена!</b>",
+                                "media_file_id": action_data if action_type == "file" else None,
+                                "media_type": "photo" if action_type == "file" else None
+                            }
+            elif isinstance(nodes, dict):
+                node_success = nodes.get("node_success") or nodes.get("success") or nodes.get("delivery")
 
         if node_success:
             bot = Bot(
@@ -223,7 +238,6 @@ async def send_success_message(tg_bot_id: int, telegram_id: int, http_session: A
                 session=http_session,
                 default=DefaultBotProperties(parse_mode="HTML"),
             )
-
             await send_funnel_node_message(
                 bot=bot, chat_id=telegram_id, node=node_success
             )
