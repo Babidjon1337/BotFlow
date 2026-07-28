@@ -1,5 +1,6 @@
-import { Home, Layers, User, Bot } from 'lucide-react';
+import { Home, Layers, User, Bot, Crown } from 'lucide-react';
 import type { TabType } from '../types';
+import { useAppState } from '../providers/AppStateProvider';
 
 interface MobileNavProps {
   activeTab: TabType;
@@ -14,18 +15,26 @@ const TABS: { id: TabType; icon: React.FC<any>; label: string; activeColor: stri
 ];
 
 export const MobileNav = ({ activeTab, setActiveTab }: MobileNavProps) => {
+  const { isAdmin } = useAppState();
+  const navTabs = [
+    ...TABS,
+    ...(isAdmin ? [{ id: 'admin_stats' as TabType, icon: Crown, label: 'Админ', activeColor: '#a855f7' }] : []),
+  ];
+
   return (
     <nav
       className="fixed bottom-0 left-0 w-full z-50 lg:hidden"
       aria-label="Мобильная навигация"
       style={{
-        backgroundColor: 'var(--color-surface)',
-        borderTop: 'none', // Removed white line
+        backgroundColor: 'color-mix(in srgb, var(--color-background) 80%, transparent)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        borderTop: '1px solid var(--color-border)',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
       <div className="flex justify-around items-stretch h-[56px] px-2 pt-1">
-        {TABS.map((tab) => {
+        {navTabs.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <button

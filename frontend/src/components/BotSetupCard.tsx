@@ -4,6 +4,7 @@ import { KeyRound } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../constants';
 import type { PaymentProvider, AppState } from '../types';
 import { FunnelCard } from './FunnelCard';
+import { useAppState } from '../providers/AppStateProvider';
 
 interface BotSetupCardProps {
   appState: AppState;
@@ -11,6 +12,7 @@ interface BotSetupCardProps {
 }
 
 export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
+  const { setSheet, setActiveTab, isAdmin } = useAppState();
   const activeBot = appState.activeBot;
   const isEditing = !!activeBot;
 
@@ -19,9 +21,7 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
   const [token, setToken] = useState(activeBot?.token || '');
   const [provider, setProvider] = useState<PaymentProvider>((activeBot?.paymentProvider as PaymentProvider) || 'yookassa');
   const [keys, setKeys] = useState<Record<string, string>>(activeBot?.paymentKeys || {});
-  const [amount, setAmount] = useState(activeBot?.paymentAmount || '2000');
-
-  const isPro = appState.subscriptionStatus === 'active';
+  const isPro = appState.subscriptionStatus === 'active' || isAdmin;
   const hasManyUsers = (activeBot?.usersCount || 0) > 10;
   const isTokenLocked = isEditing && !isPro && hasManyUsers;
   const canEditToken = !isTokenLocked;
@@ -34,7 +34,6 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
       activeBot.token = token;
       activeBot.paymentProvider = provider;
       activeBot.paymentKeys = keys;
-      activeBot.paymentAmount = amount;
       // You can trigger a save or toast here
     } else {
       // Connect new bot
@@ -86,7 +85,9 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
         {isTokenLocked && (
           <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
             <span style={{ fontSize: '14px' }}>🔒</span>
-            У вас более 10 пользователей. Токен заблокирован. (Для смены нужна PRO подписка или новый слот).
+            <span>
+              У вас более 10 пользователей. Токен заблокирован. (Для смены нужна <span onClick={() => { setSheet(null); setActiveTab('subscription'); }} style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}>PRO подписка</span> или новый слот).
+            </span>
           </p>
         )}
         {!isEditing && (
@@ -137,20 +138,6 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
             ))}
           </div>
         </AnimatePresence>
-
-        {/* Payment Amount */}
-        <div style={{ marginTop: '16px' }}>
-          <label className="text-label" style={{ display: 'block', marginBottom: '6px' }}>Сумма к оплате (₽)</label>
-          <input
-            type="number"
-            placeholder="Например: 2000"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            disabled={!canEditPayment}
-            className="input"
-            style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
-          />
-        </div>
       </div>
 
       {!isEditing && (

@@ -22,3 +22,7 @@ GEMINI.md
 test*
 .env
 gemini_image/
+FUNNEL_ARCHITECTURE.md
+funnel_redesign.md
+
+.agents

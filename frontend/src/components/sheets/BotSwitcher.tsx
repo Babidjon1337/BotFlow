@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Check, Plus, X, Lock } from 'lucide-react';
 import type { BotConfig } from '../../types';
+import { useAppState } from '../../providers/AppStateProvider';
 
 interface BotSwitcherProps {
   bots: BotConfig[];
@@ -13,13 +14,15 @@ interface BotSwitcherProps {
 }
 
 export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, onAddBot, onClose, onToggleStatus }: BotSwitcherProps) => {
-  const isPro = subscriptionStatus === 'active';
+  const { isAdmin } = useAppState();
+  const isPro = subscriptionStatus === 'active' || isAdmin;
 
   return (
     <>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         onClick={onClose}
+        onTouchStart={onClose}
         className="fixed inset-0 bg-transparent z-[100]"
       />
       <motion.div
@@ -28,15 +31,14 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
         exit={{ opacity: 0, y: -8, scale: 0.97 }}
         transition={{ duration: 0.15 }}
         style={{
-          position: 'fixed', top: '64px', left: '16px', right: '16px', zIndex: 101,
+          zIndex: 101,
           background: 'var(--color-surface)',
           borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-float)',
           padding: '6px',
-          maxWidth: '320px',
         }}
-        className="lg:absolute lg:top-14 lg:left-0 lg:right-auto"
+        className="fixed top-[74px] left-[16px] right-[16px] mx-auto max-w-[320px] lg:top-[85px] lg:left-[16px] lg:right-auto lg:mx-0 lg:w-[228px]"
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', marginBottom: '2px' }}>
           <span style={{ fontSize: '12px', color: 'var(--color-foreground-tertiary)', fontWeight: 500 }}>Ваши боты</span>
@@ -101,15 +103,15 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
 
         <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '4px', paddingTop: '4px' }}>
           <button
+            className="add-bot-btn hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface)]"
             onClick={() => { 
-              if (!isPro && bots.length >= 1) return;
               onClose(); 
               onAddBot(); 
             }}
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
               padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: 'none',
-              background: 'transparent', cursor: (!isPro && bots.length >= 1) ? 'not-allowed' : 'pointer', transition: 'background 150ms ease',
+              background: 'transparent', cursor: 'pointer', transition: 'background 150ms ease',
               color: (!isPro && bots.length >= 1) ? 'var(--color-foreground-tertiary)' : 'var(--color-foreground-secondary)',
               opacity: (!isPro && bots.length >= 1) ? 0.6 : 1,
             }}

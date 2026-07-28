@@ -1,6 +1,7 @@
 import { Home, Layers, User, GitBranch, Crown, Moon, Sun, ChevronDown, Star, Bot } from 'lucide-react';
 import { cn } from '../utils';
 import type { TabType, AppState, SheetType } from '../types';
+import { useAppState } from '../providers/AppStateProvider';
 
 interface SidebarProps {
   activeTab: TabType;
@@ -13,7 +14,7 @@ interface SidebarProps {
 }
 
 const MAIN_NAV: { id: TabType; icon: React.FC<any>; label: string; activeColor: string }[] = [
-  { id: 'home',    icon: Home,      label: 'Статистика', activeColor: 'var(--color-primary)'  },
+  { id: 'home',    icon: Home,      label: 'Главная', activeColor: 'var(--color-primary)'  },
   { id: 'build',   icon: Layers,    label: 'Воронка', activeColor: 'var(--color-accent)'  },
   { id: 'manage',  icon: Bot,       label: 'Мои боты', activeColor: 'var(--color-warning)'  },
   { id: 'flow',    icon: GitBranch, label: 'Схема логики', activeColor: '#ec4899' },
@@ -21,7 +22,13 @@ const MAIN_NAV: { id: TabType; icon: React.FC<any>; label: string; activeColor: 
 
 export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, toggleTheme, onCreateBot }: SidebarProps) => {
   const { activeBot, subscriptionStatus } = appState;
-  const isSubscribed = subscriptionStatus === 'active';
+  const { isAdmin } = useAppState();
+  const isSubscribed = subscriptionStatus === 'active' || isAdmin;
+
+  const navItems = [
+    ...MAIN_NAV,
+    ...(isAdmin ? [{ id: 'admin_stats' as TabType, icon: Crown, label: 'Аналитика SaaS', activeColor: '#a855f7' }] : []),
+  ];
 
   return (
     <aside
@@ -80,7 +87,7 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
       <nav aria-label="Основная навигация" className="flex-1 min-h-0 px-4 pt-4 pb-4 flex flex-col gap-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar">
         <div className="px-3 mb-1" style={{ fontSize: '11px', fontWeight: 700, color: 'var(--color-foreground-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Меню</div>
 
-        {MAIN_NAV.map((item) => {
+        {navItems.map((item) => {
           const isActive = activeTab === item.id;
           return (
             <button
@@ -157,17 +164,17 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
                 <Crown size={20} className="text-white" />
               </div>
               <div>
-                <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-foreground)' }}>PRO</div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: isAdmin ? '#c084fc' : 'var(--color-foreground)' }}>{isAdmin ? 'АДМИН' : 'PRO'}</div>
                 <div style={{ fontSize: '12px', color: 'var(--color-foreground-secondary)' }}>
-                  <span style={{ color: 'var(--color-foreground)', fontWeight: 700 }}>{appState.bots.length}</span> из 10 ботов
+                  <span style={{ color: 'var(--color-foreground)', fontWeight: 700 }}>{appState.bots.length}</span> {isAdmin ? 'ботов (Безлимитно)' : 'из 10 ботов'}
                 </div>
               </div>
             </div>
             <button
-              onClick={() => setActiveTab('subscription')}
+              onClick={() => setActiveTab(isAdmin ? 'admin_stats' : 'subscription')}
               className="w-full flex items-center justify-center py-2 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-primary-soft)] hover:text-[var(--color-primary)] transition-all duration-300 shadow-sm group"
             >
-              <span style={{ fontSize: '13px', fontWeight: 600 }} className="transition-colors">Управление</span>
+              <span style={{ fontSize: '13px', fontWeight: 600 }} className="transition-colors">{isAdmin ? '📊 Дашборд' : 'Управление'}</span>
             </button>
           </div>
         ) : (

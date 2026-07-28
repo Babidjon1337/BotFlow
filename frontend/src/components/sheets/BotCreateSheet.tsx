@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bot, KeyRound, ExternalLink, ArrowRight, ArrowLeft, CheckCircle2, Info, CreditCard, AlertTriangle } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider, BotConfig } from '../../types';
+import { useViewportHeight } from '../../hooks';
 
 interface BotCreateSheetProps {
   onClose: () => void;
@@ -23,17 +24,23 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
 
 export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const vh = useViewportHeight();
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Wait for the keyboard to slide up and layout to resize
+    setTimeout(() => {
+      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 400);
+  };
 
   // Step 1: Basic
   const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
   const [token, setToken] = useState('');
 
   // Step 2: Payment
   const [skipPayment, setSkipPayment] = useState(false);
   const [provider, setProvider] = useState<PaymentProvider>('yookassa');
   const [keys, setKeys] = useState<Record<string, string>>({});
-  const [price, setPrice] = useState('');
 
   // Step 3: Offer
   const [offerUrl, setOfferUrl] = useState('');
@@ -60,19 +67,21 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
   
   const currentFields = useMemo(() => PAYMENT_PROVIDERS[provider], [provider]);
   
-  const canGoNext2 = skipPayment || (
-    price.trim().length > 0 && 
-    currentFields.every(f => (keys[f.key] || '').trim() !== '')
-  );
+  const canGoNext2 = skipPayment || currentFields.every(f => (keys[f.key] || '').trim() !== '');
   
   const handleCreate = () => {
+    if (!navigator.onLine) {
+      alert('Отсутствует подключение к интернету. Проверьте сеть.');
+      return;
+    }
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+
     onCreate({
       name: name.trim(),
-      username: username.trim() || 'username',
       token: token.trim(),
       paymentProvider: skipPayment ? undefined : provider,
       paymentKeys: skipPayment ? {} : keys,
-      paymentAmount: skipPayment ? '' : price,
       offerUrl: offerUrl.trim(),
     });
   };
@@ -89,7 +98,10 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
       />
       
       {/* Centering wrapper */}
-      <div className="fixed inset-0 z-[101] flex flex-col justify-end lg:justify-center items-center pointer-events-none p-0 lg:p-4">
+      <div 
+        className="fixed inset-x-0 top-0 z-[101] flex flex-col justify-end lg:justify-center items-center pointer-events-none p-0 lg:p-4"
+        style={{ height: vh ? `${vh}px` : '100dvh' }}
+      >
         <motion.div
           initial={{ y: '100%', opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -98,17 +110,26 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
           className="w-full h-full lg:h-auto lg:max-w-[500px] bg-[var(--color-surface)] lg:rounded-[32px] shadow-2xl pointer-events-auto flex flex-col border border-transparent lg:border-[var(--color-border)] overflow-hidden"
         >
           {/* Header */}
-          <div className="flex flex-col items-center justify-center px-6 py-4 border-b border-[var(--color-border)] shrink-0 bg-[var(--color-surface)] relative z-10 gap-1.5">
+          <div className="flex flex-col items-center justify-center px-6 pb-4 border-b border-[var(--color-border)] shrink-0 bg-[var(--color-surface)] relative z-10 gap-2 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:pt-5">
             <h2 className="text-[18px] md:text-[20px] font-bold text-[var(--color-foreground)] tracking-tight">Создание бота</h2>
-            <div className="text-[12px] font-bold text-[var(--color-primary)] bg-[var(--color-primary-soft)] px-2.5 py-0.5 rounded-full">
-              Шаг {step} из 3
+            <div className="flex items-center gap-1.5 mt-1">
+              {[1, 2, 3].map((s) => (
+                <div 
+                  key={s} 
+                  className="h-1.5 rounded-full transition-all duration-300" 
+                  style={{ 
+                    width: s === step ? '24px' : '12px', 
+                    background: s <= step ? 'var(--color-primary)' : 'var(--color-border)' 
+                  }} 
+                />
+              ))}
             </div>
             {/* Desktop Close Button (hidden on mobile) */}
             <motion.button 
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
-              className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 hidden lg:flex items-center justify-center rounded-full hover:bg-[var(--color-surface-2)] transition-colors text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
+              className="absolute right-4 top-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:top-1/2 lg:-translate-y-1/2 w-8 h-8 hidden lg:flex items-center justify-center rounded-full hover:bg-[var(--color-surface-2)] transition-colors text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
             >
               <X size={18} />
             </motion.button>
@@ -146,22 +167,12 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
                     placeholder="Например: Мой магазин"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    onFocus={handleFocus}
                     className="input w-full"
                   />
                 </div>
 
-                <div>
-                  <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
-                    Юзернейм бота (опционально)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="@username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="input w-full"
-                  />
-                </div>
+
 
                 <div>
                   <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
@@ -174,6 +185,7 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
                       placeholder="1234567890:AAH..."
                       value={token}
                       onChange={(e) => setToken(e.target.value)}
+                      onFocus={handleFocus}
                       className="input w-full"
                       style={{ paddingLeft: '40px' }}
                     />
@@ -282,25 +294,12 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
                           placeholder={f.hint}
                           value={keys[f.key] || ''}
                           onChange={(e) => setKeys(prev => ({ ...prev, [f.key]: e.target.value }))}
+                          onFocus={handleFocus}
                           className="input w-full"
                           disabled={skipPayment}
                         />
                       </div>
                     ))}
-                  </div>
-
-                  <div>
-                    <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
-                      Сумма к оплате (в рублях)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="Например: 990"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      className="input w-full"
-                      disabled={skipPayment}
-                    />
                   </div>
                 </div>
               </motion.div>
@@ -354,6 +353,7 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
                         placeholder="https://mysite.com/offer"
                         value={offerUrl}
                         onChange={(e) => setOfferUrl(e.target.value)}
+                        onFocus={handleFocus}
                         className="input w-full"
                       />
                       <p className="text-[12px] text-[var(--color-foreground-tertiary)] mt-2">

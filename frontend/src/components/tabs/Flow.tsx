@@ -317,8 +317,8 @@ export const Flow = () => {
           title: "Оплата",
           subtitle: "Мгновенно",
           kind: "payment",
-          content: "Счет на оплату сформирован.",
-          buttonText: "Оплатить",
+          content: getBlock("payment")?.content || "Счет на оплату сформирован.",
+          buttonText: getBlock("payment")?.buttonText || "Оплатить",
         },
       },
       {

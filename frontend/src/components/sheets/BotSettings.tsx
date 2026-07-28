@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { KeyRound, X, Info } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider, AppState } from '../../types';
+import { useViewportHeight } from '../../hooks';
+import { useAppState } from '../../providers/AppStateProvider';
 
 interface BotSettingsProps {
   appState: AppState;
@@ -23,16 +25,37 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
 };
 
 export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => {
+  const { setSheet, setActiveTab, isAdmin } = useAppState();
+  const vh = useViewportHeight();
+  
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    setTimeout(() => {
+      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 400);
+  };
+  
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (tg && tg.BackButton) {
+      tg.BackButton.show();
+      tg.BackButton.onClick(onClose);
+      return () => {
+        tg.BackButton.hide();
+        tg.BackButton.offClick(onClose);
+      };
+    }
+  }, [onClose]);
+
   const activeBot = appState.activeBot;
   
   const [name, setName] = useState(activeBot?.name || '');
   const [token, setToken] = useState(activeBot?.token || '');
   const [offerUrl, setOfferUrl] = useState(activeBot?.offerUrl || '');
+  const [offerInstallments, setOfferInstallments] = useState(activeBot?.offerInstallments || false);
   const [provider, setProvider] = useState<PaymentProvider>((activeBot?.paymentProvider as PaymentProvider) || 'yookassa');
   const [keys, setKeys] = useState<Record<string, string>>(activeBot?.paymentKeys || { shopId: '', secretKey: '' });
-  const [price, setPrice] = useState(activeBot?.paymentAmount || '');
 
-  const isPro = appState.subscriptionStatus === 'active';
+  const isPro = appState.subscriptionStatus === 'active' || isAdmin;
   const hasManyUsers = (activeBot?.usersCount || 0) > 10;
 
   // Токен блокируется только если нет PRO подписки И юзеров больше 10
@@ -46,9 +69,9 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
       activeBot.name = name;
       activeBot.token = token;
       activeBot.offerUrl = offerUrl;
+      activeBot.offerInstallments = offerInstallments;
       activeBot.paymentProvider = provider;
       activeBot.paymentKeys = keys;
-      activeBot.paymentAmount = price;
     }
     onSave();
     onClose();
@@ -63,18 +86,22 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
       />
       
       {/* Centering container */}
-      <div className="fixed inset-0 z-[101] flex items-end lg:items-center justify-center pointer-events-none p-0 lg:p-4">
+      <div 
+        className="fixed inset-x-0 top-0 z-[101] flex items-end lg:items-center justify-center pointer-events-none p-0 lg:p-4"
+        style={{ height: vh ? `${vh}px` : '100dvh' }}
+      >
         <motion.div
           initial={{ y: '100%', opacity: 1 }} 
           animate={{ y: 0, opacity: 1 }} 
           exit={{ y: '100%', opacity: 1 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="w-full lg:max-w-[540px] bg-[var(--color-surface)] rounded-t-[24px] lg:rounded-[24px] shadow-2xl pointer-events-auto flex flex-col max-h-[90vh] border border-transparent lg:border-[var(--color-border)] overflow-hidden"
+          className="w-full h-full lg:h-auto lg:max-w-[540px] bg-[var(--color-surface)] lg:rounded-[24px] shadow-2xl pointer-events-auto flex flex-col border border-transparent lg:border-[var(--color-border)] overflow-hidden"
+          style={{ maxHeight: '100dvh' }}
         >
           {/* Header */}
-          <div className="flex justify-between items-center p-5 border-b border-[var(--color-border)] shrink-0">
+          <div className="flex justify-center lg:justify-between items-center p-5 border-b border-[var(--color-border)] shrink-0 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:pt-5 relative">
             <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-foreground)' }}>Главные настройки</h3>
-            <button onClick={onClose} className="w-8 h-8 rounded-full bg-[var(--color-surface-2)] border-none cursor-pointer flex items-center justify-center hover:bg-[var(--color-border)] transition-colors">
+            <button onClick={onClose} className="w-8 h-8 rounded-full bg-[var(--color-surface-2)] border-none cursor-pointer hidden lg:flex items-center justify-center hover:bg-[var(--color-border)] transition-colors absolute right-5 top-1/2 -translate-y-1/2 lg:static lg:translate-y-0">
               <X size={16} style={{ color: 'var(--color-foreground-secondary)' }} />
             </button>
           </div>
@@ -88,6 +115,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onFocus={handleFocus}
               placeholder="Мой Супер Бот"
               className="input w-full"
             />
@@ -102,6 +130,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 type="text"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
+                onFocus={handleFocus}
                 disabled={!canEditToken}
                 placeholder="Например: 1234567890:AAH_..."
                 className="input"
@@ -111,7 +140,9 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             {isTokenLocked && (
               <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                 <span style={{ fontSize: '14px' }}>🔒</span>
-                У вас более 10 пользователей. Токен заблокирован. (Для смены нужна PRO подписка или новый слот).
+                <span>
+                  У вас более 10 пользователей. Токен заблокирован. (Для смены нужна <span onClick={() => { setSheet(null); setActiveTab('subscription'); }} style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}>PRO подписка</span> или новый слот).
+                </span>
               </p>
             )}
           </div>
@@ -123,9 +154,31 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
               type="text"
               value={offerUrl}
               onChange={(e) => setOfferUrl(e.target.value)}
+              onFocus={handleFocus}
               placeholder="https://example.com/offer"
               className="input w-full"
             />
+          </div>
+
+          {/* Installments Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+            <div className="pr-3">
+              <span className="text-[14px] font-medium text-[var(--color-foreground)] block">Предлагать рассрочку от банка</span>
+              <span className="text-[12px] text-[var(--color-foreground-secondary)] leading-tight block mt-0.5">Включает опцию оплаты частями в платёжной системе при оплате тарифа</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOfferInstallments(!offerInstallments)}
+              className={`w-12 h-7 rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 relative ${
+                offerInstallments ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'
+              }`}
+            >
+              <div
+                className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
+                  offerInstallments ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
           </div>
 
           {/* Payment provider */}
@@ -183,30 +236,13 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                         placeholder={field.hint}
                         value={keys[field.key] || ''}
                         onChange={(e) => setKeys(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        onFocus={handleFocus}
                         disabled={!canEditPayment}
                         className="input w-full"
                         style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
                       />
                     </motion.div>
                   ))}
-                  
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                    transition={{ duration: 0.15 }}
-                  >
-                    <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
-                      Сумма к оплате (в рублях)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="Например: 990"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      disabled={!canEditPayment}
-                      className="input w-full"
-                      style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
-                    />
-                  </motion.div>
                 </div>
               </div>
             </AnimatePresence>

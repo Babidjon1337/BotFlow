@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, CheckCircle2 } from 'lucide-react';
 
 interface FunnelCardProps {
   stepId: string;
@@ -15,37 +15,62 @@ export const FunnelCard = ({ title, isComplete, defaultExpanded = false, childre
 
   return (
     <div
-      className="transition-all duration-300 relative group"
-      style={{ 
-        padding: 0, 
+      className="transition-all duration-300 relative"
+      style={{
+        padding: 0,
         overflow: 'hidden',
         background: 'var(--color-surface)',
-        borderRadius: '24px',
-        border: isExpanded ? '1px solid var(--color-border-strong)' : '1px solid var(--color-border)',
-        boxShadow: isExpanded ? '0 12px 32px -12px rgba(0,0,0,0.08)' : '0 4px 12px -8px rgba(0,0,0,0.05)',
+        borderRadius: '20px',
+        border: isExpanded
+          ? '1.5px solid var(--color-border-strong)'
+          : `1px solid ${isComplete ? 'var(--color-success-soft)' : 'var(--color-border)'}`,
+        boxShadow: isExpanded
+          ? '0 8px 24px -8px rgba(0,0,0,0.1)'
+          : isComplete
+          ? '0 2px 8px -4px rgba(0,0,0,0.06)'
+          : '0 1px 4px -2px rgba(0,0,0,0.04)',
+        transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
       }}
     >
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center justify-between transition-colors duration-200 hover:bg-[var(--color-surface-2)]"
         style={{
-          padding: '16px 20px',
+          padding: '14px 18px',
           background: isExpanded ? 'var(--color-surface-2)' : 'transparent',
           borderBottom: isExpanded ? '1px solid var(--color-border)' : '1px solid transparent',
         }}
       >
-        <div className="flex items-center gap-4">
-          <div
+        <div className="flex items-center gap-3">
+          {/* Status indicator */}
+          {isComplete ? (
+            <CheckCircle2
+              size={16}
+              className="shrink-0"
+              style={{ color: 'var(--color-success)', transition: 'color 0.3s ease' }}
+            />
+          ) : (
+            <div
+              style={{
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                background: 'var(--color-foreground-tertiary)',
+                flexShrink: 0,
+                transition: 'background 0.3s ease',
+              }}
+            />
+          )}
+          <span
             style={{
-              background: isComplete ? 'var(--color-success)' : 'var(--color-danger)',
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              boxShadow: isComplete ? '0 0 8px var(--color-success-soft)' : '0 0 8px var(--color-danger-soft)',
-              transition: 'all 0.3s ease'
+              fontSize: '14px',
+              fontWeight: 600,
+              color: 'var(--color-foreground)',
+              letterSpacing: '-0.01em',
             }}
-          />
-          <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-foreground)', letterSpacing: '-0.01em' }}>{title}</span>
+          >
+            {title}
+          </span>
         </div>
         <motion.div animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
           <ChevronRight size={16} style={{ color: 'var(--color-foreground-tertiary)' }} />
@@ -60,7 +85,7 @@ export const FunnelCard = ({ title, isComplete, defaultExpanded = false, childre
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
           >
-            <div style={{ padding: '24px' }}>
+            <div style={{ padding: '20px 20px 24px' }}>
               {children}
             </div>
           </motion.div>

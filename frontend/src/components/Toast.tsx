@@ -18,19 +18,30 @@ export const Toast = ({ message, type = 'success', duration = 3000, onClose }: T
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0, y: -12, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        transition={{ duration: 0.15 }}
+        initial={{ opacity: 0, y: -30, x: '-50%', scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+        exit={{ opacity: 0, y: -30, x: '-50%', scale: 0.96 }}
+        transition={{ duration: 0.25, type: 'spring', damping: 25, stiffness: 300 }}
+        onClick={onClose}
+        drag="y"
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={0.2}
+        onDragEnd={(_, info) => {
+          if (info.offset.y < -20) onClose();
+        }}
         style={{
-          position: 'fixed', top: '16px', left: '50%', transform: 'translateX(-50%)',
-          zIndex: 100, display: 'flex', alignItems: 'center', gap: '10px',
+          position: 'fixed',
+          top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px)',
+          left: '50%',
+          zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
           padding: '12px 18px',
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-md)',
           boxShadow: 'var(--shadow-float)',
           whiteSpace: 'nowrap',
+          cursor: 'pointer',
+          touchAction: 'none'
         }}
       >
         {type === 'success'

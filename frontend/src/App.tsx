@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 
 import { Sidebar } from './components/Sidebar';
@@ -11,12 +11,14 @@ import { Flow } from './components/tabs/Flow';
 import { BotManagement } from './components/tabs/BotManagement';
 import { Profile } from './components/tabs/Profile';
 import { Subscription } from './components/tabs/Subscription';
+import { AdminStats } from './components/tabs/AdminStats';
 
 import { BotSettings } from './components/sheets/BotSettings';
 import { CheckoutSheet } from './components/sheets/CheckoutSheet';
 import { BotCreateSheet } from './components/sheets/BotCreateSheet';
 import { BotSwitcher } from './components/sheets/BotSwitcher';
 import { BillingRenew } from './components/sheets/BillingRenew';
+import { InvoiceSheet } from './components/sheets/InvoiceSheet';
 
 import { Toast } from './components/Toast';
 
@@ -43,7 +45,13 @@ export default function App() {
       tg.ready();
       tg.expand();
       tg.enableClosingConfirmation();
-      if (tg.requestFullscreen) tg.requestFullscreen();
+      if (tg.requestFullscreen) {
+        try {
+          tg.requestFullscreen();
+        } catch (e) {
+          console.warn('requestFullscreen not supported:', e);
+        }
+      }
       // Official TG API to disable swipe-to-close gesture
       if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
       // Set TG colors to match our exact theme to prevent black lines/bars at the bottom
@@ -52,6 +60,51 @@ export default function App() {
       if (tg.setBackgroundColor) tg.setBackgroundColor(bgColor);
       if (tg.setBottomBarColor) tg.setBottomBarColor(bgColor);
     }
+  }, [theme]);
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  const [previousTab, setPreviousTab] = useState<typeof activeTab>('home');
+  useEffect(() => {
+    if (activeTab !== 'subscription') {
+      setPreviousTab(activeTab);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg || !tg.BackButton) return;
+
+    if (appState.activeSheet) {
+      tg.BackButton.show();
+      const handleBack = () => {
+        setSheet(null);
+      };
+      tg.BackButton.onClick(handleBack);
+      return () => {
+        tg.BackButton.offClick(handleBack);
+      };
+    } else if (activeTab === 'subscription') {
+      tg.BackButton.show();
+      const handleBack = () => {
+        setActiveTab(previousTab);
+      };
+      tg.BackButton.onClick(handleBack);
+      return () => {
+        tg.BackButton.offClick(handleBack);
+      };
+    } else {
+      tg.BackButton.hide();
+    }
+  }, [appState.activeSheet, setSheet, activeTab, setActiveTab]);
+
+  useEffect(() => {
 
     // Prevent swipe-to-close ONLY when no scrollable parent is being scrolled.
     // This allows content inside overflow-y-auto containers to scroll normally.
@@ -93,7 +146,7 @@ export default function App() {
   return (
     <div
       className="flex h-full overflow-hidden w-full"
-      style={{ background: 'var(--color-background)', color: 'var(--color-foreground)', position: 'relative' }}
+      style={{ color: 'var(--color-foreground)', position: 'relative' }}
     >
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '40vh', background: 'linear-gradient(180deg, rgba(46,154,219,0.06) 0%, rgba(242,241,236,0) 100%)', zIndex: 0, pointerEvents: 'none' }} />
       <div style={{ position: 'fixed', top: '-100px', right: '-100px', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(168,85,247,0.06) 0%, rgba(255,255,255,0) 70%)', zIndex: 0, pointerEvents: 'none', borderRadius: '50%' }} />
@@ -119,8 +172,9 @@ export default function App() {
           {/* Mobile Navigation Spacer */}
           <style>{`
             @media (max-width: 1023px) {
-              /* Bottom: nav bar height + device safe area */
-              .mobile-padding { padding-bottom: calc(56px + env(safe-area-inset-bottom, 12px)) !important; }
+              /* Bottom: nav bar height (56) + 16px breathing room + safe area */
+              .mobile-padding { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important; }
+              .action-bar-mobile { bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px) !important; }
               /* Top: TG header bar (Close + Minimize buttons) — use env(safe-area-inset-top) + 44px */
               .tg-header-safe { padding-top: max(54px, calc(env(safe-area-inset-top, 0px) + 44px)) !important; }
               .flow-padding { padding-bottom: 0; }
@@ -150,6 +204,9 @@ export default function App() {
             {activeTab === 'manage' && (
               <BotManagement key="manage" />
             )}
+            {activeTab === 'admin_stats' && (
+              <AdminStats key="admin_stats" />
+            )}
           </AnimatePresence>
         </div>
         </div>
@@ -167,6 +224,14 @@ export default function App() {
             onSave={() => {
               setAppState(prev => ({ ...prev }));
             }}
+          />
+        )}
+        {appState.activeSheet === 'invoice' && (
+          <InvoiceSheet
+            key="invoice"
+            onClose={() => setSheet(null)}
+            clientName={appState.sheetData && 'clientName' in appState.sheetData ? appState.sheetData.clientName : undefined}
+            username={appState.sheetData && 'username' in appState.sheetData ? appState.sheetData.username : undefined}
           />
         )}
         {(appState.activeSheet === 'billing_renew' || appState.activeSheet === 'billing_first') && (

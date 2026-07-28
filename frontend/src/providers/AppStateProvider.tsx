@@ -18,45 +18,31 @@ interface AppContextType {
   setTheme: React.Dispatch<React.SetStateAction<'light' | 'dark'>>;
   setSheet: (sheet: SheetType | null, data?: any) => void;
   toggleTheme: () => void;
-  updateBlock: (id: string, field: keyof FunnelNode, value: string) => void;
+  updateBlock: (id: string, field: keyof FunnelNode, value: any) => void;
   handleCreateBotClick: () => void;
   handlePurchaseSuccess: (plan: 'basic' | 'pro') => void;
+  isAdmin: boolean;
 }
+
+const ADMIN_IDS = [932050484, 1186592191];
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [appState, setAppState] = useState<AppState>(() => {
-    const saved = localStorage.getItem('bot_father_appState');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return { ...parsed, activeSheet: null };
-      } catch (e) {}
-    }
-    return {
-      activeBot: null,
-      bots: [],
-      subscriptionStatus: 'none',
-      subscriptionUntil: null,
-      slotsBought: 0,
-      userEmail: '',
-      activeSheet: null,
-      isDirty: false,
-    };
+  const [appState, setAppState] = useState<AppState>({
+    activeBot: null,
+    bots: [],
+    subscriptionStatus: 'none',
+    subscriptionUntil: null,
+    slotsBought: 0,
+    userEmail: '',
+    activeSheet: null,
+    isDirty: false,
   });
 
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
-    return (localStorage.getItem('bot_father_activeTab') as TabType) || 'home';
-  });
+  const [activeTab, setActiveTab] = useState<TabType>('home');
   
-  const [blocks, setBlocks] = useState<FunnelNode[]>(() => {
-    const saved = localStorage.getItem('bot_father_blocks');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) {}
-    }
-    return INITIAL_BLOCKS;
-  });
+  const [blocks, setBlocks] = useState<FunnelNode[]>(INITIAL_BLOCKS);
   
   const [selectedBlockId, setSelectedBlockId] = useState<string>('start');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -65,21 +51,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return (localStorage.getItem('bot_father_theme') as 'light' | 'dark') || 'light';
   });
 
+  const tg = (window as any).Telegram?.WebApp;
+  const userId = tg?.initDataUnsafe?.user?.id;
+  const isAdmin = userId ? ADMIN_IDS.includes(userId) : false;
+
   useEffect(() => {
     localStorage.setItem('bot_father_theme', theme);
   }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem('bot_father_appState', JSON.stringify(appState));
-  }, [appState]);
-
-  useEffect(() => {
-    localStorage.setItem('bot_father_blocks', JSON.stringify(blocks));
-  }, [blocks]);
-
-  useEffect(() => {
-    localStorage.setItem('bot_father_activeTab', activeTab);
-  }, [activeTab]);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -96,12 +74,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  const updateBlock = (id: string, field: keyof FunnelNode, value: string) => {
+  const updateBlock = (id: string, field: keyof FunnelNode, value: any) => {
     setBlocks(prev => prev.map(b => (b.id === id ? { ...b, [field]: value } : b)));
     setAppState(prev => ({ ...prev, isDirty: true }));
   };
 
   const handleCreateBotClick = () => {
+    if (isAdmin) {
+      setSheet('bot_create');
+      return;
+    }
     const isPro = appState.subscriptionStatus === 'active';
     const hasSlots = isPro ? appState.bots.length < 10 : appState.bots.length < 1;
     if (!hasSlots) {
@@ -151,6 +133,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         updateBlock,
         handleCreateBotClick,
         handlePurchaseSuccess,
+        isAdmin,
       }}
     >
       {children}
