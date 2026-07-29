@@ -8,12 +8,7 @@ from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
 from loggers import logger
 
 
-async def get_bot_by_tg_id(tg_bot_id: int):
-    async with async_session() as session:
-        bot = await session.scalar(
-            select(BotConfig).where(BotConfig.tg_bot_id == tg_bot_id)
-        )
-        return bot
+
 
 
 async def get_lead(bot_id: int, telegram_id: int) -> Lead | None:

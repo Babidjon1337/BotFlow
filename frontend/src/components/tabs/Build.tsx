@@ -19,6 +19,8 @@ import {
   CheckCircle2,
   XCircle,
   MessageCircle,
+  RefreshCw,
+  Bot,
 } from "lucide-react";
 import { EmptyBotState } from "../EmptyBotState";
 import { FunnelCard } from "../FunnelCard";
@@ -523,6 +525,7 @@ export const Build = () => {
       `}</style>
 
       {/* Bot Header (Settings Access) */}
+      {appState.activeBot.mediaSyncDone && (
       <div
         className="flex items-center justify-between gap-3 p-4 md:px-5 md:py-4 mb-6 md:mb-8 border rounded-[20px] md:rounded-[24px] shadow-sm relative overflow-hidden"
         style={{
@@ -651,6 +654,7 @@ export const Build = () => {
           </button>
         </div>
       </div>
+      )}
 
       <motion.div
         key="build"
@@ -658,8 +662,36 @@ export const Build = () => {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
-        className={`grid grid-cols-1 ${hasMainSettings ? "lg:grid-cols-[1fr_340px]" : ""} gap-6`}
+        className={!appState.activeBot.mediaSyncDone ? "flex-1 flex flex-col justify-center items-center h-[calc(100vh-160px)] w-full" : `grid grid-cols-1 ${hasMainSettings ? "lg:grid-cols-[1fr_340px]" : ""} gap-6`}
       >
+        {!appState.activeBot.mediaSyncDone ? (
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[24px] p-8 md:p-12 text-center shadow-lg flex flex-col items-center max-w-2xl w-full mx-auto my-auto mt-12 lg:mt-0">
+            <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center mb-6 shadow-sm">
+              <RefreshCw size={32} className="animate-spin-slow" />
+            </div>
+            <h2 className="text-2xl md:text-3xl font-black text-[var(--color-foreground)] mb-4">
+              Остался один шаг!
+            </h2>
+            <p className="text-[15px] md:text-[16px] text-[var(--color-foreground-secondary)] leading-relaxed mb-8 max-w-[400px]">
+              Чтобы получить доступ к настройке воронки, необходимо инициализировать бота. Нажмите кнопку ниже, чтобы перейти в бота, и нажмите <b>START</b>.
+            </p>
+            <button 
+              onClick={() => {
+                const tg = (window as any).Telegram?.WebApp;
+                const botUrl = appState.activeBot!.botUrl || `https://t.me/${appState.activeBot!.username}`;
+                if (tg && tg.openTelegramLink) {
+                  tg.openTelegramLink(`${botUrl}?start=sync`);
+                } else {
+                  window.open(`${botUrl}?start=sync`, '_blank');
+                }
+              }}
+              className="btn-primary-saas px-8 py-3.5 rounded-xl text-[15px] flex items-center gap-2"
+            >
+              <Bot size={18} /> Открыть бота в Telegram
+            </button>
+          </div>
+        ) : (
+          <>
         {/* Left: funnel steps */}
         <div
           style={{
@@ -1463,6 +1495,8 @@ export const Build = () => {
             </div>
           </div>
         </div>
+        </>
+        )}
 
         {createPortal(
           <AnimatePresence>

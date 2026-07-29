@@ -8,11 +8,11 @@ class CryptoManager:
         # Инициализация Fernet с ключом из конфигурации
         self.fernet = Fernet(ENCRYPTION_KEY.encode())
 
-    def encrypt(self, data: str) -> str:
-        """Шифрует строку токена для безопасного хранения в базе данных"""
+    def encrypt(self, data: str) -> bytes:
+        """Шифрует строку токена для безопасного хранения в базе данных (в формате байт)"""
         if not data:
-            return ""
-        return self.fernet.encrypt(data.encode()).decode()
+            return b""
+        return self.fernet.encrypt(data.encode())
 
     def decrypt(self, data: bytes | str) -> str:
         """Расшифровывает строку из базы данных в рабочий токен"""

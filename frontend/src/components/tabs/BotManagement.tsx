@@ -155,7 +155,7 @@ export const BotManagement = () => {
             },
             {
               label: "Конв.",
-              value: "24%",
+              value: "0%",
               icon: TrendingUp,
               color: "var(--color-warning)",
             },
@@ -347,7 +347,7 @@ export const BotManagement = () => {
                         Продажи
                       </span>
                       <span className="text-[24px] md:text-[28px] font-black text-[var(--color-foreground)] leading-none">
-                        {Math.floor((bot.usersCount || 0) / 4) + 2}
+                        0
                       </span>
                     </div>
 
@@ -357,7 +357,7 @@ export const BotManagement = () => {
                       </span>
                       {bot.paymentProvider ? (
                         <span className="text-[24px] md:text-[28px] font-black text-[var(--color-success)] leading-none">
-                          14.5k ₽
+                          0 ₽
                         </span>
                       ) : (
                         <div className="h-[24px] md:h-[28px] flex items-center">

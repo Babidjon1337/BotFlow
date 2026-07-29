@@ -117,7 +117,7 @@ export const Profile = () => {
 
               <div className="px-6 pb-6 relative">
                 <div
-                  className="flex items-center justify-center shrink-0 shadow-md relative z-10"
+                  className="flex items-center justify-center shrink-0 shadow-md relative z-10 overflow-hidden"
                   style={{
                     width: "68px",
                     height: "68px",
@@ -131,9 +131,11 @@ export const Profile = () => {
                     marginBottom: "12px",
                   }}
                 >
-                  {appState.userEmail
-                    ? appState.userEmail.charAt(0).toUpperCase()
-                    : "U"}
+                  {((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url) ? (
+                    <img src={(window as any).Telegram.WebApp.initDataUnsafe.user.photo_url} alt="avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    ((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.first_name || "User").charAt(0).toUpperCase()
+                  )}
                 </div>
                 <h2
                   style={{
@@ -144,7 +146,7 @@ export const Profile = () => {
                     letterSpacing: "-0.01em",
                   }}
                 >
-                  Мой аккаунт
+                  {(window as any).Telegram?.WebApp?.initDataUnsafe?.user?.first_name || "Мой аккаунт"}
                 </h2>
                 <p
                   style={{
@@ -153,7 +155,7 @@ export const Profile = () => {
                     marginTop: "2px",
                   }}
                 >
-                  {appState.userEmail || "Не указан"}
+                  {((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username) ? `@${(window as any).Telegram.WebApp.initDataUnsafe.user.username}` : "TG User"}
                 </p>
               </div>
             </motion.div>

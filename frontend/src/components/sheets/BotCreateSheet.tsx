@@ -2,12 +2,12 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Bot, KeyRound, ExternalLink, ArrowRight, ArrowLeft, CheckCircle2, Info, CreditCard, AlertTriangle } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
-import type { PaymentProvider, BotConfig } from '../../types';
+import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
 
 interface BotCreateSheetProps {
   onClose: () => void;
-  onCreate: (botData: Partial<BotConfig>) => void;
+  onCreate: (botData: any) => Promise<void>;
 }
 
 const PROVIDER_INFO: Record<PaymentProvider, { label: string, logo: string, color: string }> = {
@@ -24,6 +24,7 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
 
 export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [isCreating, setIsCreating] = useState(false);
   const vh = useViewportHeight();
 
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -63,13 +64,13 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
 
 
 
-  const canGoNext1 = name.trim().length > 0 && token.trim().length > 0 && token.includes(':');
+  const canGoNext1 = token.trim().length > 0 && token.includes(':');
   
   const currentFields = useMemo(() => PAYMENT_PROVIDERS[provider], [provider]);
   
   const canGoNext2 = skipPayment || currentFields.every(f => (keys[f.key] || '').trim() !== '');
   
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!navigator.onLine) {
       alert('Отсутствует подключение к интернету. Проверьте сеть.');
       return;
@@ -77,13 +78,20 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
     const tg = (window as any).Telegram?.WebApp;
     if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
 
-    onCreate({
-      name: name.trim(),
-      token: token.trim(),
-      paymentProvider: skipPayment ? undefined : provider,
-      paymentKeys: skipPayment ? {} : keys,
-      offerUrl: offerUrl.trim(),
-    });
+    setIsCreating(true);
+    try {
+      await onCreate({
+        displayName: name.trim(),
+        token: token.trim(),
+        paymentProvider: skipPayment ? undefined : provider,
+        paymentCreds: skipPayment ? {} : keys,
+        offerUrl: offerUrl.trim(),
+      });
+    } catch (e: any) {
+      alert(e.message || 'Ошибка при создании бота');
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -409,11 +417,18 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
               onClick={handleCreate}
-              className="h-[52px] rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[2] text-white"
+              disabled={isCreating}
+              className="h-[52px] rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[2] text-white disabled:opacity-50"
               style={{ background: 'linear-gradient(135deg, var(--color-success), #10B981)', boxShadow: '0 8px 16px -6px rgba(16,185,129,0.4)' }}
             >
-              Создать бота
-              <CheckCircle2 size={18} className="ml-2" />
+              {isCreating ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  Создать бота
+                  <CheckCircle2 size={18} className="ml-2" />
+                </>
+              )}
             </motion.button>
           )}
         </div>

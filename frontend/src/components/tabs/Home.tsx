@@ -148,6 +148,27 @@ export const Home = () => {
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
   const [isInvoiceSent, setIsInvoiceSent] = useState(false);
 
+  const [stats, setStats] = useState<any>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+
+  useEffect(() => {
+    if (appState.activeBot) {
+      setIsLoadingStats(true);
+      import("../../services/api").then(({ apiService }) => {
+        apiService
+          .getStats(appState.activeBot!.id)
+          .then((res) => {
+            setStats(res);
+            setIsLoadingStats(false);
+          })
+          .catch((e) => {
+            console.error("Stats err", e);
+            setIsLoadingStats(false);
+          });
+      });
+    }
+  }, [appState.activeBot?.id, appState.activeBot?.status]);
+
   useEffect(() => {
     if (!showAllClients) return;
     const tg = (window as any).Telegram?.WebApp;
@@ -215,103 +236,47 @@ export const Home = () => {
     return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
   };
 
-  const mockClients = [
-    {
-      name: "Александр Иванов",
-      username: "@alex_invest",
-      paid: false,
-      time: "10 мин назад",
-    },
-    {
-      name: "Елена Смирнова",
-      username: "@elena_smirnova",
-      paid: true,
-      tariffName: "Тариф PRO",
-      price: 4990,
-      time: "Вчера, 14:20",
-    },
-    {
-      name: "Михаил Третьяков",
-      username: "@mikhail_tret",
-      paid: true,
-      tariffName: "VIP доступ",
-      price: 9900,
-      time: "24 июля",
-    },
-    {
-      name: "Ольга Кузнецова",
-      username: "@olga_kuzn",
-      paid: false,
-      time: "23 июля",
-    },
-    {
-      name: "Дмитрий Соколов",
-      username: "@dmitry_sok",
-      paid: true,
-      tariffName: "Базовый",
-      price: 1990,
-      time: "21 июля",
-    },
-    {
-      name: "Ксения Морозова",
-      username: "@ksenia_mor",
-      paid: false,
-      time: "20 июля",
-    },
-    {
-      name: "Ксения Морозова",
-      username: "@ksenia_mor",
-      paid: false,
-      time: "20 июля",
-    },
-    {
-      name: "Ксения Морозова",
-      username: "@ksenia_mor",
-      paid: false,
-      time: "20 июля",
-    },
-    {
-      name: "Ксения Морозова",
-      username: "@ksenia_mor",
-      paid: false,
-      time: "20 июля",
-    },
-    {
-      name: "Ксения Морозова",
-      username: "@ksenia_mor",
-      paid: false,
-      time: "20 июля",
-    },
-    {
-      name: "Александр Иванов",
-      username: "@alex_invest",
-      paid: false,
-      time: "10 мин назад",
-    },
-    {
-      name: "Александр Иванов",
-      username: "@alex_invest",
-      paid: false,
-      time: "10 мин назад",
-    },
-    {
-      name: "Александр Иванов",
-      username: "@alex_invest",
-      paid: false,
-      time: "10 мин назад",
-    },
-  ];
+  const [leads, setLeads] = useState<any[]>([]);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
 
-  const filteredClients = mockClients.filter(
+  useEffect(() => {
+    if (appState.activeBot) {
+      setIsLoadingLeads(true);
+      import("../../services/api").then(({ apiService }) => {
+        apiService
+          .getLeads(appState.activeBot!.id, "", 1, 50)
+          .then((res) => {
+            const mappedLeads = (res.leads || []).map((l: any) => ({
+              ...l,
+              name: l.firstName || "Без имени",
+              time: l.createdAt
+                ? new Date(l.createdAt).toLocaleDateString()
+                : "",
+              paid: l.hasPurchased,
+              tariffName: "Основной доступ",
+              price: 1500,
+            }));
+            setLeads(mappedLeads);
+            setIsLoadingLeads(false);
+          })
+          .catch((e) => {
+            console.error("Leads err", e);
+            setIsLoadingLeads(false);
+          });
+      });
+    }
+  }, [appState.activeBot?.id]);
+
+  const filteredClients = leads.filter(
     (c) =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.username.toLowerCase().includes(searchQuery.toLowerCase()),
+      c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.username?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const modalFilteredClients = mockClients.filter(
+  const modalFilteredClients = leads.filter(
     (c) =>
-      c.name.toLowerCase().includes(modalSearchQuery.toLowerCase()) ||
-      c.username.toLowerCase().includes(modalSearchQuery.toLowerCase()),
+      c.name?.toLowerCase().includes(modalSearchQuery.toLowerCase()) ||
+      c.username?.toLowerCase().includes(modalSearchQuery.toLowerCase()),
   );
 
   // --- WELCOME SCREEN (no bot yet) ---
@@ -748,12 +713,11 @@ export const Home = () => {
               className="text-[32px] md:text-[40px] font-extrabold text-[var(--color-foreground)] tracking-tight leading-none flex items-end gap-3"
               style={{ marginBottom: "8px" }}
             >
-              {appState.activeBot?.paymentProvider ? "14 500 ₽" : "0 ₽"}
-              {appState.activeBot?.paymentProvider && (
-                <span className="text-[15px] font-bold text-[var(--color-success)] mb-2">
-                  +12.5%
-                </span>
-              )}
+              {isLoadingStats
+                ? "..."
+                : stats?.revenue
+                  ? `${stats.revenue} ₽`
+                  : "0 ₽"}
             </div>
             <div
               style={{
@@ -762,7 +726,7 @@ export const Home = () => {
                 fontWeight: 500,
               }}
             >
-              Моковые данные для демонстрации
+              Реальные данные с бэкенда
             </div>
           </div>
 
@@ -784,9 +748,18 @@ export const Home = () => {
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Лиды", value: "1,248" },
-          { label: "Конверсия", value: "18.4%" },
-          { label: "Продажи", value: "230" },
+          {
+            label: "Пользователи",
+            value: isLoadingStats ? "..." : stats?.usersCount || 0,
+          },
+          {
+            label: "Клики по кнопкам",
+            value: isLoadingStats ? "..." : stats?.clicksCount || 0,
+          },
+          {
+            label: "Продажи",
+            value: isLoadingStats ? "..." : stats?.salesCount || 0,
+          },
         ].map((stat, i) => (
           <div
             key={i}
@@ -865,7 +838,7 @@ export const Home = () => {
         </div>
         <ResponsiveContainer width="100%" height={180}>
           <AreaChart
-            data={STATS_DATA}
+            data={stats?.chart_data || []}
             margin={{ left: 10, right: 10, top: 10, bottom: 0 }}
           >
             <defs>
@@ -922,77 +895,6 @@ export const Home = () => {
         </ResponsiveContainer>
       </div>
 
-      {/* Events */}
-      <div
-        className="card-saas transition-shadow hover:shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
-        style={{ padding: "24px" }}
-      >
-        <div
-          className="flex items-center gap-2"
-          style={{ marginBottom: "20px" }}
-        >
-          <Clock
-            size={16}
-            style={{ color: "var(--color-foreground-tertiary)" }}
-          />
-          <span
-            style={{
-              fontSize: "15px",
-              fontWeight: 600,
-              color: "var(--color-foreground)",
-            }}
-          >
-            События
-          </span>
-        </div>
-        <div
-          style={{ padding: "0", background: "transparent", border: "none" }}
-        >
-          <div className="flex flex-col gap-3">
-            {[
-              {
-                text: "Новая продажа: Тариф PRO",
-                time: "10 мин назад",
-                icon: <CreditCard size={14} />,
-                color: "var(--color-success)",
-              },
-              {
-                text: "Пользователь дошел до шага Оплата",
-                time: "25 мин назад",
-                icon: <User size={14} />,
-                color: "var(--color-primary)",
-              },
-              {
-                text: "Сработал автоматический дожим",
-                time: "1 час назад",
-                icon: <Clock size={14} />,
-                color: "var(--color-warning)",
-              },
-            ].map((event, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]"
-              >
-                <div
-                  className="w-8 h-8 rounded-[10px] flex items-center justify-center bg-[var(--color-surface)] shadow-sm"
-                  style={{ color: event.color }}
-                >
-                  {event.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[14px] font-semibold text-[var(--color-foreground)] truncate">
-                    {event.text}
-                  </div>
-                  <div className="text-[12px] text-[var(--color-foreground-tertiary)] mt-0.5">
-                    {event.time}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* CRM Section: Clients & Applications */}
       <div className="p-5 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs">
         <div className="flex items-center justify-between mb-4">
@@ -1005,7 +907,7 @@ export const Home = () => {
             </span>
           </div>
           <span className="text-[12px] font-bold px-2.5 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-foreground-secondary)] rounded-full">
-            Всего: {mockClients.length}
+            Всего: {isLoadingLeads ? "..." : leads.length}
           </span>
         </div>
 

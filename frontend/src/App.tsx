@@ -21,8 +21,9 @@ import { BillingRenew } from './components/sheets/BillingRenew';
 import { InvoiceSheet } from './components/sheets/InvoiceSheet';
 
 import { Toast } from './components/Toast';
+import { RefreshCw, Bot } from 'lucide-react';
 
-import { createBot } from './utils';
+
 import { useAppState } from './providers/AppStateProvider';
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
     toggleTheme,
     setSheet,
     handleCreateBotClick,
+    authError,
   } = useAppState();
 
   useEffect(() => {
@@ -143,6 +145,79 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let interval: any;
+    if (appState.activeBot && appState.activeBot.mediaSyncDone === false) {
+      interval = setInterval(async () => {
+        try {
+          const { apiService } = await import('./services/api');
+          const data = await apiService.getBots();
+          if (data && data.bots) {
+            setAppState(prev => {
+              const mappedBots = data.bots.map((b: any) => ({
+                id: String(b.id),
+                name: b.displayName || 'Без имени',
+                username: b.username || '@unknown',
+                status: (b.status === 'active' ? 'active' : 'inactive') as 'active' | 'inactive',
+                usersCount: b.usersCount || 0,
+                isTokenLocked: b.isTokenLocked || false,
+                paymentProvider: b.paymentProvider,
+                offerUrl: b.offerUrl,
+                offerInstallments: b.offerInstallments,
+                funnelComplete: b.funnelComplete || false,
+                mediaSyncDone: b.mediaSyncDone || false,
+                botUrl: b.botUrl,
+              }));
+              const updatedBot = mappedBots.find((b: any) => String(b.id) === String(prev.activeBot?.id));
+              if (updatedBot && updatedBot.mediaSyncDone) {
+                return {
+                  ...prev,
+                  bots: mappedBots,
+                  activeBot: updatedBot
+                };
+              }
+              return prev;
+            });
+          }
+        } catch (e) {
+          console.error("Polling sync status failed", e);
+        }
+      }, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [appState.activeBot?.id, appState.activeBot?.mediaSyncDone]);
+
+  if (appState.isLoading) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[var(--color-background)]" style={{ color: 'var(--color-foreground)' }}>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]"></div>
+      </div>
+    );
+  }
+
+  if (authError) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center bg-[var(--color-background)] px-6 text-center" style={{ color: 'var(--color-foreground)' }}>
+        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+          <span className="text-3xl">⚠️</span>
+        </div>
+        <h2 className="text-xl font-bold mb-3">Ошибка авторизации</h2>
+        <p className="text-[var(--color-foreground-secondary)] mb-8 max-w-sm">
+          Мы не смогли распознать ваш аккаунт. Пожалуйста, запустите главного бота (Bot Father) и нажмите кнопку "Открыть приложение".
+        </p>
+        <button
+          onClick={() => {
+            const tg = (window as any).Telegram?.WebApp;
+            if (tg) tg.close();
+          }}
+          className="px-6 py-3 bg-[var(--color-primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
+        >
+          Закрыть
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex h-full overflow-hidden w-full"
@@ -154,12 +229,13 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        appState={appState}
-        setSheet={setSheet}
-        theme={theme}
-        toggleTheme={toggleTheme}
-        onCreateBot={handleCreateBotClick}
-      />
+            appState={appState}
+            setSheet={setSheet}
+            theme={theme}
+            toggleTheme={toggleTheme}
+            onCreateBot={handleCreateBotClick}
+          />
+
 
       <main
         className="flex-1 flex flex-col relative lg:ml-[240px] overflow-hidden h-full"
@@ -261,16 +337,27 @@ export default function App() {
           <BotCreateSheet
             key="bot_create"
             onClose={() => setSheet(null)}
-            onCreate={(botData) => {
+            onCreate={async (botData) => {
+              const { apiService } = await import('./services/api');
+              const createdBot = await apiService.createBot(botData);
               const newBot = {
-                ...createBot(appState.bots.length),
-                ...botData,
-                username: botData.username?.startsWith('@') ? botData.username : `@${botData.username || 'username'}`,
+                id: String(createdBot.id),
+                name: createdBot.displayName || 'Без имени',
+                username: createdBot.username || '@unknown',
+                status: 'inactive' as const,
+                usersCount: 0,
+                isTokenLocked: false,
+                paymentProvider: createdBot.paymentProvider,
+                offerUrl: createdBot.offerUrl,
+                offerInstallments: createdBot.offerInstallments,
+                funnelComplete: false,
+                mediaSyncDone: false,
+                botUrl: createdBot.botUrl,
               };
               setAppState(prev => ({
                 ...prev,
                 activeBot: newBot,
-                bots: [...prev.bots, newBot],
+                bots: [...prev.bots, newBot as any],
               }));
               setSheet(null);
               setActiveTab('build');
@@ -287,7 +374,7 @@ export default function App() {
             onClose={() => setSheet(null)}
             onAddBot={handleCreateBotClick}
             onSelect={(id) => {
-              const bot = appState.bots.find(b => b.id === id);
+              const bot = appState.bots.find(b => String(b.id) === String(id));
               if (bot) setAppState(prev => ({ ...prev, activeBot: bot }));
               setSheet(null);
             }}
@@ -297,21 +384,19 @@ export default function App() {
                 const nextState = { ...prev };
                 
                 if (!isPro && newStatus === 'active') {
-                  // Если не PRO, отключаем всех остальных ботов
                   nextState.bots = nextState.bots.map(b => ({
                     ...b,
-                    status: b.id === id ? 'active' : 'inactive'
+                    status: String(b.id) === String(id) ? 'active' : 'inactive'
                   }));
                 } else {
-                  // Иначе просто переключаем статус конкретного бота
-                  nextState.bots = nextState.bots.map(b => 
-                    b.id === id ? { ...b, status: newStatus } : b
+                  nextState.bots = nextState.bots.map(b =>
+                    String(b.id) === String(id) ? { ...b, status: newStatus } : b
                   );
                 }
 
                 // Синхронизируем activeBot, если он затронут
                 if (nextState.activeBot) {
-                  const updatedActiveBot = nextState.bots.find(b => b.id === nextState.activeBot!.id);
+                  const updatedActiveBot = nextState.bots.find(b => String(b.id) === String(nextState.activeBot!.id));
                   if (updatedActiveBot) {
                     nextState.activeBot = { ...updatedActiveBot };
                   }

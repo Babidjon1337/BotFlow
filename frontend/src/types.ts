@@ -56,4 +56,5 @@ export interface AppState {
   activeSheet: SheetType;
   sheetData?: { tariff: 'basic' | 'pro' } | { botId: string } | { clientName: string, username: string };
   isDirty: boolean;
+  isLoading?: boolean;
 }

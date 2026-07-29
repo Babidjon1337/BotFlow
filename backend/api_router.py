@@ -1,6 +1,7 @@
 import os
 import json
 import urllib.parse
+import datetime
 from fastapi import APIRouter, Request, HTTPException, Query
 from loggers import logger
 from config import WEBHOOK_URL, SECRET_KEY
@@ -87,7 +88,14 @@ async def auth_user(request: Request, body: dict = None):
             logger.warning(f"Failed to parse init_data: {e}")
 
     if not tg_id:
-        tg_id = int(os.getenv("TEST_OWNER_ID", "123456789"))
+        # If still no ID (e.g. running outside Telegram without dev env), raise 401
+        if os.getenv("TEST_OWNER_ID"):
+            tg_id = int(os.getenv("TEST_OWNER_ID"))
+        else:
+            raise HTTPException(
+                status_code=401, 
+                detail="User not found. Please start the Bot Father first to register."
+            )
 
     user = await create_user_if_not_exists(telegram_id=tg_id)
     bots = await get_user_bots(owner_id=user.id)
@@ -119,6 +127,11 @@ async def list_bots(request: Request):
 async def create_bot(request: Request, body: BotCreateApiRequest):
     user_id = await get_current_user_id(request)
     user = await create_user_if_not_exists(telegram_id=user_id)
+    
+    if not body.display_name or not body.display_name.strip():
+        user_bots = await get_user_bots(owner_id=user.id)
+        bot_count = len(user_bots)
+        body.display_name = "Мой бот" if bot_count == 0 else f"Мой бот {bot_count + 1}"
 
     from aiogram import Bot
     from aiogram.client.default import DefaultBotProperties
@@ -126,7 +139,7 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
     try:
         async with Bot(
             token=body.token,
-            session=request.app.state.session,
+            session=getattr(request.app.state, 'session', None),
             default=DefaultBotProperties(parse_mode="HTML"),
         ) as temp_bot:
             me = await temp_bot.get_me()
@@ -166,7 +179,7 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
 
     try:
         async with Bot(
-            token=body.token, session=request.app.state.session
+            token=body.token, session=getattr(request.app.state, 'session', None)
         ) as temp_bot:
             await temp_bot.set_webhook(
                 url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
@@ -224,7 +237,7 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
 
         try:
             async with Bot(
-                token=body.token, session=request.app.state.session
+                token=body.token, session=getattr(request.app.state, 'session', None)
             ) as temp_bot:
                 me = await temp_bot.get_me()
                 update_data["tg_bot_id"] = me.id
@@ -259,7 +272,7 @@ async def delete_bot(bot_id: int, request: Request):
         from aiogram import Bot
 
         async with Bot(
-            token=token, session=request.app.state.session
+            token=token, session=getattr(request.app.state, 'session', None)
         ) as temp_bot:
             await temp_bot.delete_webhook()
     except Exception as e:
@@ -288,7 +301,7 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
         from aiogram import Bot
 
         async with Bot(
-            token=token, session=request.app.state.session
+            token=token, session=getattr(request.app.state, 'session', None)
         ) as temp_bot:
             if new_status == "active":
                 await temp_bot.set_webhook(
@@ -402,16 +415,26 @@ async def get_bot_stats_endpoint(bot_id: int):
     revenue = sales * 1500
 
     return {
-        "views": views if views > 0 else 5241,
-        "clicks": clicks if views > 0 else 1173,
-        "sales": sales if views > 0 else 86,
-        "conversion": conversion if views > 0 else 1.6,
-        "revenue": revenue if views > 0 else 154820,
+        "views": views,
+        "clicks": clicks,
+        "sales": sales,
+        "conversion": conversion,
+        "revenue": revenue,
         "funnel_data": [
-            {"name": "Старт", "value": views if views > 0 else 5241},
-            {"name": "Клик", "value": clicks if views > 0 else 1173},
-            {"name": "Дожим 1", "value": int((clicks if views > 0 else 1173) * 0.4)},
-            {"name": "Оплата", "value": sales if views > 0 else 86},
+            {"name": "Старт", "value": views},
+            {"name": "Клик", "value": clicks},
+            {"name": "Дожим 1", "value": int(clicks * 0.4)},
+            {"name": "Оплата", "value": sales},
         ],
+        "chart_data": [
+            {"name": (datetime.datetime.now() - datetime.timedelta(days=6)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
+            {"name": (datetime.datetime.now() - datetime.timedelta(days=5)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
+            {"name": (datetime.datetime.now() - datetime.timedelta(days=4)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
+            {"name": (datetime.datetime.now() - datetime.timedelta(days=3)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
+            {"name": (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
+            {"name": (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
+            {"name": (datetime.datetime.now()).strftime("%d.%m"), "Просмотры": views, "Продажи": sales},
+        ],
+        "events": [],
     }
 

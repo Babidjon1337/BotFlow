@@ -53,19 +53,29 @@ export const useBotToggle = () => {
     
     setIsToggling(prev => ({ ...prev, [bot.id]: true }));
     
-    // Simulate network delay
-    setTimeout(() => {
-      setIsToggling(prev => ({ ...prev, [bot.id]: false }));
-      
-      const tg = (window as any).Telegram?.WebApp;
-      if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
-      
-      setAppState(prev => ({
-        ...prev,
-        bots: prev.bots.map(b => b.id === bot.id ? { ...b, status: newStatus, funnelComplete: true } : b),
-        activeBot: prev.activeBot?.id === bot.id ? { ...prev.activeBot, status: newStatus, funnelComplete: true } : prev.activeBot,
-      }));
-    }, 600);
+    import('../services/api').then(({ apiService }) => {
+      apiService.toggleBot(bot.id, newStatus === 'active' ? 'start' : 'stop').then(() => {
+        setIsToggling(prev => ({ ...prev, [bot.id]: false }));
+        
+        const tg = (window as any).Telegram?.WebApp;
+        if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        
+        setAppState(prev => ({
+          ...prev,
+          bots: prev.bots.map(b => b.id === bot.id ? { ...b, status: newStatus, funnelComplete: true } : b),
+          activeBot: prev.activeBot?.id === bot.id ? { ...prev.activeBot, status: newStatus, funnelComplete: true } : prev.activeBot,
+        }));
+      }).catch(err => {
+        setIsToggling(prev => ({ ...prev, [bot.id]: false }));
+        showAlert({
+          title: "Ошибка запуска",
+          message: err.message || "Не удалось изменить статус бота.",
+          type: "danger",
+          confirmText: "Закрыть",
+          cancelText: ""
+        });
+      });
+    });
   };
 
   return { toggleBot, isToggling };

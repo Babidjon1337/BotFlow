@@ -242,6 +242,10 @@ const CustomNode = ({ data, selected }: NodeProps) => {
   );
 };
 
+const nodeTypes = {
+  custom: CustomNode,
+};
+
 export const Flow = () => {
   const {
     blocks,
@@ -252,24 +256,7 @@ export const Flow = () => {
     theme,
   } = useAppState();
 
-  if (!appState.activeBot) {
-    return (
-      <EmptyBotState
-        onCreateBot={onCreateBot}
-        title="Схема недоступна"
-        description="Чтобы увидеть структуру воронки, необходимо подключить Telegram-бота."
-      />
-    );
-  }
-
   const getBlock = (id: string) => blocks.find((b) => b.id === id);
-
-  const nodeTypes = useMemo(
-    () => ({
-      custom: CustomNode,
-    }),
-    [],
-  );
 
   const flowNodes: Node[] = useMemo(
     () => [
@@ -397,6 +384,16 @@ export const Flow = () => {
     ],
     [],
   );
+
+  if (!appState.activeBot) {
+    return (
+      <EmptyBotState
+        onCreateBot={onCreateBot}
+        title="Схема недоступна"
+        description="Чтобы увидеть структуру воронки, необходимо подключить Telegram-бота."
+      />
+    );
+  }
 
   return (
     <motion.div

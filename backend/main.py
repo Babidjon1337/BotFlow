@@ -182,7 +182,7 @@ async def client_bots_webhook(bot_db_id: int, request: Request):
         token = crypto.decrypt(bot_config.bot_token_enc)
         async with Bot(
             token=token,
-            session=request.app.state.session,
+            session=getattr(request.app.state, 'session', None),
             default=DefaultBotProperties(parse_mode="HTML"),
         ) as bot:
             update_data = await request.json()
@@ -207,7 +207,7 @@ async def test_set_webhook(bot_token: str, request: Request):
     try:
         temp_bot = Bot(
             token=bot_token,
-            session=request.app.state.session,
+            session=getattr(request.app.state, 'session', None),
             default=DefaultBotProperties(parse_mode="HTML"),
         )
 
@@ -269,7 +269,7 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
             await send_success_message(
                 tg_bot_id=tg_bot_id,
                 telegram_id=telegram_id,
-                http_session=request.app.state.session,
+                http_session=getattr(request.app.state, 'session', None),
             )
 
             # Ответы для касс

@@ -77,8 +77,20 @@ async def start_command_handler(message: Message):
     if bot_config.status == "archived":
         return
 
-    if bot_config.status == "draft" and lead_id != bot_config.owner.telegram_id:
-        await message.answer("🛠 Бот находится в режиме разработки.")
+    if lead_id == bot_config.owner.telegram_id:
+        if getattr(bot_config, "media_sync_done", False) == False:
+            from database.requests.bot_rq import set_media_sync_done
+            await set_media_sync_done(bot_config.id, True)
+            await message.answer(
+                "🎉 <b>Поздравляем с созданием бота!</b>\n\n"
+                "✅ Синхронизация прошла успешно.\n\n"
+                "Осталось совсем немного: возвращайтесь в панель управления, настройте воронку и нажмите кнопку <b>Запустить</b>! 🚀"
+            )
+            return
+
+    if bot_config.status == "draft":
+        if lead_id != bot_config.owner.telegram_id:
+            await message.answer("🛠 Бот находится в режиме разработки.")
         return
 
     from database.requests.user_rq import get_lead

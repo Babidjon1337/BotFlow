@@ -77,7 +77,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
 );
 
 export const AdminStats: React.FC = () => {
-  const { appState, setToastMessage } = useAppState();
+  const { setToastMessage } = useAppState();
   const { showAlert } = useAlert();
   const [timeRange, setTimeRange] = useState<"24h" | "7d" | "30d" | "all">("7d");
   const [isRefreshing, setIsRefreshing] = useState(false);

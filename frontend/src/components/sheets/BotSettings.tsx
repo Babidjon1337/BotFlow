@@ -5,6 +5,7 @@ import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider, AppState } from '../../types';
 import { useViewportHeight } from '../../hooks';
 import { useAppState } from '../../providers/AppStateProvider';
+import { useAlert } from '../AlertProvider';
 
 interface BotSettingsProps {
   appState: AppState;
@@ -64,17 +65,42 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const canEditToken = !isTokenLocked;
   const canEditPayment = true;
 
-  const handleSave = () => {
-    if (activeBot) {
+  const [isSaving, setIsSaving] = useState(false);
+  const { showAlert } = useAlert();
+  const { setToastMessage } = useAppState();
+
+  const handleSave = async () => {
+    if (!activeBot) return;
+    setIsSaving(true);
+    try {
+      const { apiService } = await import('../../services/api');
+      await apiService.updateBot(activeBot.id, {
+        name,
+        token,
+        offerUrl,
+        offerInstallments,
+        paymentProvider: provider,
+        paymentCreds: keys
+      });
       activeBot.name = name;
       activeBot.token = token;
       activeBot.offerUrl = offerUrl;
       activeBot.offerInstallments = offerInstallments;
       activeBot.paymentProvider = provider;
       activeBot.paymentKeys = keys;
+      setToastMessage("Настройки успешно сохранены!");
+      onSave();
+      onClose();
+    } catch (e: any) {
+      setIsSaving(false);
+      showAlert({
+        title: "Ошибка сохранения",
+        message: e.message || "Произошла ошибка при сохранении настроек.",
+        type: "danger",
+        confirmText: "Закрыть",
+        cancelText: ""
+      });
     }
-    onSave();
-    onClose();
   };
 
   return (
