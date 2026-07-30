@@ -14,7 +14,8 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node) -> None:
             media = node["content"].get("media", {})
             media_type = media.get("type")
             file_id = media.get("file_id")
-        button_text = node.get("button_text")
+        # Stored V2 funnels use camelCase; older scheduled tasks use snake_case.
+        button_text = node.get("buttonText") or node.get("button_text")
         if not button_text and isinstance(node.get("button"), dict):
             button_text = node["button"].get("text")
     else:

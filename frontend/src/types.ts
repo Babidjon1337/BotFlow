@@ -27,7 +27,7 @@ export interface FunnelNode {
 }
 
 export type TabType = 'home' | 'build' | 'flow' | 'profile' | 'subscription' | 'manage' | 'admin_stats';
-export type SheetType = 'billing_first' | 'billing_renew' | 'bot_switcher' | 'bot_settings' | 'checkout' | 'bot_create' | 'invoice' | null;
+export type SheetType = 'billing_first' | 'billing_renew' | 'bot_switcher' | 'bot_settings' | 'checkout' | 'bot_create' | null;
 export type PaymentProvider = 'yookassa' | 'robokassa' | 'prodamus';
 export type DeliveryType = 'link' | 'invite' | 'file';
 
@@ -40,10 +40,15 @@ export interface BotConfig {
   isTokenLocked: boolean;
   token?: string;
   paymentProvider?: string;
+  hasPaymentCredentials?: boolean;
   paymentKeys?: Record<string, string>;
+  tokenPreview?: string;
+  paymentCredentialsPreview?: Record<string, string>;
   offerUrl?: string;
   offerInstallments?: boolean;
   funnelComplete: boolean;
+  mediaSyncDone?: boolean;
+  botUrl?: string;
 }
 
 export interface AppState {
@@ -52,9 +57,12 @@ export interface AppState {
   subscriptionStatus: 'none' | 'active' | 'expired';
   subscriptionUntil: string | null;
   slotsBought: number;
+  isAdmin?: boolean;
+  subscriptionAutoRenew?: boolean;
+  subscriptionRetryCount?: number;
   userEmail: string;
   activeSheet: SheetType;
-  sheetData?: { tariff: 'basic' | 'pro' } | { botId: string } | { clientName: string, username: string };
+  sheetData?: { tariff: 'basic' | 'pro' } | { botId: string };
   isDirty: boolean;
   isLoading?: boolean;
 }

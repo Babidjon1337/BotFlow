@@ -5,6 +5,7 @@ from aiogram.filters import CommandStart, Command
 from keyboard.main_kb import *
 from database.requests import *
 from config import MAIN_BOT_TG_ID
+from loggers import logger
 
 main_bot_router = Router()
 
@@ -13,6 +14,17 @@ main_bot_router.message.filter(F.bot.id == MAIN_BOT_TG_ID)
 
 @main_bot_router.message(CommandStart())
 async def start_command_handler(message: Message):
+    if not message.from_user:
+        return
+
+    # The main Bot Father registers SaaS owners. Client bots use their own
+    # /start handler and only create leads for the configured funnel.
+    try:
+        await create_user_if_not_exists(message.from_user.id)
+    except Exception:
+        logger.exception("Не удалось зарегистрировать пользователя главного бота: %s", message.from_user.id)
+        await message.answer("Не удалось создать аккаунт. Попробуйте ещё раз через минуту.")
+        return
 
     await message.answer(
         """🤖 <b>Привет! На связи FunnelGenius.</b> Мы стерли границы между сложным программированием и автоворонками, которые приносят деньги. Больше никаких программистов с огромными чеками, ТЗ на 50 страниц и багов в коде.

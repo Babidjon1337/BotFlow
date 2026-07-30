@@ -14,9 +14,26 @@ export const BillingRenew = ({ onClose, onSuccess }: BillingRenewProps) => {
   const [showCancel, setShowCancel] = useState(false);
   const { showAlert } = useAlert();
 
-  const handlePay = () => {
+  const handlePay = async () => {
     setIsPaying(true);
-    setTimeout(() => { setIsPaying(false); onSuccess(); }, 1500);
+    try {
+      const { apiService } = await import('../../services/api');
+      const checkout = await apiService.createBillingCheckout('pro');
+      const telegram = (window as any).Telegram?.WebApp;
+      if (telegram?.openLink) telegram.openLink(checkout.confirmationUrl);
+      else window.location.assign(checkout.confirmationUrl);
+      onSuccess();
+    } catch (error) {
+      showAlert({
+        title: 'Не удалось создать платёж',
+        message: error instanceof Error ? error.message : 'Попробуйте ещё раз позже.',
+        type: 'danger',
+        confirmText: 'Закрыть',
+        cancelText: '',
+      });
+    } finally {
+      setIsPaying(false);
+    }
   };
 
   return (
@@ -60,12 +77,16 @@ export const BillingRenew = ({ onClose, onSuccess }: BillingRenewProps) => {
             <div className="flex flex-col w-full gap-3">
               <button 
                 onClick={() => {
-                  showAlert({
-                    title: 'Успех',
-                    message: 'Подписка успешно отменена',
-                    type: 'success'
-                  });
-                  onClose();
+                  void (async () => {
+                    try {
+                      const { apiService } = await import('../../services/api');
+                      await apiService.cancelBilling();
+                      showAlert({ title: 'Автопродление отключено', message: 'Доступ сохранится до конца оплаченного периода.', type: 'success' });
+                      onClose();
+                    } catch (error) {
+                      showAlert({ title: 'Не удалось отменить подписку', message: error instanceof Error ? error.message : 'Попробуйте ещё раз позже.', type: 'danger', confirmText: 'Закрыть', cancelText: '' });
+                    }
+                  })();
                 }}
                 className="w-full py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold transition-colors"
               >

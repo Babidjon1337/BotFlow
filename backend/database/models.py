@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
 )
@@ -42,6 +43,15 @@ class User(Base):
     agreed_to_tos_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True)
     )
+    subscription_auto_renew: Mapped[bool] = mapped_column(Boolean, default=False)
+    subscription_payment_method_enc: Mapped[Optional[bytes]] = mapped_column(nullable=True)
+    subscription_retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    subscription_next_retry_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+    subscription_grace_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -50,6 +60,9 @@ class User(Base):
     # Связи (Один-ко-Многим)
     bots: Mapped[list["BotConfig"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"
+    )
+    saas_payments: Mapped[list["SaasPayment"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -73,6 +86,7 @@ class BotConfig(Base):
     status: Mapped[str] = mapped_column(String(20), default="draft") # draft, active, archived
     users_count: Mapped[int] = mapped_column(Integer, default=0)
     is_token_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_lifetime_license: Mapped[bool] = mapped_column(Boolean, default=False)
     display_name: Mapped[str] = mapped_column(String(255), default="Мой бот")
     offer_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     offer_installments: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -130,6 +144,33 @@ class Lead(Base):
 
 
 # ==========================================
+# 5. ТАБЛИЦА SAAS_PAYMENTS (платежи Bot Father)
+# ==========================================
+class SaasPayment(Base):
+    __tablename__ = "saas_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    product: Mapped[str] = mapped_column(String(32))  # license | pro_initial | pro_renewal
+    amount: Mapped[float] = mapped_column(Numeric(10, 2))
+    currency: Mapped[str] = mapped_column(String(3), default="RUB")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    idempotence_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    yookassa_payment_id: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user: Mapped["User"] = relationship(back_populates="saas_payments")
+
+
+# ==========================================
 # 4. ТАБЛИЦА SCHEDULED_TASKS (Очередь дожимов)
 # ==========================================
 class ScheduledTask(Base):
@@ -171,6 +212,15 @@ async def init_models():
             await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS offer_installments BOOLEAN DEFAULT FALSE;"))
             await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS funnel_complete BOOLEAN DEFAULT FALSE;"))
             await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS media_sync_done BOOLEAN DEFAULT FALSE;"))
+            # Keep deployments that still rely on init_models compatible with
+            # the billing migration. Alembic remains the source of truth, but
+            # these guards prevent a 500 during a rolling upgrade.
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_auto_renew BOOLEAN NOT NULL DEFAULT FALSE;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_payment_method_enc BYTEA NULL;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_retry_count INTEGER NOT NULL DEFAULT 0;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_next_retry_at TIMESTAMPTZ NULL;"))
+            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_grace_until TIMESTAMPTZ NULL;"))
+            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS has_lifetime_license BOOLEAN NOT NULL DEFAULT FALSE;"))
             
             await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS username VARCHAR(255) NULL;"))
             await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_name VARCHAR(255) NULL;"))

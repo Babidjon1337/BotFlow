@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { FunnelNode, TabType, AppState, SheetType } from '../types';
 import { INITIAL_BLOCKS } from '../constants';
+import { mapApiBot } from '../services/botMapper';
+import { normalizeFunnelNodes } from '../services/funnelNormalizer';
 
 interface AppContextType {
   appState: AppState;
@@ -24,8 +26,6 @@ interface AppContextType {
   isAdmin: boolean;
   authError: string | null;
 }
-
-const ADMIN_IDS = [932050484, 1186592191];
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -52,25 +52,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return (localStorage.getItem('bot_father_theme') as 'light' | 'dark') || 'light';
   });
 
-  const tg = (window as any).Telegram?.WebApp;
-  const userId = tg?.initDataUnsafe?.user?.id;
-  const isAdmin = userId ? ADMIN_IDS.includes(userId) : false;
+  const isAdmin = appState.isAdmin === true;
 
   useEffect(() => {
     import('../services/api').then(({ apiService }) => {
       apiService.auth().then(res => {
-        const mappedBots = res.bots.map((b: any) => ({
-          id: String(b.id),
-          name: b.displayName || 'Без имени',
-          username: b.username || '@unknown',
-          status: (b.status === 'active' ? 'active' : 'inactive') as 'active' | 'inactive',
-          usersCount: b.usersCount || 0,
-          isTokenLocked: b.isTokenLocked || false,
-          paymentProvider: b.paymentProvider,
-          offerUrl: b.offerUrl,
-          offerInstallments: b.offerInstallments,
-          funnelComplete: b.funnelComplete || false,
-        }));
+        const mappedBots = res.bots.map(mapApiBot);
         
         setAppState(prev => ({
           ...prev,
@@ -79,6 +66,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           subscriptionStatus: res.user.subscription_status,
           subscriptionUntil: res.user.subscription_until,
           slotsBought: res.user.slots_bought,
+          isAdmin: res.user.is_admin,
+          subscriptionAutoRenew: res.user.subscription_auto_renew,
+          subscriptionRetryCount: res.user.subscription_retry_count,
           isLoading: false,
         }));
       }).catch(err => {
@@ -94,7 +84,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       import('../services/api').then(({ apiService }) => {
         apiService.getFunnel(appState.activeBot!.id).then(res => {
           if (res.nodes && res.nodes.length > 0) {
-            setBlocks(res.nodes);
+            setBlocks(normalizeFunnelNodes(res.nodes));
           } else {
             setBlocks(INITIAL_BLOCKS);
           }
@@ -128,8 +118,23 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   };
 
   const updateBlock = (id: string, field: keyof FunnelNode, value: any) => {
-    setBlocks(prev => prev.map(b => (b.id === id ? { ...b, [field]: value } : b)));
-    setAppState(prev => ({ ...prev, isDirty: true }));
+    setBlocks(prev => {
+      const existingBlock = prev.find(block => block.id === id);
+      if (existingBlock) {
+        if (Object.is(existingBlock[field], value)) {
+          return prev;
+        }
+        return prev.map(block => block.id === id ? { ...block, [field]: value } : block);
+      }
+
+      const defaultBlock = INITIAL_BLOCKS.find(block => block.id === id);
+      return defaultBlock ? [...prev, { ...defaultBlock, [field]: value }] : prev;
+    });
+    setAppState(prev => {
+      const existingBlock = blocks.find(block => block.id === id);
+      const hasChanged = !existingBlock || !Object.is(existingBlock[field], value);
+      return hasChanged ? { ...prev, isDirty: true } : prev;
+    });
   };
 
   const handleCreateBotClick = () => {
@@ -146,24 +151,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setSheet('bot_create');
   };
 
-  const handlePurchaseSuccess = (plan: 'basic' | 'pro') => {
-    setAppState(prev => {
-      const nextState = { ...prev };
-      if (plan === 'pro') {
-        nextState.subscriptionStatus = 'active';
-        if (nextState.activeBot && nextState.activeBot.status === 'inactive') {
-          nextState.activeBot.status = 'active';
-        }
-        nextState.bots = nextState.bots.map(b => String(b.id) === String(nextState.activeBot?.id) ? { ...b, status: 'active' } : b);
-      } else if (plan === 'basic') {
-        nextState.slotsBought = (nextState.slotsBought || 0) + 1;
-        if (nextState.activeBot && nextState.activeBot.status === 'inactive') {
-          nextState.activeBot.status = 'active';
-        }
-        nextState.bots = nextState.bots.map(b => String(b.id) === String(nextState.activeBot?.id) ? { ...b, status: 'active' } : b);
-      }
-      return nextState;
-    });
+  const handlePurchaseSuccess = () => {
+    // Entitlements are granted only by the YooKassa webhook. Refresh instead of
+    // presenting a local success state.
+    window.location.reload();
   };
 
   return (

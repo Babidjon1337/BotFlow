@@ -26,7 +26,7 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
 };
 
 export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => {
-  const { setSheet, setActiveTab, isAdmin } = useAppState();
+  const { setSheet, setActiveTab, isAdmin, setAppState, setToastMessage, blocks } = useAppState();
   const vh = useViewportHeight();
   
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -55,44 +55,68 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const [offerInstallments, setOfferInstallments] = useState(activeBot?.offerInstallments || false);
   const [provider, setProvider] = useState<PaymentProvider>((activeBot?.paymentProvider as PaymentProvider) || 'yookassa');
   const [keys, setKeys] = useState<Record<string, string>>(activeBot?.paymentKeys || { shopId: '', secretKey: '' });
+  const [paymentCredsChanged, setPaymentCredsChanged] = useState(false);
 
   const isPro = appState.subscriptionStatus === 'active' || isAdmin;
-  const hasManyUsers = (activeBot?.usersCount || 0) > 10;
-
-  // Токен блокируется только если нет PRO подписки И юзеров больше 10
-  const isTokenLocked = !isPro && hasManyUsers;
+  // The server keeps this flag after a database reset, so clearing leads cannot
+  // be used to bypass the token-change restriction.
+  const isTokenLocked = !isPro && activeBot?.isTokenLocked === true;
 
   const canEditToken = !isTokenLocked;
   const canEditPayment = true;
 
-  const [isSaving, setIsSaving] = useState(false);
   const { showAlert } = useAlert();
-  const { setToastMessage } = useAppState();
 
   const handleSave = async () => {
     if (!activeBot) return;
-    setIsSaving(true);
     try {
       const { apiService } = await import('../../services/api');
-      await apiService.updateBot(activeBot.id, {
-        name,
-        token,
+      const updated = await apiService.updateBot(activeBot.id, {
+        displayName: name,
+        token: token || undefined,
         offerUrl,
         offerInstallments,
         paymentProvider: provider,
-        paymentCreds: keys
+        paymentCreds: paymentCredsChanged ? keys : undefined,
       });
-      activeBot.name = name;
-      activeBot.token = token;
-      activeBot.offerUrl = offerUrl;
-      activeBot.offerInstallments = offerInstallments;
-      activeBot.paymentProvider = provider;
-      activeBot.paymentKeys = keys;
-      setToastMessage("Настройки успешно сохранены!");
+      const savedFunnel = await apiService.saveFunnel(activeBot.id, blocks, false);
+      setAppState(prev => {
+        const nextBot = {
+          ...activeBot,
+          name: updated.displayName || name,
+          token: token || activeBot.token,
+          offerUrl: updated.offerUrl ?? offerUrl,
+          offerInstallments: updated.offerInstallments ?? offerInstallments,
+          paymentProvider: updated.paymentProvider ?? provider,
+          paymentKeys: paymentCredsChanged ? keys : activeBot.paymentKeys,
+          hasPaymentCredentials: updated.hasPaymentCredentials ?? activeBot.hasPaymentCredentials,
+          username: updated.username || activeBot.username,
+          mediaSyncDone: updated.mediaSyncDone ?? activeBot.mediaSyncDone,
+          botUrl: updated.botUrl ?? activeBot.botUrl,
+        };
+        return {
+          ...prev,
+          bots: prev.bots.map(bot => bot.id === activeBot.id ? {
+            ...nextBot,
+            funnelComplete: savedFunnel.funnelComplete,
+            status: savedFunnel.botStatus === 'active' ? 'active' : 'inactive',
+          } : bot),
+          activeBot: prev.activeBot?.id === activeBot.id ? {
+            ...nextBot,
+            funnelComplete: savedFunnel.funnelComplete,
+            status: savedFunnel.botStatus === 'active' ? 'active' : 'inactive',
+          } : prev.activeBot,
+          isDirty: false,
+        };
+      });
+      setToastMessage(savedFunnel.stopped
+        ? "Настройки сохранены: бот остановлен до завершения воронки"
+        : savedFunnel.funnelComplete
+          ? "Настройки успешно сохранены!"
+          : `Настройки сохранены: ${savedFunnel.readinessReasons[0] || 'завершите воронку перед запуском'}`);
       onSave();
       onClose();
     } catch (e: any) {
-      setIsSaving(false);
       showAlert({
         title: "Ошибка сохранения",
         message: e.message || "Произошла ошибка при сохранении настроек.",
@@ -158,7 +182,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 onChange={(e) => setToken(e.target.value)}
                 onFocus={handleFocus}
                 disabled={!canEditToken}
-                placeholder="Например: 1234567890:AAH_..."
+                placeholder={activeBot?.tokenPreview || "Например: 1234567890:AAH_..."}
                 className="input"
                 style={{ paddingLeft: '40px', opacity: !canEditToken ? 0.6 : 1, cursor: !canEditToken ? 'not-allowed' : 'text', width: '100%' }}
               />
@@ -210,6 +234,11 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           {/* Payment provider */}
           <div>
             <label className="text-label" style={{ display: 'block', marginBottom: '12px' }}>Платёжная система</label>
+            {activeBot?.hasPaymentCredentials && !paymentCredsChanged && (
+              <p className="mb-3 rounded-lg bg-[var(--color-success-soft)] px-3 py-2 text-[12px] font-medium text-[var(--color-success)]">
+                Ключи API сохранены. В целях безопасности они не отображаются; заполните поля, только если хотите заменить ключи.
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-3 mb-4">
               {(Object.keys(PAYMENT_PROVIDERS) as PaymentProvider[]).map(p => {
                 const info = PROVIDER_INFO[p];
@@ -218,7 +247,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 return (
                   <button
                     key={p}
-                    onClick={() => { setProvider(p); setKeys({}); }}
+                    onClick={() => { setProvider(p); setKeys({}); setPaymentCredsChanged(true); }}
                     disabled={!canEditPayment}
                     className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${!canEditPayment ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--color-surface-2)]'}`}
                     style={{
@@ -259,9 +288,12 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                       <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">{field.label}</label>
                       <input
                         type="text"
-                        placeholder={field.hint}
+                        placeholder={activeBot?.paymentCredentialsPreview?.[field.key] || field.hint}
                         value={keys[field.key] || ''}
-                        onChange={(e) => setKeys(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        onChange={(e) => {
+                          setPaymentCredsChanged(true);
+                          setKeys(prev => ({ ...prev, [field.key]: e.target.value }));
+                        }}
                         onFocus={handleFocus}
                         disabled={!canEditPayment}
                         className="input w-full"

@@ -195,6 +195,50 @@ async def process_agreement(callback: CallbackQuery):
         )
 
 
+async def _send_tariff_invoice(callback: CallbackQuery, bot_config, funnel, tariff):
+    """Create a YooKassa link and replace the loading message with an invoice."""
+    loading_message = await callback.message.answer(
+        text="⏳ <b>Формируем счёт на оплату…</b>\n<i>Пожалуйста, подождите несколько секунд.</i>"
+    )
+    node_checkout = _get_payment_node(funnel)
+    tariff_name = getattr(tariff, "name", "Доступ") or "Доступ"
+    tariff_description = getattr(tariff, "description", "") or ""
+    amount = float(getattr(tariff, "price", 0) or 0)
+    message_text = _get_node_text(node_checkout) if node_checkout else ""
+    button_text = _get_node_button_text(node_checkout, default="🟢 Оплатить") or "🟢 Оплатить"
+
+    tariff_details = f"<b>{tariff_name}</b>\n"
+    if tariff_description:
+        tariff_details += f"{tariff_description}\n"
+    tariff_details += f"К оплате: <b>{amount:,.0f} ₽</b>".replace(",", " ")
+    if not message_text:
+        message_text = f"<b>Ваш счёт готов!</b>\n\n{tariff_details}"
+
+    payment_url = await generate_payment_link(
+        bot_config=bot_config,
+        amount=amount,
+        description=f"{tariff_name}: {tariff_description}".strip(": "),
+        lead_telegram_id=callback.from_user.id,
+    )
+    if not payment_url:
+        await loading_message.edit_text("Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку.")
+        try:
+            from services.billing_notifications import notify_billing_user
+
+            await notify_billing_user(
+                bot_config.owner.telegram_id,
+                f"⚠️ Не удалось сформировать счёт для лида {callback.from_user.full_name}. Проверьте реквизиты кассы в настройках бота «{bot_config.display_name}».",
+            )
+        except Exception as exc:
+            logger.warning("Не удалось уведомить владельца о сбое счёта: %s", exc)
+        return
+
+    pay_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=button_text, url=payment_url, style="success")]]
+    )
+    await loading_message.edit_text(text=message_text, reply_markup=pay_keyboard)
+
+
 @user_bot_router.callback_query(F.data == "payment")
 async def process_payment_button(callback: CallbackQuery):
     try:
@@ -231,47 +275,32 @@ async def process_payment_button(callback: CallbackQuery):
         else:
             raise
 
-    loading_message = await callback.message.answer(
-        text="⏳ <b>Информационная система формирует счет на оплату...</b>\n<i>Пожалуйста, подождите несколько секунд.</i>"
-    )
-
     funnel = await get_funnel_by_bot_id(tg_bot_id)
     node_checkout = _get_payment_node(funnel)
-    message_text = _get_node_text(node_checkout) if node_checkout else "<b>Ваш счет готов!</b>\nНажмите кнопку ниже для оплаты:"
-    button_text = _get_node_button_text(node_checkout, default="💸 Оплатить")
+    tariffs = list(getattr(node_checkout, "tariffs", []) or [])
+    if not tariffs:
+        await callback.message.answer("Тарифы ещё не настроены. Обратитесь к владельцу бота.")
+        return
+    if len(tariffs) > 1:
+        selection_text = getattr(node_checkout, "tariff_selection_text", "") or "Выберите подходящий тариф:"
+        await callback.message.answer(selection_text, reply_markup=user_tariff_keyboard(tariffs))
+        return
+    await _send_tariff_invoice(callback, bot_config, funnel, tariffs[0])
 
-    amount = 1500.0
-    if hasattr(funnel, "global_settings") and getattr(funnel.global_settings, "payment_amount", None):
-        amount = funnel.global_settings.payment_amount
-    elif hasattr(node_checkout, "tariffs") and node_checkout.tariffs:
-        amount = node_checkout.tariffs[0].price
 
-    payment_url = None
-    if bot_config and funnel:
-        payment_url = await generate_payment_link(
-            bot_config=bot_config,
-            amount=amount,
-            description="Оплата доступа",
-            lead_telegram_id=lead_id,
-        )
-
-    if not payment_url:
-        payment_url = "https://yookassa.ru"
-        logger.warning(
-            f"Касса для бота {tg_bot_id} не настроена или недоступна, выдана ссылка-заглушка."
-        )
-
-    pay_keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text=button_text, url=payment_url)]]
-    )
-
+@user_bot_router.callback_query(F.data.startswith("payment_tariff:"))
+async def process_tariff_choice(callback: CallbackQuery):
     try:
-        await loading_message.edit_text(
-            text=message_text,
-            reply_markup=pay_keyboard,
-        )
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            pass
-        else:
-            raise
+        await callback.answer()
+    except TelegramBadRequest:
+        return
+
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    funnel = await get_funnel_by_bot_id(callback.bot.id)
+    node_checkout = _get_payment_node(funnel)
+    tariff_id = callback.data.split(":", 1)[1]
+    tariff = next((item for item in (getattr(node_checkout, "tariffs", []) or []) if item.id == tariff_id), None)
+    if not bot_config or not funnel or not tariff:
+        await callback.message.answer("Тариф больше недоступен. Откройте меню оплаты заново.")
+        return
+    await _send_tariff_invoice(callback, bot_config, funnel, tariff)

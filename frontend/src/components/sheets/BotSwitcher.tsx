@@ -10,7 +10,7 @@ interface BotSwitcherProps {
   onSelect: (id: string) => void;
   onAddBot: () => void;
   onClose: () => void;
-  onToggleStatus?: (botId: string, newStatus: 'active' | 'inactive') => void;
+  onToggleStatus?: (botId: string, newStatus: 'active' | 'inactive') => Promise<void>;
 }
 
 export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, onAddBot, onClose, onToggleStatus }: BotSwitcherProps) => {
@@ -30,6 +30,7 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -8, scale: 0.97 }}
         transition={{ duration: 0.15 }}
+        className="fixed top-[74px] left-4 right-4 mx-auto flex w-[calc(100%-32px)] max-w-[440px] flex-col overflow-hidden lg:top-[85px] lg:left-4 lg:right-auto lg:mx-0 lg:w-[360px]"
         style={{
           zIndex: 101,
           background: 'var(--color-surface)',
@@ -37,8 +38,8 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-float)',
           padding: '6px',
+          maxHeight: 'min(560px, calc(100dvh - 96px))',
         }}
-        className="fixed top-[74px] left-[16px] right-[16px] mx-auto max-w-[320px] lg:top-[85px] lg:left-[16px] lg:right-auto lg:mx-0 lg:w-[228px]"
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', marginBottom: '2px' }}>
           <span style={{ fontSize: '12px', color: 'var(--color-foreground-tertiary)', fontWeight: 500 }}>Ваши боты</span>
@@ -47,7 +48,8 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
           </button>
         </div>
 
-        {/* Active bots */}
+        {/* The list scrolls while the title and add button stay visible. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
         {bots.map(bot => (
           <div
             key={bot.id}
@@ -98,6 +100,7 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
             </button>
           </div>
         ))}
+        </div>
 
 
 

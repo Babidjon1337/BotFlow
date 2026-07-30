@@ -28,7 +28,7 @@ export function CheckoutSheet({ tariffId, onClose, onSuccess }: CheckoutSheetPro
 
   const currentTariff = tariffDetails[tariffId];
 
-  const handlePay = () => {
+  const handlePay = async () => {
     if (!email.includes('@') || !email.includes('.')) {
       setError('Пожалуйста, введите корректный email');
       return;
@@ -41,11 +41,21 @@ export function CheckoutSheet({ tariffId, onClose, onSuccess }: CheckoutSheetPro
     setError('');
     setIsLoading(true);
 
-    // Эмуляция запроса к бэкенду (FastAPI) для генерации ссылки ЮKassa
-    setTimeout(() => {
+    try {
+      const { apiService } = await import('../../services/api');
+      const checkout = await apiService.createBillingCheckout(tariffId);
       setIsLoading(false);
       onSuccess(email);
-    }, 1500);
+      const telegram = (window as any).Telegram?.WebApp;
+      if (telegram?.openLink) {
+        telegram.openLink(checkout.confirmationUrl);
+      } else {
+        window.location.assign(checkout.confirmationUrl);
+      }
+    } catch (paymentError) {
+      setIsLoading(false);
+      setError(paymentError instanceof Error ? paymentError.message : 'Не удалось создать платёж');
+    }
   };
 
   return (

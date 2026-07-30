@@ -17,6 +17,10 @@ from services.security import crypto
 from loggers import logger
 from keyboard.user_kb import *
 from services.funnel_message import send_funnel_node_message
+from database.requests.billing_rq import get_users_due_for_subscription_renewal
+from services.billing_notifications import notify_billing_user
+from services.saas_billing import BillingError, create_recurring_payment
+from database.requests.bot_rq import enforce_non_pro_bot_limits
 
 scheduler = AsyncIOScheduler()
 shared_scheduler_session = AiohttpSession()
@@ -48,6 +52,32 @@ async def check_reminders_job():
 
     if task_ids_to_delete:
         await delete_list_tasks(task_ids_to_delete)
+
+
+async def renew_pro_subscriptions_job():
+    """Attempt due automatic PRO renewals; each attempt is idempotent in YooKassa."""
+    users = await get_users_due_for_subscription_renewal()
+    for user in users:
+        try:
+            was_applied, renewed_user = await create_recurring_payment(user)
+            if was_applied and renewed_user:
+                await notify_billing_user(
+                    renewed_user.telegram_id,
+                    "✅ С карты списано <b>3 000 ₽</b>. PRO-подписка продлена на 30 дней.",
+                )
+        except BillingError as exc:
+            logger.warning("Не удалось запустить продление PRO для %s: %s", user.id, exc)
+            if user.subscription_retry_count >= 2:
+                await enforce_non_pro_bot_limits(user.id)
+                await notify_billing_user(
+                    user.telegram_id,
+                    "❌ Не удалось продлить PRO после трёх попыток. Подписка завершена; доступны только ваши лицензированные боты.",
+                )
+            else:
+                await notify_billing_user(
+                    user.telegram_id,
+                    "⚠️ Не удалось автоматически продлить <b>PRO</b>. Мы повторим попытку завтра.",
+                )
 
 
 async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[dict]:
@@ -119,6 +149,13 @@ def start_scheduler():
         check_reminders_job,
         trigger="interval",
         seconds=60,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        renew_pro_subscriptions_job,
+        trigger="interval",
+        minutes=15,
         max_instances=1,
         coalesce=True,
     )

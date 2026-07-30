@@ -168,6 +168,37 @@ async def set_bot_status(bot_id: int, status: str) -> BotConfig | None:
         return bot
 
 
+async def assign_lifetime_license(bot_id: int) -> BotConfig | None:
+    async with async_session() as session:
+        bot = await session.get(BotConfig, bot_id)
+        if not bot:
+            return None
+        bot.has_lifetime_license = True
+        await session.commit()
+        await session.refresh(bot)
+        return bot
+
+
+async def enforce_non_pro_bot_limits(owner_id: int) -> None:
+    """After PRO ends, keep at most one licensed bot public and stop all others."""
+    async with async_session() as session:
+        bots = list(
+            (
+                await session.scalars(
+                    select(BotConfig)
+                    .where(BotConfig.owner_id == owner_id, BotConfig.status == "active")
+                    .order_by(BotConfig.id)
+                )
+            ).all()
+        )
+        licensed_active = [bot for bot in bots if bot.has_lifetime_license]
+        keep_bot_id = licensed_active[0].id if licensed_active else None
+        for bot in bots:
+            if bot.id != keep_bot_id:
+                bot.status = "draft"
+        await session.commit()
+
+
 async def update_bot_funnel(
     bot_id: int, funnel_schema: dict, funnel_complete: bool
 ) -> BotConfig | None:

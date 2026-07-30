@@ -5,6 +5,7 @@ from database.models import User, BotConfig, ScheduledTask, Lead, async_session
 from datetime import datetime, timedelta
 
 from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
+from services.funnel_schema import parse_stored_funnel_schema
 from loggers import logger
 
 
@@ -19,6 +20,19 @@ async def get_lead(bot_id: int, telegram_id: int) -> Lead | None:
         )
 
 
+async def delete_leads_by_bot_id(bot_id: int) -> int:
+    """Delete a bot's leads and their scheduled messages, returning the lead count."""
+    async with async_session() as session:
+        lead_ids = select(Lead.id).where(Lead.bot_id == bot_id)
+        count = await session.scalar(
+            select(func.count()).select_from(Lead).where(Lead.bot_id == bot_id)
+        )
+        await session.execute(delete(ScheduledTask).where(ScheduledTask.lead_id.in_(lead_ids)))
+        await session.execute(delete(Lead).where(Lead.bot_id == bot_id))
+        await session.commit()
+        return int(count or 0)
+
+
 async def get_funnel_by_bot_id(tg_bot_id: int):
     async with async_session() as session:
         result = await session.scalar(
@@ -26,9 +40,7 @@ async def get_funnel_by_bot_id(tg_bot_id: int):
         )
         if not result or not result.funnel_schema:
             return None
-        if isinstance(result.funnel_schema.get("nodes"), dict):
-            return FunnelSchemaOld.model_validate(result.funnel_schema)
-        return FunnelSchemaV2.model_validate(result.funnel_schema)
+        return parse_stored_funnel_schema(result.funnel_schema)
 
 
 async def create_lead(
@@ -108,7 +120,7 @@ async def update_lead_agreement(tg_bot_id: int, telegram_id: int, agreed: bool =
             await create_reminder(bot.id, lead.id, step_just_sent=start_step)
 
 
-async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int):
+async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int) -> bool:
     """
     Вызывается вебхуком, когда прошла оплата!
     Переводит человека на шаг успеха и стирает все его предстоящие дожимы.
@@ -118,22 +130,26 @@ async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int):
             select(BotConfig).where(BotConfig.tg_bot_id == tg_bot_id)
         )
         if not bot:
-            return
+            return False
 
-        lead = await session.scalar(
-            select(Lead).where(Lead.bot_id == bot.id, Lead.telegram_id == telegram_id)
-        )
-
-        if lead:
-            lead.current_step_id = "node_success"
-            lead.has_purchased = True
-
-            await session.execute(
-                delete(ScheduledTask).where(ScheduledTask.lead_id == lead.id)
+        result = await session.execute(
+            update(Lead)
+            .where(
+                Lead.bot_id == bot.id,
+                Lead.telegram_id == telegram_id,
+                Lead.has_purchased.is_(False),
             )
+            .values(current_step_id="node_success", has_purchased=True)
+            .returning(Lead.id)
+        )
+        lead_id = result.scalar_one_or_none()
+        if lead_id is None:
+            return False
 
-            await session.commit()
-            logger.info(f"🎉 Лид {telegram_id} успешно оплатил! Дожимы отменены.")
+        await session.execute(delete(ScheduledTask).where(ScheduledTask.lead_id == lead_id))
+        await session.commit()
+        logger.info(f"🎉 Лид {telegram_id} успешно оплатил! Дожимы отменены.")
+        return True
 
 
 async def get_leads_by_bot_id(

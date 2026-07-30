@@ -421,29 +421,47 @@ export const Build = () => {
   const [, setForceRender] = useState(0);
   const { toggleBot, isToggling } = useBotToggle();
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (!appState.activeBot) return;
+    const activeBotId = appState.activeBot.id;
     setIsSaving(true);
-    setTimeout(() => {
+    try {
+      const { apiService } = await import("../../services/api");
+      const savedFunnel = await apiService.saveFunnel(activeBotId, blocks, isAllBlocksComplete);
       setIsSaving(false);
-      if (Math.random() < 0.1) {
-        showAlert({
-          title: "Ошибка сохранения",
-          message:
-            "Не удалось сохранить воронку. Проверьте подключение к интернету или попробуйте позже.",
-          type: "danger",
-          confirmText: "Понятно",
-          cancelText: "",
-        });
-      } else {
-        setAppState((prev) => ({ ...prev, isDirty: false }));
-        setToastMessage("Изменения сохранены");
-      }
-    }, 800);
+      setAppState((prev) => ({
+        ...prev,
+        isDirty: false,
+        bots: prev.bots.map(bot => bot.id === activeBotId ? {
+          ...bot,
+          funnelComplete: savedFunnel.funnelComplete,
+          status: savedFunnel.botStatus === "active" ? "active" : "inactive",
+        } : bot),
+        activeBot: prev.activeBot?.id === activeBotId
+          ? {
+            ...prev.activeBot,
+            funnelComplete: savedFunnel.funnelComplete,
+            status: savedFunnel.botStatus === "active" ? "active" : "inactive",
+          }
+          : prev.activeBot,
+      }));
+      setToastMessage(savedFunnel.stopped
+        ? "Воронка сохранена: бот остановлен до завершения настройки"
+        : savedFunnel.funnelComplete
+          ? "Воронка сохранена"
+          : `Воронка сохранена: ${savedFunnel.readinessReasons[0] || 'завершите настройку перед запуском'}`);
+    } catch (error) {
+      setIsSaving(false);
+      showAlert({
+        title: "Не удалось сохранить воронку",
+        message: error instanceof Error ? error.message : "Проверьте подключение к интернету и попробуйте ещё раз.",
+        type: "danger",
+        confirmText: "Понятно",
+        cancelText: "",
+      });
+    }
   };
 
-  const hasMainSettings = !!(
-    appState.activeBot?.token && appState.activeBot?.name
-  );
   const paymentBlock = getBlock("payment");
   const paymentMode = paymentBlock?.paymentMode || "auto";
 
@@ -662,7 +680,7 @@ export const Build = () => {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
-        className={!appState.activeBot.mediaSyncDone ? "flex-1 flex flex-col justify-center items-center h-[calc(100vh-160px)] w-full" : `grid grid-cols-1 ${hasMainSettings ? "lg:grid-cols-[1fr_340px]" : ""} gap-6`}
+        className={!appState.activeBot.mediaSyncDone ? "flex-1 flex flex-col justify-center items-center h-[calc(100vh-160px)] w-full" : "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"}
       >
         {!appState.activeBot.mediaSyncDone ? (
           <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[24px] p-8 md:p-12 text-center shadow-lg flex flex-col items-center max-w-2xl w-full mx-auto my-auto mt-12 lg:mt-0">
@@ -698,8 +716,8 @@ export const Build = () => {
             display: "flex",
             flexDirection: "column",
             gap: "8px",
-            maxWidth: hasMainSettings ? "none" : "600px",
-            margin: hasMainSettings ? "0" : "0 auto",
+            maxWidth: "none",
+            margin: "0",
             width: "100%",
           }}
         >
@@ -972,7 +990,7 @@ export const Build = () => {
             >
               <div onClick={() => setSelectedBlockId("payment")}>
                 <PaymentBlockEditor
-                  node={getBlock("payment")!}
+                  node={getBlock("payment")}
                   onChange={(field, value) =>
                     updateBlock("payment", field, value)
                   }
@@ -1663,7 +1681,7 @@ export const Build = () => {
                   if (tg) tg.HapticFeedback.impactOccurred("medium");
                   handleSave();
                 }}
-                disabled={isSaving || !isAllBlocksComplete}
+                disabled={isSaving}
               >
                 {isSaving ? (
                   <RotateCcw size={14} className="animate-spin" />

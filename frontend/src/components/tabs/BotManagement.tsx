@@ -35,7 +35,7 @@ export const BotManagement = () => {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const { showConfirm } = useAlert();
+  const { showConfirm, showAlert } = useAlert();
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -79,15 +79,56 @@ export const BotManagement = () => {
     }
   };
 
-  const onDeleteBot = (botId: string) => {
+  const onDeleteBot = async (botId: string) => {
     const tg = (window as any).Telegram?.WebApp;
     if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
+    try {
+      const { apiService } = await import('../../services/api');
+      await apiService.deleteBot(botId);
+      setAppState((prev) => {
+        const botsAfterDeletion = prev.bots.filter((bot) => bot.id !== botId);
+        return {
+          ...prev,
+          bots: botsAfterDeletion,
+          activeBot: prev.activeBot?.id === botId ? botsAfterDeletion[0] ?? null : prev.activeBot,
+        };
+      });
+    } catch (error) {
+      showAlert({
+        title: 'Не удалось удалить бота',
+        message: error instanceof Error ? error.message : 'Повторите попытку позже.',
+        type: 'danger',
+        confirmText: 'Закрыть',
+        cancelText: '',
+      });
+    }
+  };
 
-    setAppState((prev) => ({
-      ...prev,
-      bots: prev.bots.filter((b) => b.id !== botId),
-      activeBot: prev.activeBot?.id === botId ? null : prev.activeBot,
-    }));
+  const onResetLeads = async (botId: string) => {
+    try {
+      const { apiService } = await import('../../services/api');
+      const result = await apiService.resetBotLeads(botId);
+      setAppState(prev => ({
+        ...prev,
+        bots: prev.bots.map(bot => bot.id === botId ? { ...bot, usersCount: 0 } : bot),
+        activeBot: prev.activeBot?.id === botId ? { ...prev.activeBot, usersCount: 0 } : prev.activeBot,
+      }));
+      showAlert({
+        title: 'База лидов очищена',
+        message: `Удалено записей: ${result.deletedCount}. Блокировка смены токена сохраняется.`,
+        type: 'success',
+        confirmText: 'Готово',
+        cancelText: '',
+      });
+    } catch (error) {
+      showAlert({
+        title: 'Не удалось очистить базу',
+        message: error instanceof Error ? error.message : 'Повторите попытку позже.',
+        type: 'danger',
+        confirmText: 'Закрыть',
+        cancelText: '',
+      });
+    }
   };
 
   return (
@@ -300,7 +341,7 @@ export const BotManagement = () => {
                                       type: "warning",
                                       confirmText: "Сбросить",
                                       cancelText: "Отмена",
-                                      onConfirm: () => {},
+                                      onConfirm: () => onResetLeads(bot.id),
                                     });
                                   }}
                                   className="w-full flex items-center gap-3 px-3 py-2.5 text-left text-[14px] font-medium text-[var(--color-warning)] hover:bg-[var(--color-warning-soft)] rounded-lg transition-colors"

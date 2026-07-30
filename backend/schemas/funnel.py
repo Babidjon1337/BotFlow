@@ -1,5 +1,13 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from typing import Dict, List, Optional, Literal, Any
+import re
 
 
 # ==========================================
@@ -66,14 +74,18 @@ class FunnelNodeSchema(BaseModel):
     id: str                        # "start" | "push1" | "push2" | "payment"
     step: str                      # отображаемое название
     subtitle: str = ""
-    delay_seconds: int = Field(default=0, alias="delay_seconds")
+    delay_seconds: int = Field(
+        default=0,
+        validation_alias=AliasChoices("delay_seconds", "delay"),
+        serialization_alias="delay_seconds",
+    )
     kind: Literal["message", "reminder", "delivery", "payment"]
     content: str = ""              # HTML-текст (Telegram поддерживает parse_mode="HTML")
     button_text: str = Field(default="", alias="buttonText")
     button_text2: str = Field(default="", alias="buttonText2")
     payment_mode: Literal["auto", "application", "hybrid"] = Field(default="auto", alias="paymentMode")
     manager_text: str = Field(default="", alias="managerText")
-    tariffs: list[TariffSchema] = []
+    tariffs: list[TariffSchema] = Field(default_factory=list)
     tariff_selection_text: str = Field(default="", alias="tariffSelectionText")
     media_file_id: Optional[str] = Field(default=None, alias="mediaFileId")
     media_type: Optional[Literal["photo", "video"]] = Field(default=None, alias="mediaType")
@@ -97,15 +109,30 @@ class FunnelNodeSchema(BaseModel):
                 "24ч": 86400, "24 часа": 86400,
                 "48ч": 172800, "48 часов": 172800,
             }
-            return mapping.get(v.strip(), 0)
+            normalized = v.strip()
+            if normalized in mapping:
+                return mapping[normalized]
+            match = re.fullmatch(r"(\d+)\s*(ч|час|часа|часов|м|мин|минут)", normalized, re.IGNORECASE)
+            if match:
+                amount = int(match.group(1))
+                unit = match.group(2).lower()
+                return amount * 60 if unit.startswith("м") else amount * 3600
+            return 0
         return 0
 
 
 class FunnelSchemaV2(BaseModel):
     version: int = 2
-    nodes: list[FunnelNodeSchema] = []
+    nodes: list[FunnelNodeSchema] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def validate_node_ids(self):
+        node_ids = [node.id for node in self.nodes]
+        if len(node_ids) != len(set(node_ids)):
+            raise ValueError("Funnel node IDs must be unique")
+        return self
 
     def get_node(self, node_id: str) -> Optional[FunnelNodeSchema]:
         """Возвращает узел воронки по его ID."""
@@ -123,4 +150,3 @@ class FunnelSchemaV2(BaseModel):
 
 # Алиас для новой схемы, чтобы импорт FunnelSchema использовал V2
 FunnelSchema = FunnelSchemaV2
-

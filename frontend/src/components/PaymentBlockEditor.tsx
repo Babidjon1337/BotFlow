@@ -6,12 +6,12 @@ import { InfoTooltip } from './InfoTooltip';
 import type { FunnelNode, Tariff } from '../types';
 
 interface PaymentBlockEditorProps {
-  node: FunnelNode;
+  node?: FunnelNode;
   onChange: (field: keyof FunnelNode, value: any) => void;
 }
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, onChange }) => {
-  const tariffs: Tariff[] = node.tariffs || [];
+  const tariffs: Tariff[] = node?.tariffs || [];
 
   const updateTariffs = (newTariffs: Tariff[]) => onChange('tariffs', newTariffs);
 
@@ -64,7 +64,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
               resize: 'none',
               overflow: 'hidden',
             }}
-            value={node.tariffSelectionText || ''}
+            value={node?.tariffSelectionText || ''}
             placeholder="Выберите подходящий тариф ниже:"
             onChange={e => onChange('tariffSelectionText', e.target.value)}
             onInput={(e) => {

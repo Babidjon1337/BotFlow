@@ -1,4 +1,24 @@
 import type { FunnelNode } from "../types";
+import type { ApiBot } from "./botMapper";
+
+export type SubscriptionStatus = "none" | "active" | "expired";
+
+export interface BillingState {
+  telegram_id: number;
+  subscription_status: SubscriptionStatus;
+  subscription_until: string | null;
+  slots_bought: number;
+  subscription_auto_renew: boolean;
+  subscription_retry_count: number;
+  is_admin: boolean;
+}
+
+export interface BillingProduct {
+  id: "basic" | "pro";
+  name: string;
+  price: number;
+  period: "lifetime" | "month";
+}
 
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
@@ -44,14 +64,8 @@ export const apiService = {
   async auth(initData?: string) {
     return fetchApi<{
       status: string;
-      user: {
-        telegram_id: number;
-        subscription_status: "none" | "active" | "expired";
-        subscription_until: string | null;
-        slots_bought: number;
-        is_admin: boolean;
-      };
-      bots: any[];
+      user: BillingState;
+      bots: ApiBot[];
     }>("/api/auth", {
       method: "POST",
       body: JSON.stringify({ init_data: initData || getInitData() }),
@@ -59,7 +73,7 @@ export const apiService = {
   },
 
   async getBots() {
-    return fetchApi<{ bots: any[] }>("/api/bots");
+    return fetchApi<{ bots: ApiBot[] }>("/api/bots");
   },
 
   async createBot(data: {
@@ -99,6 +113,12 @@ export const apiService = {
     });
   },
 
+  async resetBotLeads(botId: string | number) {
+    return fetchApi<{ status: string; deletedCount: number }>(`/api/bots/${botId}/leads`, {
+      method: "DELETE",
+    });
+  },
+
   async toggleBot(botId: string | number, action: "start" | "stop") {
     return fetchApi<{
       status: string;
@@ -120,6 +140,12 @@ export const apiService = {
     }>(`/api/bots/${botId}/funnel`);
   },
 
+  async getBotReadiness(botId: string | number) {
+    return fetchApi<{ isReady: boolean; reasons: string[] }>(
+      `/api/bots/${botId}/readiness`
+    );
+  },
+
   async saveFunnel(
     botId: string | number,
     nodes: FunnelNode[],
@@ -129,6 +155,9 @@ export const apiService = {
       status: string;
       message: string;
       funnelComplete: boolean;
+      readinessReasons: string[];
+      botStatus: "active" | "draft";
+      stopped: boolean;
     }>(`/api/bots/${botId}/funnel`, {
       method: "PUT",
       body: JSON.stringify({
@@ -174,6 +203,20 @@ export const apiService = {
     }>(`/api/bots/${botId}/stats`);
   },
 
+  async sendInvoice(
+    botId: string | number,
+    leadTelegramId: number,
+    tariffIds: string[]
+  ) {
+    return fetchApi<{ status: string; message: string }>(
+      `/api/bots/${botId}/invoices`,
+      {
+        method: "POST",
+        body: JSON.stringify({ leadTelegramId, tariffIds }),
+      }
+    );
+  },
+
   async uploadFile(file: File) {
     const formData = new FormData();
     formData.append("file", file);
@@ -181,6 +224,28 @@ export const apiService = {
       method: "POST",
       body: formData,
     });
+  },
+
+  async createBillingCheckout(product: "basic" | "pro", email?: string) {
+    return fetchApi<{ paymentId: string; confirmationUrl: string }>(
+      "/api/billing/checkout",
+      {
+        method: "POST",
+        body: JSON.stringify({ product, email }),
+      }
+    );
+  },
+
+  async getBillingCatalog() {
+    return fetchApi<{ products: BillingProduct[] }>("/api/billing/catalog");
+  },
+
+  async getBillingStatus() {
+    return fetchApi<BillingState>("/api/billing/status");
+  },
+
+  async cancelBilling() {
+    return fetchApi<BillingState>("/api/billing/cancel", { method: "POST" });
   },
 };
 

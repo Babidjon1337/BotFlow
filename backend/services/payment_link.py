@@ -16,6 +16,44 @@ from loggers import logger
 http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=True)
 
 
+def _yookassa_credentials(creds: dict) -> tuple[str | None, str | None]:
+    return (
+        creds.get("shop_id") or creds.get("shopId"),
+        creds.get("secret_key") or creds.get("secretKey") or creds.get("api_key"),
+    )
+
+
+async def validate_payment_credentials(provider: str | None, creds: dict | None) -> tuple[bool, str]:
+    """Check payment credentials without creating a charge."""
+    if not provider:
+        return False, "Выберите платёжного провайдера."
+    credentials = creds or {}
+    normalized_provider = provider.lower()
+    if normalized_provider == "yookassa":
+        shop_id, secret_key = _yookassa_credentials(credentials)
+        if not shop_id or not secret_key:
+            return False, "Укажите Shop ID и секретный ключ ЮKassa."
+        try:
+            response = await http_client.get(
+                "https://api.yookassa.ru/v3/me",
+                auth=(str(shop_id), str(secret_key)),
+            )
+        except httpx.HTTPError:
+            return False, "Не удалось связаться с ЮKassa. Проверьте интернет и повторите попытку."
+        if response.status_code == 200:
+            return True, "ЮKassa подключена."
+        if response.status_code in (401, 403):
+            return False, "ЮKassa отклонила реквизиты. Проверьте Shop ID и секретный ключ."
+        return False, "ЮKassa временно не подтвердила реквизиты. Попробуйте сохранить позже."
+    if normalized_provider == "robokassa":
+        valid = bool(credentials.get("merchant_login") and credentials.get("password1"))
+        return (True, "Реквизиты Robokassa заполнены.") if valid else (False, "Укажите Merchant Login и пароль Robokassa.")
+    if normalized_provider == "prodamus":
+        valid = bool(credentials.get("api_key") and credentials.get("domain"))
+        return (True, "Реквизиты Prodamus заполнены.") if valid else (False, "Укажите API-ключ и домен Prodamus.")
+    return False, "Этот платёжный провайдер не поддерживается."
+
+
 async def generate_payment_link(
     bot_config: BotConfig, amount: float, description: str, lead_telegram_id: int
 ) -> Optional[str]:
@@ -53,11 +91,10 @@ async def generate_payment_link(
 async def _create_yookassa_link(
     creds: dict, amount: float, description: str, telegram_id: int
 ) -> Optional[str]:
-    shop_id = creds.get("shop_id")
-    api_key = creds.get("api_key")
+    shop_id, api_key = _yookassa_credentials(creds)
 
     if not shop_id or not api_key:
-        logger.error("Для ЮKassa не переданы shop_id или api_key!")
+        logger.error("Для ЮKassa не переданы shop_id или secret_key!")
         return None
 
     url = "https://api.yookassa.ru/v3/payments"
@@ -68,7 +105,9 @@ async def _create_yookassa_link(
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": "https://t.me/telegram"},
         "description": description,
-        "metadata": {"telegram_id": str(telegram_id)},
+        "metadata": {
+            "telegram_id": str(telegram_id),
+        },
         "receipt": {
             "customer": {"email": f"client_{telegram_id}@telegram-bot.ru"},
             "items": [

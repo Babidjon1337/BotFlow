@@ -25,7 +25,6 @@ const plans: Record<
   {
     key: PlanKey;
     name: string;
-    price: string;
     period: string;
     tagline: string;
     image: string;
@@ -41,7 +40,6 @@ const plans: Record<
   basic: {
     key: "basic",
     name: "Базовый бот",
-    price: "2 000 ₽",
     period: "навсегда",
     tagline: "1 бот без абонентской платы",
     image: "/single_bot.png",
@@ -79,7 +77,6 @@ const plans: Record<
   pro: {
     key: "pro",
     name: "PRO Подписка",
-    price: "3 000 ₽",
     period: "/ мес",
     tagline: "До 10 ботов с полным контролем",
     image: "/pro_sub.png",
@@ -123,8 +120,9 @@ const plans: Record<
 export const Subscription = () => {
   const {
     appState,
-    handlePurchaseSuccess: onPurchaseSuccess,
     setActiveTab,
+    setAppState,
+    setToastMessage,
     isAdmin,
   } = useAppState();
   const onGoToBots = () => setActiveTab("home");
@@ -132,6 +130,8 @@ export const Subscription = () => {
   const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
   const [email, setEmail] = useState("");
   const [isPaying, setIsPaying] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [prices, setPrices] = useState<Partial<Record<PlanKey, number>>>({});
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelledUntil, setCancelledUntil] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -140,6 +140,12 @@ export const Subscription = () => {
   const [confetti, setConfetti] = useState<
     { id: number; x: number; color: string; delay: number }[]
   >([]);
+
+  useEffect(() => {
+    import("../../services/api").then(({ apiService }) => apiService.getBillingCatalog())
+      .then(({ products }) => setPrices(Object.fromEntries(products.map((product) => [product.id, product.price]))))
+      .catch((error) => setPaymentError(error instanceof Error ? error.message : "Не удалось загрузить тарифы."));
+  }, []);
 
   useEffect(() => {
     if (step === "success") {
@@ -162,13 +168,40 @@ export const Subscription = () => {
     setStep("confirm");
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
+    if (!selectedPlan) return;
     setIsPaying(true);
-    setTimeout(() => {
-      onPurchaseSuccess(selectedPlan!);
+    setPaymentError("");
+    try {
+      const { apiService } = await import("../../services/api");
+      const checkout = await apiService.createBillingCheckout(selectedPlan, email || undefined);
+      const telegram = (window as any).Telegram?.WebApp;
+      if (telegram?.openLink) telegram.openLink(checkout.confirmationUrl);
+      else window.location.assign(checkout.confirmationUrl);
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "Не удалось создать платёж.");
+    } finally {
       setIsPaying(false);
-      setStep("success");
-    }, 1500);
+    }
+  };
+
+  const handleCancel = async () => {
+    try {
+      const { apiService } = await import("../../services/api");
+      const billing = await apiService.cancelBilling();
+      setAppState((prev) => ({
+        ...prev,
+        subscriptionStatus: billing.subscription_status,
+        subscriptionUntil: billing.subscription_until,
+        subscriptionAutoRenew: billing.subscription_auto_renew,
+      }));
+      setCancelledUntil(billing.subscription_until);
+      setShowCancelModal(false);
+      setToastMessage("Автопродление отключено. Доступ сохранится до конца периода.");
+    } catch (error) {
+      setPaymentError(error instanceof Error ? error.message : "Не удалось отменить автопродление.");
+      setShowCancelModal(false);
+    }
   };
 
   return (
@@ -298,11 +331,11 @@ export const Subscription = () => {
                   </button>
                   {cancelledUntil ? (
                     <button
-                      onClick={() => setCancelledUntil(null)}
+                      onClick={() => setStep("select")}
                       className="w-full py-3.5 rounded-[16px] text-[15px] font-bold text-[var(--color-success)] bg-[var(--color-success)]/10 hover:bg-[var(--color-success)]/20 transition-colors flex items-center justify-center gap-2"
                     >
                       <RefreshCcw size={18} />
-                      Возобновить подписку
+                      Оформить подписку снова
                     </button>
                   ) : (
                     <button
@@ -366,7 +399,7 @@ export const Subscription = () => {
                       className="snap-center shrink-0 w-[82vw] md:w-auto flex flex-col rounded-[28px] overflow-hidden border border-transparent cursor-pointer transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] shadow-lg hover:shadow-xl"
                       style={{ background: plan.bgLight }}
                     >
-                      <PlanCard plan={plan} />
+                      <PlanCard plan={plan} price={prices[plan.key]} />
                     </div>
                   ),
                 )}
@@ -407,6 +440,12 @@ export const Subscription = () => {
                 >
                   <ChevronLeft size={20} />
                 </motion.button>
+
+                {paymentError && (
+                  <p role="alert" className="mt-3 text-center text-[13px] text-[var(--color-danger)]">
+                    {paymentError}
+                  </p>
+                )}
                 <h2 className="text-[20px] md:text-[22px] font-bold text-[var(--color-foreground)]">
                   Подтвердите выбор
                 </h2>
@@ -435,7 +474,7 @@ export const Subscription = () => {
                     </h3>
                     <div className="flex items-baseline gap-1">
                       <span className="text-[18px] font-black text-[var(--color-foreground)]">
-                        {plans[selectedPlan].price}
+                        {formatPrice(prices[selectedPlan])}
                       </span>
                       <span className="text-[13px] text-[var(--color-foreground-secondary)]">
                         {plans[selectedPlan].period}
@@ -635,10 +674,7 @@ export const Subscription = () => {
 
               <div className="flex flex-col gap-3 relative z-10">
                 <button
-                  onClick={() => {
-                    setCancelledUntil("25 июля 2025");
-                    setShowCancelModal(false);
-                  }}
+                  onClick={handleCancel}
                   className="w-full py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors shadow-sm"
                 >
                   Да, отменить
@@ -659,7 +695,9 @@ export const Subscription = () => {
 };
 
 // ── Separate component so dark/light background works via CSS class ──
-const PlanCard = ({ plan }: { plan: (typeof plans)[PlanKey] }) => {
+const formatPrice = (price?: number) => price === undefined ? "—" : `${price.toLocaleString("ru-RU")} ₽`;
+
+const PlanCard = ({ plan, price }: { plan: (typeof plans)[PlanKey]; price?: number }) => {
   const isPro = plan.key === "pro";
 
   return (
@@ -724,7 +762,7 @@ const PlanCard = ({ plan }: { plan: (typeof plans)[PlanKey] }) => {
         {/* Price */}
         <div className="flex items-baseline justify-center gap-1 mb-3">
           <span className="text-[22px] font-black text-[var(--color-foreground)]">
-            {plan.price}
+            {formatPrice(price)}
           </span>
           <span className="text-[12px] text-[var(--color-foreground-secondary)] font-medium">
             {plan.period}

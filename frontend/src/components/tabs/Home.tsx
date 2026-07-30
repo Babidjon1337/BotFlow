@@ -29,28 +29,6 @@ import {
 } from "recharts";
 import { useAppState } from "../../providers/AppStateProvider";
 
-import { STATS_DATA } from "../../mockData";
-
-const MOCK_TARIFFS = [
-  {
-    id: "t1",
-    name: 'Тариф "Базовый"',
-    price: "9 900 ₽",
-    desc: "Доступ к материалам на 1 месяц",
-  },
-  {
-    id: "t2",
-    name: 'Тариф "Продвинутый"',
-    price: "29 900 ₽",
-    desc: "Доступ навсегда + закрытый чат",
-  },
-  {
-    id: "t3",
-    name: "Личное Наставничество",
-    price: "150 000 ₽",
-    desc: "Индивидуальная работа с автором",
-  },
-];
 
 // Features list (honest, explaining why it is great)
 const FEATURES = [
@@ -134,7 +112,7 @@ export const Home = () => {
     setActiveTab,
     handleCreateBotClick: onCreateBot,
     isAdmin,
-    setSheet,
+    blocks,
   } = useAppState();
   const hasBot = appState.activeBot !== null;
   const isSubscribed = appState.subscriptionStatus === "active" || isAdmin;
@@ -147,6 +125,7 @@ export const Home = () => {
   const [selectedTariffs, setSelectedTariffs] = useState<string[]>([]);
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
   const [isInvoiceSent, setIsInvoiceSent] = useState(false);
+  const paymentTariffs = blocks.find((block) => block.id === "payment")?.tariffs ?? [];
 
   const [stats, setStats] = useState<any>(null);
   const [isLoadingStats, setIsLoadingStats] = useState(false);
@@ -253,8 +232,7 @@ export const Home = () => {
                 ? new Date(l.createdAt).toLocaleDateString()
                 : "",
               paid: l.hasPurchased,
-              tariffName: "Основной доступ",
-              price: 1500,
+              tariffName: "Оплата получена",
             }));
             setLeads(mappedLeads);
             setIsLoadingLeads(false);
@@ -266,6 +244,25 @@ export const Home = () => {
       });
     }
   }, [appState.activeBot?.id]);
+
+  const sendInvoice = async () => {
+    if (!appState.activeBot || !selectedClientForInvoice || selectedTariffs.length === 0) return;
+    setIsSendingInvoice(true);
+    try {
+      const { apiService } = await import("../../services/api");
+      await apiService.sendInvoice(appState.activeBot.id, selectedClientForInvoice.telegramId, selectedTariffs);
+      setIsInvoiceSent(true);
+      setTimeout(() => {
+        setSelectedClientForInvoice(null);
+        setSelectedTariffs([]);
+        setIsInvoiceSent(false);
+      }, 1800);
+    } catch (error) {
+      console.error("Invoice err", error);
+    } finally {
+      setIsSendingInvoice(false);
+    }
+  };
 
   const filteredClients = leads.filter(
     (c) =>
@@ -956,10 +953,7 @@ export const Home = () => {
                         {client.paid ? (
                           <span className="text-[var(--color-success)] font-semibold flex items-center gap-1">
                             <CheckCircle2 size={13} className="shrink-0" />
-                            <span>
-                              Оплатил: {client.tariffName} (
-                              {client.price?.toLocaleString("ru-RU")} ₽)
-                            </span>
+                            <span>{client.tariffName}</span>
                           </span>
                         ) : (
                           <span className="text-[var(--color-warning)] font-medium flex items-center gap-1">
@@ -972,12 +966,12 @@ export const Home = () => {
                   </div>
                   {!client.paid && (
                     <button
-                      onClick={() =>
-                        setSheet("invoice", {
-                          clientName: client.name,
-                          username: client.username,
-                        })
-                      }
+                      onClick={() => {
+                        setSelectedClientForInvoice(client);
+                        setSelectedTariffs([]);
+                        setShowAllClients(true);
+                        document.body.style.overflow = "hidden";
+                      }}
                       className="shrink-0 px-3.5 py-1.5 ml-3 rounded-xl text-[13px] font-bold transition-all bg-[var(--color-primary-soft)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white shadow-2xs active:scale-95"
                     >
                       Выставить счет
@@ -1122,7 +1116,7 @@ export const Home = () => {
                           </div>
 
                           <div className="flex flex-col gap-3">
-                            {MOCK_TARIFFS.map((tariff) => {
+                            {paymentTariffs.map((tariff) => {
                               const isSelected = selectedTariffs.includes(
                                 tariff.id,
                               );
@@ -1147,7 +1141,7 @@ export const Home = () => {
                                       {tariff.name}
                                     </div>
                                     <div className="text-[13px] text-[var(--color-foreground-secondary)] leading-snug pr-2">
-                                      {tariff.desc}
+                                      {tariff.description}
                                     </div>
                                   </div>
 
@@ -1178,19 +1172,7 @@ export const Home = () => {
 
                         <div className="pt-5 mt-5 border-t border-[var(--color-border)]">
                           <button
-                            onClick={() => {
-                              if (selectedTariffs.length === 0) return;
-                              setIsSendingInvoice(true);
-                              setTimeout(() => {
-                                setIsSendingInvoice(false);
-                                setIsInvoiceSent(true);
-                                setTimeout(() => {
-                                  setSelectedClientForInvoice(null);
-                                  setSelectedTariffs([]);
-                                  setIsInvoiceSent(false);
-                                }, 1800);
-                              }, 1200);
-                            }}
+                            onClick={() => void sendInvoice()}
                             disabled={
                               selectedTariffs.length === 0 || isSendingInvoice
                             }

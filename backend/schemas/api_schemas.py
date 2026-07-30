@@ -1,6 +1,29 @@
+import json
+
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from schemas.funnel import FunnelNodeSchema, FunnelSchemaV2
+
+
+def _mask_secret(value: Any) -> str:
+    text = str(value)
+    if len(text) <= 4:
+        return "•" * len(text)
+    return f"{text[:4]}••••{text[-4:]}"
+
+
+def _payment_credentials_preview(encrypted_credentials: bytes | None) -> Dict[str, str]:
+    if not encrypted_credentials:
+        return {}
+    try:
+        from services.security import crypto
+
+        credentials = json.loads(crypto.decrypt(encrypted_credentials))
+        return {str(key): _mask_secret(value) for key, value in credentials.items() if value}
+    except Exception:
+        return {}
 
 
 class AuthRequest(BaseModel):
@@ -9,6 +32,25 @@ class AuthRequest(BaseModel):
     username: Optional[str] = None
     auth_date: Optional[int] = Field(None, alias="authDate")
     hash: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class BillingCheckoutRequest(BaseModel):
+    product: str
+    email: Optional[str] = None
+
+
+class BillingCheckoutResponse(BaseModel):
+    payment_id: str = Field(..., alias="paymentId")
+    confirmation_url: str = Field(..., alias="confirmationUrl")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ManualInvoiceRequest(BaseModel):
+    lead_telegram_id: int = Field(..., alias="leadTelegramId")
+    tariff_ids: List[str] = Field(..., min_length=1, alias="tariffIds")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -47,6 +89,9 @@ class BotApiResponse(BaseModel):
     media_sync_done: bool = Field(default=False, alias="mediaSyncDone")
     is_token_locked: bool = Field(default=False, alias="isTokenLocked")
     payment_provider: Optional[str] = Field(None, alias="paymentProvider")
+    has_payment_credentials: bool = Field(default=False, alias="hasPaymentCredentials")
+    token_preview: Optional[str] = Field(None, alias="tokenPreview")
+    payment_credentials_preview: Dict[str, str] = Field(default_factory=dict, alias="paymentCredentialsPreview")
     webhook_url: Optional[str] = Field(None, alias="webhookUrl")
     bot_url: Optional[str] = Field(None, alias="botUrl")
     created_at: Optional[str] = Field(None, alias="createdAt")
@@ -58,6 +103,13 @@ class BotApiResponse(BaseModel):
         bot_url = f"https://t.me/{bot.username}" if bot.username else None
         webhook_url = f"{webhook_base_url}/webhook/bots/{bot.id}" if webhook_base_url else None
         created_str = bot.created_at.isoformat() if hasattr(bot, "created_at") and bot.created_at else None
+        token_preview = None
+        try:
+            from services.security import crypto
+
+            token_preview = _mask_secret(crypto.decrypt(bot.bot_token_enc)) if bot.bot_token_enc else None
+        except Exception:
+            pass
         return cls(
             id=bot.id,
             display_name=getattr(bot, "display_name", "Мой бот") or "Мой бот",
@@ -70,6 +122,9 @@ class BotApiResponse(BaseModel):
             media_sync_done=getattr(bot, "media_sync_done", False),
             is_token_locked=getattr(bot, "is_token_locked", False),
             payment_provider=bot.payment_provider,
+            has_payment_credentials=bool(getattr(bot, "payment_creds_enc", None)),
+            token_preview=token_preview,
+            payment_credentials_preview=_payment_credentials_preview(getattr(bot, "payment_creds_enc", None)),
             webhook_url=webhook_url,
             bot_url=bot_url,
             created_at=created_str,
@@ -90,18 +145,24 @@ class BotToggleResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class FunnelUpdateApiRequest(BaseModel):
-    version: int = 2
-    nodes: List[Dict[str, Any]] = []
+class FunnelUpdateApiRequest(FunnelSchemaV2):
     funnel_complete: bool = Field(default=False, alias="funnelComplete")
 
-    model_config = ConfigDict(populate_by_name=True)
+    def as_schema(self) -> FunnelSchemaV2:
+        return FunnelSchemaV2(version=self.version, nodes=self.nodes)
 
 
-class FunnelApiResponse(BaseModel):
-    version: int = 2
-    nodes: List[Dict[str, Any]] = []
+class FunnelApiResponse(FunnelSchemaV2):
     funnel_complete: bool = Field(default=False, alias="funnelComplete")
+
+
+class FunnelSaveResponse(BaseModel):
+    status: str
+    message: str
+    funnel_complete: bool = Field(default=False, alias="funnelComplete")
+    readiness_reasons: List[str] = Field(default_factory=list, alias="readinessReasons")
+    bot_status: str = Field(..., alias="botStatus")
+    stopped: bool = False
 
     model_config = ConfigDict(populate_by_name=True)
 

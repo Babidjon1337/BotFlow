@@ -18,13 +18,11 @@ import { CheckoutSheet } from './components/sheets/CheckoutSheet';
 import { BotCreateSheet } from './components/sheets/BotCreateSheet';
 import { BotSwitcher } from './components/sheets/BotSwitcher';
 import { BillingRenew } from './components/sheets/BillingRenew';
-import { InvoiceSheet } from './components/sheets/InvoiceSheet';
 
 import { Toast } from './components/Toast';
-import { RefreshCw, Bot } from 'lucide-react';
-
-
 import { useAppState } from './providers/AppStateProvider';
+import { mapApiBot } from './services/botMapper';
+import { useBotToggle } from './hooks/useBotToggle';
 
 export default function App() {
   const {
@@ -40,6 +38,7 @@ export default function App() {
     handleCreateBotClick,
     authError,
   } = useAppState();
+  const { toggleBot } = useBotToggle();
 
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
@@ -154,20 +153,7 @@ export default function App() {
           const data = await apiService.getBots();
           if (data && data.bots) {
             setAppState(prev => {
-              const mappedBots = data.bots.map((b: any) => ({
-                id: String(b.id),
-                name: b.displayName || 'Без имени',
-                username: b.username || '@unknown',
-                status: (b.status === 'active' ? 'active' : 'inactive') as 'active' | 'inactive',
-                usersCount: b.usersCount || 0,
-                isTokenLocked: b.isTokenLocked || false,
-                paymentProvider: b.paymentProvider,
-                offerUrl: b.offerUrl,
-                offerInstallments: b.offerInstallments,
-                funnelComplete: b.funnelComplete || false,
-                mediaSyncDone: b.mediaSyncDone || false,
-                botUrl: b.botUrl,
-              }));
+              const mappedBots = data.bots.map(mapApiBot);
               const updatedBot = mappedBots.find((b: any) => String(b.id) === String(prev.activeBot?.id));
               if (updatedBot && updatedBot.mediaSyncDone) {
                 return {
@@ -302,21 +288,13 @@ export default function App() {
             }}
           />
         )}
-        {appState.activeSheet === 'invoice' && (
-          <InvoiceSheet
-            key="invoice"
-            onClose={() => setSheet(null)}
-            clientName={appState.sheetData && 'clientName' in appState.sheetData ? appState.sheetData.clientName : undefined}
-            username={appState.sheetData && 'username' in appState.sheetData ? appState.sheetData.username : undefined}
-          />
-        )}
         {(appState.activeSheet === 'billing_renew' || appState.activeSheet === 'billing_first') && (
           <BillingRenew
             key="billing_renew"
             onClose={() => setSheet(null)}
             onSuccess={() => {
               setSheet(null);
-              setToastMessage('Подписка успешно продлена! 🎉');
+              setToastMessage('Платёж создан. Завершите оплату в ЮKassa.');
             }}
           />
         )}
@@ -329,7 +307,7 @@ export default function App() {
               const tariff = appState.sheetData && 'tariff' in appState.sheetData ? appState.sheetData.tariff : 'basic';
               setAppState(prev => ({ ...prev, userEmail: email }));
               setSheet(null);
-              setToastMessage(`Оплата принята! Спасибо за покупку тарифа ${tariff === 'pro' ? 'PRO' : 'Базовый'} 🎉`);
+              setToastMessage(`Счёт на ${tariff === 'pro' ? 'PRO' : 'лицензию'} создан. Завершите оплату в ЮKassa.`);
             }}
           />
         )}
@@ -348,6 +326,9 @@ export default function App() {
                 usersCount: 0,
                 isTokenLocked: false,
                 paymentProvider: createdBot.paymentProvider,
+                hasPaymentCredentials: createdBot.hasPaymentCredentials === true,
+                tokenPreview: createdBot.tokenPreview,
+                paymentCredentialsPreview: createdBot.paymentCredentialsPreview,
                 offerUrl: createdBot.offerUrl,
                 offerInstallments: createdBot.offerInstallments,
                 funnelComplete: false,
@@ -378,32 +359,11 @@ export default function App() {
               if (bot) setAppState(prev => ({ ...prev, activeBot: bot }));
               setSheet(null);
             }}
-            onToggleStatus={(id, newStatus) => {
-              setAppState(prev => {
-                const isPro = prev.subscriptionStatus === 'active';
-                const nextState = { ...prev };
-                
-                if (!isPro && newStatus === 'active') {
-                  nextState.bots = nextState.bots.map(b => ({
-                    ...b,
-                    status: String(b.id) === String(id) ? 'active' : 'inactive'
-                  }));
-                } else {
-                  nextState.bots = nextState.bots.map(b =>
-                    String(b.id) === String(id) ? { ...b, status: newStatus } : b
-                  );
-                }
-
-                // Синхронизируем activeBot, если он затронут
-                if (nextState.activeBot) {
-                  const updatedActiveBot = nextState.bots.find(b => String(b.id) === String(nextState.activeBot!.id));
-                  if (updatedActiveBot) {
-                    nextState.activeBot = { ...updatedActiveBot };
-                  }
-                }
-                
-                return nextState;
-              });
+            onToggleStatus={async (id) => {
+              const bot = appState.bots.find(item => item.id === id);
+              if (bot) {
+                await toggleBot(bot);
+              }
             }}
           />
         )}
