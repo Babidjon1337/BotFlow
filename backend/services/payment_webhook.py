@@ -7,6 +7,8 @@ module have completed successfully.
 import hashlib
 import hmac
 import json
+import uuid
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -26,6 +28,9 @@ class VerifiedPayment:
     provider: str
     payment_id: str
     telegram_id: int
+    client_payment_id: uuid.UUID | None = None
+    amount: Decimal | None = None
+    currency: str | None = None
 
 
 def _get_credentials(bot_config: Any) -> dict[str, Any]:
@@ -61,9 +66,9 @@ async def verify_payment_notification(
     if normalized_provider == "yookassa":
         return await _verify_yookassa(bot_config, credentials, payload)
     if normalized_provider == "robokassa":
-        return _verify_robokassa(credentials, payload)
+        return _verify_robokassa(credentials, payload, bot_config)
     if normalized_provider == "prodamus":
-        return _verify_prodamus(credentials, payload, headers)
+        return _verify_prodamus(credentials, payload, headers, bot_config)
     raise PaymentWebhookError("Unsupported payment provider")
 
 
@@ -98,6 +103,9 @@ async def _verify_yookassa(
         verified_payment = response.json()
         metadata = verified_payment["metadata"]
         telegram_id = int(metadata["telegram_id"])
+        client_payment_id = uuid.UUID(str(metadata["client_payment_id"]))
+        amount = Decimal(str(verified_payment["amount"]["value"]))
+        currency = str(verified_payment["amount"]["currency"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         raise PaymentWebhookError("YooKassa payment metadata is invalid") from exc
 
@@ -109,14 +117,14 @@ async def _verify_yookassa(
         raise PaymentWebhookError("YooKassa payment is not successful")
 
     payment_bot_id = metadata.get("bot_id")
-    if payment_bot_id is not None and str(payment_bot_id) != str(bot_config.id):
+    if str(payment_bot_id) != str(bot_config.id):
         raise PaymentWebhookError("YooKassa payment belongs to another bot")
 
-    return VerifiedPayment("yookassa", str(payment_id), telegram_id)
+    return VerifiedPayment("yookassa", str(payment_id), telegram_id, client_payment_id, amount, currency)
 
 
 def _verify_robokassa(
-    credentials: Mapping[str, Any], payload: Mapping[str, Any]
+    credentials: Mapping[str, Any], payload: Mapping[str, Any], bot_config: Any | None = None
 ) -> VerifiedPayment:
     out_sum = _value(payload, "OutSum")
     invoice_id = _value(payload, "InvId", "InvID")
@@ -140,16 +148,29 @@ def _verify_robokassa(
         raise PaymentWebhookError("Robokassa signature is invalid")
 
     telegram_id = _value(payload, "shp_telegram_id")
-    try:
+    client_payment_id = _value(payload, "shp_client_payment_id")
+    payment_bot_id = _value(payload, "shp_bot_id")
+    if bot_config is None:
         return VerifiedPayment("robokassa", invoice_id, int(telegram_id or ""))
-    except ValueError as exc:
-        raise PaymentWebhookError("Robokassa Telegram ID is invalid") from exc
+    if payment_bot_id != str(bot_config.id):
+        raise PaymentWebhookError("Robokassa payment belongs to another bot")
+    try:
+        return VerifiedPayment(
+            "robokassa",
+            invoice_id,
+            int(telegram_id or ""),
+            uuid.UUID(client_payment_id or ""),
+            Decimal(out_sum),
+            "RUB",
+        )
+    except (ValueError, InvalidOperation) as exc:
+        raise PaymentWebhookError("Robokassa payment metadata is invalid") from exc
 
 
 def _verify_prodamus(
-    credentials: Mapping[str, Any], payload: Mapping[str, Any], headers: Mapping[str, str]
+    credentials: Mapping[str, Any], payload: Mapping[str, Any], headers: Mapping[str, str], bot_config: Any | None = None
 ) -> VerifiedPayment:
-    if _value(payload, "payment_status", "status") != "success":
+    if (_value(payload, "payment_status", "status") or "").casefold() != "success":
         raise PaymentWebhookError("Prodamus payment is not successful")
 
     secret = (
@@ -178,9 +199,21 @@ def _verify_prodamus(
     if not hmac.compare_digest(expected_signature.casefold(), signature.casefold()):
         raise PaymentWebhookError("Prodamus signature is invalid")
 
-    order_id = _value(payload, "order_num", "order_id")
+    order_id = _value(payload, "order_id", "order_num")
     if not order_id:
         raise PaymentWebhookError("Prodamus order ID is missing")
+    if bot_config is not None:
+        try:
+            return VerifiedPayment(
+                "prodamus",
+                order_id,
+                int(_value(payload, "tg_user_id", "telegram_id") or "0"),
+                uuid.UUID(order_id),
+                Decimal(_value(payload, "sum") or "0"),
+                "RUB",
+            )
+        except (ValueError, InvalidOperation) as exc:
+            raise PaymentWebhookError("Prodamus payment metadata is invalid") from exc
     try:
         telegram_id = int(order_id.split("_", maxsplit=1)[0])
     except ValueError as exc:

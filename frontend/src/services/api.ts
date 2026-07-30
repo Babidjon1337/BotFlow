@@ -11,6 +11,9 @@ export interface BillingState {
   subscription_auto_renew: boolean;
   subscription_retry_count: number;
   is_admin: boolean;
+  email: string | null;
+  email_receipts_enabled: boolean;
+  email_billing_notifications_enabled: boolean;
 }
 
 export interface BillingProduct {
@@ -23,7 +26,7 @@ export interface BillingProduct {
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 function getInitData(): string {
-  // @ts-ignore
+  // @ts-expect-error Telegram injects WebApp into the browser window.
   return window.Telegram?.WebApp?.initData || "";
 }
 
@@ -51,7 +54,7 @@ async function fetchApi<T>(
     try {
       const errJson = await response.json();
       if (errJson.detail) errorDetail = errJson.detail;
-    } catch (e) {
+    } catch {
       // ignore
     }
     throw new Error(errorDetail);
@@ -61,6 +64,16 @@ async function fetchApi<T>(
 }
 
 export const apiService = {
+  async updateNotificationSettings(data: {
+    email?: string;
+    emailReceiptsEnabled: boolean;
+    emailBillingNotificationsEnabled: boolean;
+  }) {
+    return fetchApi<BillingState>("/api/profile/notification-settings", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
   async auth(initData?: string) {
     return fetchApi<{
       status: string;
@@ -80,11 +93,11 @@ export const apiService = {
     token: string;
     displayName: string;
     paymentProvider?: string;
-    paymentCreds?: Record<string, any>;
+    paymentCreds?: Record<string, unknown>;
     offerUrl?: string;
     offerInstallments?: boolean;
   }) {
-    return fetchApi<any>("/api/bots", {
+    return fetchApi<ApiBot>("/api/bots", {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -96,12 +109,12 @@ export const apiService = {
       token?: string;
       displayName?: string;
       paymentProvider?: string;
-      paymentCreds?: Record<string, any>;
+      paymentCreds?: Record<string, unknown>;
       offerUrl?: string;
       offerInstallments?: boolean;
     }
   ) {
-    return fetchApi<any>(`/api/bots/${botId}`, {
+    return fetchApi<ApiBot>(`/api/bots/${botId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     });
@@ -177,6 +190,26 @@ export const apiService = {
     );
   },
 
+  async uploadBotMedia(botId: string | number, nodeId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return fetchApi<{ id: string; nodeId: string; mediaType: "photo" | "video" | "document"; fileId: string }>(
+      `/api/bots/${botId}/media?node_id=${encodeURIComponent(nodeId)}`,
+      { method: "POST", body: formData }
+    );
+  },
+
+  async getBotMediaPreview(botId: string | number, assetId: string) {
+    const response = await fetch(`${BASE_URL}/api/bots/${botId}/media/${assetId}/preview`, {
+      headers: { "X-Telegram-Init-Data": getInitData() },
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || "Не удалось загрузить предпросмотр файла.");
+    }
+    return response.blob();
+  },
+
   async getLeads(
     botId: string | number,
     search?: string,
@@ -187,7 +220,7 @@ export const apiService = {
     if (search) params.append("search", search);
     params.append("page", str(page));
     params.append("limit", str(limit));
-    return fetchApi<{ leads: any[]; total: number }>(
+    return fetchApi<{ leads: Array<Record<string, unknown>>; total: number }>(
       `/api/bots/${botId}/leads?${params.toString()}`
     );
   },
@@ -217,15 +250,6 @@ export const apiService = {
     );
   },
 
-  async uploadFile(file: File) {
-    const formData = new FormData();
-    formData.append("file", file);
-    return fetchApi<{ url: string; filename: string }>("/api/upload", {
-      method: "POST",
-      body: formData,
-    });
-  },
-
   async createBillingCheckout(product: "basic" | "pro", email?: string) {
     return fetchApi<{ paymentId: string; confirmationUrl: string }>(
       "/api/billing/checkout",
@@ -249,6 +273,6 @@ export const apiService = {
   },
 };
 
-function str(val: any): string {
+function str(val: unknown): string {
   return String(val);
 }

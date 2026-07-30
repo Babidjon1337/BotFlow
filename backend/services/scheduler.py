@@ -17,6 +17,7 @@ from services.security import crypto
 from loggers import logger
 from keyboard.user_kb import *
 from services.funnel_message import send_funnel_node_message
+from services.manager_link import build_manager_deep_link
 from database.requests.billing_rq import get_users_due_for_subscription_renewal
 from services.billing_notifications import notify_billing_user
 from services.saas_billing import BillingError, create_recurring_payment
@@ -108,7 +109,27 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
                         node = nodes.get(step_id)
 
             if node:
-                await send_funnel_node_message(bot, task.lead.telegram_id, node)
+                funnel_schema = bot_config.funnel_schema if isinstance(bot_config.funnel_schema, dict) else {}
+                nodes_value = funnel_schema.get("nodes") or []
+                payment_node = next(
+                    (item for item in nodes_value if isinstance(item, dict) and item.get("id") == "payment"),
+                    {},
+                ) if isinstance(nodes_value, list) else {}
+                mode = payment_node.get("paymentMode") or payment_node.get("payment_mode") or "auto"
+                primary_text = node.get("buttonText") or node.get("button_text") or "Продолжить"
+                secondary_text = node.get("buttonText2") or node.get("button_text2") or "Связаться с менеджером"
+                manager_url = build_manager_deep_link(
+                    payment_node.get("managerUrl") or payment_node.get("manager_url"),
+                    payment_node.get("managerText") or payment_node.get("manager_text"),
+                )
+                await send_funnel_node_message(
+                    bot,
+                    task.lead.telegram_id,
+                    node,
+                    reply_markup=user_funnel_action_keyboard(
+                        mode, primary_text, secondary_text, manager_url
+                    ),
+                )
                 await create_reminder(
                     bot_id=bot_id, lead_id=task.lead.id, step_just_sent=step_id
                 )
@@ -145,12 +166,17 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
 
 
 def start_scheduler():
+    if scheduler.running:
+        logger.info("⏳ Планировщик уже запущен.")
+        return
     scheduler.add_job(
         check_reminders_job,
         trigger="interval",
         seconds=60,
         max_instances=1,
         coalesce=True,
+        id="bot-reminders",
+        replace_existing=True,
     )
     scheduler.add_job(
         renew_pro_subscriptions_job,
@@ -158,12 +184,15 @@ def start_scheduler():
         minutes=15,
         max_instances=1,
         coalesce=True,
+        id="pro-renewals",
+        replace_existing=True,
     )
     scheduler.start()
     logger.info("⏳ Планировщик успешно запущен и следит за дожимами!")
 
 
 async def stop_scheduler():
-    scheduler.shutdown()
+    if scheduler.running:
+        scheduler.shutdown()
     await shared_scheduler_session.close()
     logger.info("🛑 APScheduler и его сессия успешно остановлены.")

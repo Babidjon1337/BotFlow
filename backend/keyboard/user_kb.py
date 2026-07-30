@@ -14,6 +14,35 @@ def user_payment_button(text: str = "💳 Оплатить доступ"):
     )
 
 
+def user_funnel_action_keyboard(
+    mode: str,
+    primary_text: str,
+    secondary_text: str = "",
+    application_url: str | None = None,
+) -> InlineKeyboardMarkup:
+    """Render the same sales mode configured in the Mini App."""
+    if mode == "application":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(
+                text=primary_text,
+                url=application_url,
+                callback_data=None if application_url else "application",
+            )]]
+        )
+    if mode == "hybrid":
+        return InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=primary_text, callback_data="payment")],
+                [InlineKeyboardButton(
+                    text=secondary_text,
+                    url=application_url,
+                    callback_data=None if application_url else "application",
+                )],
+            ]
+        )
+    return user_payment_button(primary_text)
+
+
 def user_tariff_keyboard(tariffs):
     """Build tariff choices for a V2 payment node."""
     rows = []

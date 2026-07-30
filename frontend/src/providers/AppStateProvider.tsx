@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import type { FunnelNode, TabType, AppState, SheetType } from '../types';
@@ -18,9 +19,9 @@ interface AppContextType {
   setToastMessage: React.Dispatch<React.SetStateAction<string | null>>;
   theme: 'light' | 'dark';
   setTheme: React.Dispatch<React.SetStateAction<'light' | 'dark'>>;
-  setSheet: (sheet: SheetType | null, data?: any) => void;
+  setSheet: (sheet: SheetType | null, data?: AppState['sheetData']) => void;
   toggleTheme: () => void;
-  updateBlock: (id: string, field: keyof FunnelNode, value: any) => void;
+  updateBlock: <K extends keyof FunnelNode>(id: string, field: K, value: FunnelNode[K]) => void;
   handleCreateBotClick: () => void;
   handlePurchaseSuccess: (plan: 'basic' | 'pro') => void;
   isAdmin: boolean;
@@ -55,8 +56,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const isAdmin = appState.isAdmin === true;
 
   useEffect(() => {
-    import('../services/api').then(({ apiService }) => {
-      apiService.auth().then(res => {
+    let cancelled = false;
+    void import('../services/api').then(({ apiService }) => apiService.auth()).then(res => {
+      if (!cancelled) {
         const mappedBots = res.bots.map(mapApiBot);
         
         setAppState(prev => ({
@@ -69,33 +71,41 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           isAdmin: res.user.is_admin,
           subscriptionAutoRenew: res.user.subscription_auto_renew,
           subscriptionRetryCount: res.user.subscription_retry_count,
+          userEmail: res.user.email || '',
+          emailReceiptsEnabled: res.user.email_receipts_enabled,
+          emailBillingNotificationsEnabled: res.user.email_billing_notifications_enabled,
           isLoading: false,
         }));
-      }).catch(err => {
+      }
+    }).catch(err => {
+      if (!cancelled) {
         console.error("Auth err", err);
         setAuthError(err.message || "Failed to authenticate");
         setAppState(prev => ({ ...prev, isLoading: false }));
-      });
+      }
     });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    if (appState.activeBot) {
-      import('../services/api').then(({ apiService }) => {
-        apiService.getFunnel(appState.activeBot!.id).then(res => {
+    const activeBotId = appState.activeBot?.id;
+    if (!activeBotId) return;
+    let cancelled = false;
+    void import('../services/api').then(({ apiService }) => apiService.getFunnel(activeBotId)).then(res => {
+      if (!cancelled) {
           if (res.nodes && res.nodes.length > 0) {
             setBlocks(normalizeFunnelNodes(res.nodes));
           } else {
             setBlocks(INITIAL_BLOCKS);
           }
-        }).catch(err => {
+      }
+    }).catch(err => {
+      if (!cancelled) {
           console.error("Funnel load err", err);
           setBlocks(INITIAL_BLOCKS);
-        });
-      });
-    } else if (!appState.isLoading) {
-      setBlocks(INITIAL_BLOCKS);
-    }
+      }
+    });
+    return () => { cancelled = true; };
   }, [appState.activeBot?.id]);
 
   useEffect(() => {
@@ -110,14 +120,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [theme]);
 
-  const setSheet = (sheet: SheetType | null, data?: any) =>
+  const setSheet = (sheet: SheetType | null, data?: AppState['sheetData']) =>
     setAppState(prev => ({ ...prev, activeSheet: sheet, sheetData: data }));
 
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
 
-  const updateBlock = (id: string, field: keyof FunnelNode, value: any) => {
+  const updateBlock = <K extends keyof FunnelNode>(id: string, field: K, value: FunnelNode[K]) => {
     setBlocks(prev => {
       const existingBlock = prev.find(block => block.id === id);
       if (existingBlock) {
@@ -130,11 +140,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const defaultBlock = INITIAL_BLOCKS.find(block => block.id === id);
       return defaultBlock ? [...prev, { ...defaultBlock, [field]: value }] : prev;
     });
-    setAppState(prev => {
-      const existingBlock = blocks.find(block => block.id === id);
-      const hasChanged = !existingBlock || !Object.is(existingBlock[field], value);
-      return hasChanged ? { ...prev, isDirty: true } : prev;
-    });
+    setAppState(prev => ({ ...prev, isDirty: true }));
   };
 
   const handleCreateBotClick = () => {

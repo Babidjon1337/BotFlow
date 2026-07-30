@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { HelpCircle } from 'lucide-react';
@@ -10,16 +10,25 @@ interface InfoTooltipProps {
   side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
+type TooltipCoordinates = {
+  left: number;
+  top: number;
+  actualSide: InfoTooltipProps['side'];
+  arrowLeft: string;
+};
+
 export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className = '', side = 'top' }) => {
   const [show, setShow] = useState(false);
-  const [coords, setCoords] = useState<{ left: number; top: number; actualSide: string }>({ left: 0, top: 0, actualSide: side });
+  const [coords, setCoords] = useState<TooltipCoordinates>({ left: 0, top: 0, actualSide: side, arrowLeft: '50%' });
   const ref = useRef<HTMLDivElement>(null);
 
-  const updatePosition = () => {
+  const updatePosition = useCallback(() => {
     if (!ref.current) return;
     const rect = ref.current.getBoundingClientRect();
     const width = 250; // approximate popover width
-    let actualSide = side;
+    let actualSide: InfoTooltipProps['side'] = side;
+    const iconCenter = rect.left + rect.width / 2;
+    const arrowLeft = `${Math.max(16, Math.min(iconCenter - Math.max(16, Math.min(rect.left + rect.width / 2 - 125, window.innerWidth - 266)), 234))}px`;
 
     if (side === 'right') {
       if (rect.right + width > window.innerWidth && window.innerWidth < 768) {
@@ -29,6 +38,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
           left: rect.right + 10,
           top: rect.top + rect.height / 2,
           actualSide: 'right',
+          arrowLeft,
         });
         return;
       }
@@ -42,6 +52,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
           left: rect.left - 10,
           top: rect.top + rect.height / 2,
           actualSide: 'left',
+          arrowLeft,
         });
         return;
       }
@@ -58,6 +69,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
         left: clampedLeft,
         top: rect.bottom + 10,
         actualSide: 'bottom',
+        arrowLeft: `${Math.max(16, Math.min(iconCenter - clampedLeft, 234))}px`,
       });
       return;
     }
@@ -67,8 +79,9 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
       left: clampedLeft,
       top: rect.top - 10,
       actualSide: 'top',
+      arrowLeft: `${Math.max(16, Math.min(iconCenter - clampedLeft, 234))}px`,
     });
-  };
+  }, [side]);
 
   useEffect(() => {
     if (show) {
@@ -80,7 +93,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
         window.removeEventListener('resize', updatePosition);
       };
     }
-  }, [show, side]);
+  }, [show, updatePosition]);
 
   const getTransform = () => {
     if (coords.actualSide === 'right') return 'translateY(-50%)';
@@ -119,15 +132,9 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
       };
     }
     if (coords.actualSide === 'bottom') {
-      let arrowLeft = '50%';
-      if (ref.current) {
-        const rect = ref.current.getBoundingClientRect();
-        const iconCenter = rect.left + rect.width / 2;
-        arrowLeft = `${Math.max(16, Math.min(iconCenter - coords.left, 234))}px`;
-      }
       return {
         position: 'absolute',
-        left: arrowLeft,
+        left: coords.arrowLeft,
         transform: 'translateX(-50%)',
         bottom: '100%',
         width: 0,
@@ -139,15 +146,9 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
       };
     }
     // Top
-    let arrowLeft = '50%';
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      const iconCenter = rect.left + rect.width / 2;
-      arrowLeft = `${Math.max(16, Math.min(iconCenter - coords.left, 234))}px`;
-    }
     return {
       position: 'absolute',
-      left: arrowLeft,
+      left: coords.arrowLeft,
       transform: 'translateX(-50%)',
       top: '100%',
       width: 0,

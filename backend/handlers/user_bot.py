@@ -15,6 +15,10 @@ from loggers import logger
 
 # ⚡️ Подключаем наш сервис оплат
 from services.payment_link import generate_payment_link
+from services.funnel_message import send_funnel_node_message
+from services.manager_link import build_manager_deep_link
+from database.requests.client_payment_rq import create_client_payment
+from database.requests.client_payment_rq import get_client_payment, list_invoice_batch
 
 user_bot_router = Router()
 user_bot_router.message.filter(F.bot.id != MAIN_BOT_TG_ID)
@@ -58,6 +62,23 @@ def _get_payment_node(funnel):
     if hasattr(funnel, "nodes") and isinstance(funnel.nodes, dict):
         return funnel.nodes.get("node_checkout")
     return None
+
+
+def _payment_mode(funnel) -> str:
+    payment_node = _get_payment_node(funnel)
+    return getattr(payment_node, "payment_mode", "auto") if payment_node else "auto"
+
+
+def _funnel_action_keyboard(funnel, node):
+    mode = _payment_mode(funnel)
+    primary_text = _get_node_button_text(node)
+    secondary_text = getattr(node, "button_text2", "") or "Связаться с менеджером"
+    payment_node = _get_payment_node(funnel)
+    manager_url = build_manager_deep_link(
+        getattr(payment_node, "manager_url", ""),
+        getattr(payment_node, "manager_text", ""),
+    ) if payment_node else None
+    return user_funnel_action_keyboard(mode, primary_text, secondary_text, manager_url)
 
 
 @user_bot_router.message(CommandStart())
@@ -121,13 +142,12 @@ async def start_command_handler(message: Message):
             )
 
         node_start = _get_start_node(funnel)
-        text_to_send = _get_node_text(node_start)
-        button_text = _get_node_button_text(node_start)
         has_button = bool(getattr(node_start, "button", None) or getattr(node_start, "button_text", None))
-
-        await message.answer(
-            text_to_send,
-            reply_markup=user_payment_button(button_text) if has_button else None,
+        await send_funnel_node_message(
+            message.bot,
+            message.chat.id,
+            node_start,
+            reply_markup=_funnel_action_keyboard(funnel, node_start) if has_button else None,
         )
     else:
         # Если новый или еще не согласился ПРИ НАЛИЧИИ ссылок
@@ -179,20 +199,51 @@ async def process_agreement(callback: CallbackQuery):
         return
 
     node_start = _get_start_node(funnel)
-    text_to_send = _get_node_text(node_start)
-    button_text = _get_node_button_text(node_start)
     has_button = bool(getattr(node_start, "button", None) or getattr(node_start, "button_text", None))
 
     try:
         await callback.message.edit_text(
-            text=text_to_send,
-            reply_markup=user_payment_button(button_text) if has_button else None,
+            text="✅ Согласие подтверждено.",
+            reply_markup=None,
         )
     except TelegramBadRequest:
-        await callback.message.answer(
-            text=text_to_send,
-            reply_markup=user_payment_button(button_text) if has_button else None,
+        pass
+    await send_funnel_node_message(
+            callback.bot,
+            callback.message.chat.id,
+            node_start,
+            reply_markup=_funnel_action_keyboard(funnel, node_start) if has_button else None,
         )
+
+
+@user_bot_router.callback_query(F.data == "application")
+async def process_application_button(callback: CallbackQuery):
+    """Create a traceable manager request without relying on a user deep link."""
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    funnel = await get_funnel_by_bot_id(callback.bot.id)
+    if not bot_config or not funnel or _payment_mode(funnel) not in {"application", "hybrid"}:
+        await callback.answer("Этот способ связи сейчас недоступен.", show_alert=True)
+        return
+
+    payment_node = _get_payment_node(funnel)
+    manager_text = getattr(payment_node, "manager_text", "") or "Хочу получить консультацию."
+    lead_name = callback.from_user.full_name
+    lead_handle = f"@{callback.from_user.username}" if callback.from_user.username else f"ID: {callback.from_user.id}"
+    try:
+        await callback.bot.send_message(
+            bot_config.owner.telegram_id,
+            f"📩 <b>Новая заявка в «{bot_config.display_name}»</b>\n\n"
+            f"Клиент: {lead_name} ({lead_handle})\n"
+            f"Telegram ID: <code>{callback.from_user.id}</code>\n\n"
+            f"Текст заявки:\n{manager_text}",
+        )
+    except Exception as exc:
+        logger.warning("Не удалось отправить владельцу заявку бота %s: %s", bot_config.id, exc)
+        await callback.answer("Не удалось передать заявку. Попробуйте позже.", show_alert=True)
+        return
+
+    await callback.answer("Заявка отправлена")
+    await callback.message.answer("✅ Заявка передана владельцу. Он свяжется с вами в Telegram.")
 
 
 async def _send_tariff_invoice(callback: CallbackQuery, bot_config, funnel, tariff):
@@ -214,11 +265,23 @@ async def _send_tariff_invoice(callback: CallbackQuery, bot_config, funnel, tari
     if not message_text:
         message_text = f"<b>Ваш счёт готов!</b>\n\n{tariff_details}"
 
+    lead = await get_lead(bot_config.id, callback.from_user.id)
+    if not lead:
+        await loading_message.edit_text("Не удалось определить заявку. Нажмите /start и повторите попытку.")
+        return
+    tariff_snapshot = tariff.model_dump(by_alias=True) if hasattr(tariff, "model_dump") else dict(tariff)
+    client_payment = await create_client_payment(
+        bot_id=bot_config.id,
+        lead_id=lead.id,
+        provider=bot_config.payment_provider,
+        tariff=tariff_snapshot,
+    )
     payment_url = await generate_payment_link(
         bot_config=bot_config,
         amount=amount,
         description=f"{tariff_name}: {tariff_description}".strip(": "),
         lead_telegram_id=callback.from_user.id,
+        client_payment=client_payment,
     )
     if not payment_url:
         await loading_message.edit_text("Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку.")
@@ -258,14 +321,6 @@ async def process_payment_button(callback: CallbackQuery):
     from database.requests.user_rq import get_lead
     lead = await get_lead(bot_config.id, lead_id)
 
-    if lead and (lead.has_purchased or lead.current_step_id == "node_success"):
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-            await callback.message.answer("Оплата по этому заказу уже получена. Спасибо!")
-        except TelegramBadRequest:
-            pass
-        return
-
     try:
         await callback.message.edit_reply_markup(reply_markup=None)
     except TelegramBadRequest as e:
@@ -304,3 +359,43 @@ async def process_tariff_choice(callback: CallbackQuery):
         await callback.message.answer("Тариф больше недоступен. Откройте меню оплаты заново.")
         return
     await _send_tariff_invoice(callback, bot_config, funnel, tariff)
+
+
+@user_bot_router.callback_query(F.data.startswith("manual_invoice:"))
+async def process_manual_invoice_choice(callback: CallbackQuery):
+    await callback.answer()
+    payment = await get_client_payment(callback.data.split(":", 1)[1])
+    if not payment or payment.bot.tg_bot_id != callback.bot.id or payment.lead.telegram_id != callback.from_user.id:
+        await callback.message.answer("Этот счёт больше недоступен. Попросите владельца выставить новый.")
+        return
+    tariff = payment.tariff_snapshot
+    url = await generate_payment_link(
+        payment.bot, float(payment.amount),
+        f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
+        callback.from_user.id, client_payment=payment,
+    )
+    if not url:
+        await callback.message.edit_text("⚠️ Не удалось сформировать счёт. Попробуйте позже.")
+        return
+    details = f"<b>{tariff.get('name', 'Тариф')}</b>\n{tariff.get('description', '')}\n\nК оплате: <b>{payment.amount:,.0f} ₽</b>".replace(",", " ")
+    rows = [[InlineKeyboardButton(text="Оплатить", url=url, style="success")]]
+    if payment.invoice_batch_id:
+        rows.append([InlineKeyboardButton(text="← Назад к выбору", callback_data=f"manual_invoice_back:{payment.id}")])
+    await callback.message.edit_text(details, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+
+@user_bot_router.callback_query(F.data.startswith("manual_invoice_back:"))
+async def return_to_manual_invoice_choices(callback: CallbackQuery):
+    await callback.answer()
+    payment = await get_client_payment(callback.data.split(":", 1)[1])
+    if not payment or payment.bot.tg_bot_id != callback.bot.id or payment.lead.telegram_id != callback.from_user.id:
+        return
+    batch = await list_invoice_batch(payment)
+    rows = [[InlineKeyboardButton(
+        text=f"{item.tariff_snapshot.get('name', 'Тариф')} · {item.amount:,.0f} ₽".replace(",", " "),
+        callback_data=f"manual_invoice:{item.id}",
+    )] for item in batch if item.status == "pending"]
+    await callback.message.edit_text(
+        "🧾 <b>Выберите товар для оплаты</b>\n\nНажмите нужный тариф.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+    )

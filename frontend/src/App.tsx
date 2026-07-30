@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 
 import { Sidebar } from './components/Sidebar';
@@ -24,6 +24,18 @@ import { useAppState } from './providers/AppStateProvider';
 import { mapApiBot } from './services/botMapper';
 import { useBotToggle } from './hooks/useBotToggle';
 
+type TelegramWebApp = {
+  ready?: () => void; expand?: () => void; enableClosingConfirmation?: () => void;
+  requestFullscreen?: () => void; disableVerticalSwipes?: () => void;
+  setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void;
+  setBottomBarColor?: (color: string) => void;
+  close?: () => void;
+  BackButton?: { show: () => void; hide: () => void; onClick: (callback: () => void) => void; offClick: (callback: () => void) => void; };
+};
+
+const getTelegramWebApp = (): TelegramWebApp | undefined =>
+  (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
+
 export default function App() {
   const {
     appState,
@@ -39,18 +51,20 @@ export default function App() {
     authError,
   } = useAppState();
   const { toggleBot } = useBotToggle();
+  const activeBotId = appState.activeBot?.id;
+  const needsMediaSync = appState.activeBot?.mediaSyncDone === false;
 
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = getTelegramWebApp();
     if (tg) {
-      tg.ready();
-      tg.expand();
-      tg.enableClosingConfirmation();
+      tg.ready?.();
+      tg.expand?.();
+      tg.enableClosingConfirmation?.();
       if (tg.requestFullscreen) {
         try {
           tg.requestFullscreen();
-        } catch (e) {
-          console.warn('requestFullscreen not supported:', e);
+        } catch (error) {
+          console.warn('requestFullscreen not supported:', error);
         }
       }
       // Official TG API to disable swipe-to-close gesture
@@ -71,37 +85,38 @@ export default function App() {
     }
   }, [theme]);
 
-  const [previousTab, setPreviousTab] = useState<typeof activeTab>('home');
+  const previousTab = useRef<typeof activeTab>('home');
   useEffect(() => {
     if (activeTab !== 'subscription') {
-      setPreviousTab(activeTab);
+      previousTab.current = activeTab;
     }
   }, [activeTab]);
 
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (!tg || !tg.BackButton) return;
+    const tg = getTelegramWebApp();
+    const backButton = tg?.BackButton;
+    if (!backButton) return;
 
     if (appState.activeSheet) {
-      tg.BackButton.show();
+      backButton.show();
       const handleBack = () => {
         setSheet(null);
       };
-      tg.BackButton.onClick(handleBack);
+      backButton.onClick(handleBack);
       return () => {
-        tg.BackButton.offClick(handleBack);
+        backButton.offClick(handleBack);
       };
     } else if (activeTab === 'subscription') {
-      tg.BackButton.show();
+      backButton.show();
       const handleBack = () => {
-        setActiveTab(previousTab);
+        setActiveTab(previousTab.current);
       };
-      tg.BackButton.onClick(handleBack);
+      backButton.onClick(handleBack);
       return () => {
-        tg.BackButton.offClick(handleBack);
+        backButton.offClick(handleBack);
       };
     } else {
-      tg.BackButton.hide();
+      backButton.hide();
     }
   }, [appState.activeSheet, setSheet, activeTab, setActiveTab]);
 
@@ -145,8 +160,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let interval: any;
-    if (appState.activeBot && appState.activeBot.mediaSyncDone === false) {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (activeBotId && needsMediaSync) {
       interval = setInterval(async () => {
         try {
           const { apiService } = await import('./services/api');
@@ -154,7 +169,7 @@ export default function App() {
           if (data && data.bots) {
             setAppState(prev => {
               const mappedBots = data.bots.map(mapApiBot);
-              const updatedBot = mappedBots.find((b: any) => String(b.id) === String(prev.activeBot?.id));
+              const updatedBot = mappedBots.find((bot) => String(bot.id) === String(prev.activeBot?.id));
               if (updatedBot && updatedBot.mediaSyncDone) {
                 return {
                   ...prev,
@@ -165,13 +180,13 @@ export default function App() {
               return prev;
             });
           }
-        } catch (e) {
-          console.error("Polling sync status failed", e);
+        } catch (error) {
+          console.error("Polling sync status failed", error);
         }
       }, 3000);
     }
     return () => clearInterval(interval);
-  }, [appState.activeBot?.id, appState.activeBot?.mediaSyncDone]);
+  }, [activeBotId, needsMediaSync, setAppState]);
 
   if (appState.isLoading) {
     return (
@@ -193,8 +208,7 @@ export default function App() {
         </p>
         <button
           onClick={() => {
-            const tg = (window as any).Telegram?.WebApp;
-            if (tg) tg.close();
+            getTelegramWebApp()?.close?.();
           }}
           className="px-6 py-3 bg-[var(--color-primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
         >
@@ -315,6 +329,7 @@ export default function App() {
           <BotCreateSheet
             key="bot_create"
             onClose={() => setSheet(null)}
+            onError={setToastMessage}
             onCreate={async (botData) => {
               const { apiService } = await import('./services/api');
               const createdBot = await apiService.createBot(botData);
@@ -338,7 +353,7 @@ export default function App() {
               setAppState(prev => ({
                 ...prev,
                 activeBot: newBot,
-                bots: [...prev.bots, newBot as any],
+                bots: [...prev.bots, newBot],
               }));
               setSheet(null);
               setActiveTab('build');

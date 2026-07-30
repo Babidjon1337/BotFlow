@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import ReactFlow, { Background, Controls, Handle, Position } from "reactflow";
 import type { Edge, NodeProps, Node } from "reactflow";
@@ -256,7 +256,7 @@ export const Flow = () => {
     theme,
   } = useAppState();
 
-  const getBlock = (id: string) => blocks.find((b) => b.id === id);
+  const getBlock = useCallback((id: string) => blocks.find((block) => block.id === id), [blocks]);
 
   const flowNodes: Node[] = useMemo(
     () => [
@@ -320,7 +320,7 @@ export const Flow = () => {
         },
       },
     ],
-    [blocks],
+    [getBlock],
   );
 
   const flowEdges: Edge[] = useMemo(
@@ -415,8 +415,8 @@ export const Flow = () => {
         elementsSelectable={true}
         proOptions={{ hideAttribution: true }}
         onNodeClick={(_, node) => {
-          const tg = (window as any).Telegram?.WebApp;
-          if (tg) tg.HapticFeedback.impactOccurred("light");
+          const tg = (window as Window & { Telegram?: { WebApp?: { HapticFeedback?: { impactOccurred: (style: "light") => void } } } }).Telegram?.WebApp;
+          tg?.HapticFeedback?.impactOccurred("light");
           setSelectedBlockId(
             node.id === "delivery" ? "after_payment" : node.id,
           );

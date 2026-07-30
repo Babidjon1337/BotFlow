@@ -1,4 +1,4 @@
-import { Home, Layers, User, GitBranch, Crown, Moon, Sun, ChevronDown, Star, Bot } from 'lucide-react';
+import { Home, Layers, User, GitBranch, Crown, Moon, Sun, ChevronDown, Star, Bot, type LucideIcon } from 'lucide-react';
 import { cn } from '../utils';
 import type { TabType, AppState, SheetType } from '../types';
 import { useAppState } from '../providers/AppStateProvider';
@@ -13,7 +13,7 @@ interface SidebarProps {
   onCreateBot: () => void;
 }
 
-const MAIN_NAV: { id: TabType; icon: React.FC<any>; label: string; activeColor: string }[] = [
+const MAIN_NAV: { id: TabType; icon: LucideIcon; label: string; activeColor: string }[] = [
   { id: 'home',    icon: Home,      label: 'Главная', activeColor: 'var(--color-primary)'  },
   { id: 'build',   icon: Layers,    label: 'Воронка', activeColor: 'var(--color-accent)'  },
   { id: 'manage',  icon: Bot,       label: 'Мои боты', activeColor: 'var(--color-warning)'  },

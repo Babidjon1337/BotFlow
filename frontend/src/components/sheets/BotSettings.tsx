@@ -36,13 +36,14 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   };
   
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg && tg.BackButton) {
-      tg.BackButton.show();
-      tg.BackButton.onClick(onClose);
+    const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void } } } }).Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (backButton) {
+      backButton.show();
+      backButton.onClick(onClose);
       return () => {
-        tg.BackButton.hide();
-        tg.BackButton.offClick(onClose);
+        backButton.hide();
+        backButton.offClick(onClose);
       };
     }
   }, [onClose]);
@@ -75,7 +76,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         displayName: name,
         token: token || undefined,
         offerUrl,
-        offerInstallments,
+        offerInstallments: provider === 'yookassa' && offerInstallments,
         paymentProvider: provider,
         paymentCreds: paymentCredsChanged ? keys : undefined,
       });
@@ -86,7 +87,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           name: updated.displayName || name,
           token: token || activeBot.token,
           offerUrl: updated.offerUrl ?? offerUrl,
-          offerInstallments: updated.offerInstallments ?? offerInstallments,
+          offerInstallments: updated.offerInstallments ?? (provider === 'yookassa' && offerInstallments),
           paymentProvider: updated.paymentProvider ?? provider,
           paymentKeys: paymentCredsChanged ? keys : activeBot.paymentKeys,
           hasPaymentCredentials: updated.hasPaymentCredentials ?? activeBot.hasPaymentCredentials,
@@ -116,10 +117,10 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           : `Настройки сохранены: ${savedFunnel.readinessReasons[0] || 'завершите воронку перед запуском'}`);
       onSave();
       onClose();
-    } catch (e: any) {
+    } catch (error) {
       showAlert({
         title: "Ошибка сохранения",
-        message: e.message || "Произошла ошибка при сохранении настроек.",
+        message: error instanceof Error ? error.message : "Произошла ошибка при сохранении настроек.",
         type: "danger",
         confirmText: "Закрыть",
         cancelText: ""
@@ -211,10 +212,10 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           </div>
 
           {/* Installments Toggle */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+          {provider === 'yookassa' && <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)]">
             <div className="pr-3">
               <span className="text-[14px] font-medium text-[var(--color-foreground)] block">Предлагать рассрочку от банка</span>
-              <span className="text-[12px] text-[var(--color-foreground-secondary)] leading-tight block mt-0.5">Включает опцию оплаты частями в платёжной системе при оплате тарифа</span>
+              <span className="text-[12px] text-[var(--color-foreground-secondary)] leading-tight block mt-0.5">ЮKassa «Плати частями»: доступно для сумм от 1 000 до 50 000 ₽ при подключённой услуге в кассе.</span>
             </div>
             <button
               type="button"
@@ -229,7 +230,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 }`}
               />
             </button>
-          </div>
+          </div>}
 
           {/* Payment provider */}
           <div>
@@ -247,7 +248,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 return (
                   <button
                     key={p}
-                    onClick={() => { setProvider(p); setKeys({}); setPaymentCredsChanged(true); }}
+                    onClick={() => { setProvider(p); if (p !== 'yookassa') setOfferInstallments(false); setKeys({}); setPaymentCredsChanged(true); }}
                     disabled={!canEditPayment}
                     className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${!canEditPayment ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--color-surface-2)]'}`}
                     style={{

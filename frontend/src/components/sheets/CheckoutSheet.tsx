@@ -43,10 +43,10 @@ export function CheckoutSheet({ tariffId, onClose, onSuccess }: CheckoutSheetPro
 
     try {
       const { apiService } = await import('../../services/api');
-      const checkout = await apiService.createBillingCheckout(tariffId);
+      const checkout = await apiService.createBillingCheckout(tariffId, email.trim());
       setIsLoading(false);
       onSuccess(email);
-      const telegram = (window as any).Telegram?.WebApp;
+      const telegram = (window as Window & { Telegram?: { WebApp?: { openLink?: (url: string) => void } } }).Telegram?.WebApp;
       if (telegram?.openLink) {
         telegram.openLink(checkout.confirmationUrl);
       } else {

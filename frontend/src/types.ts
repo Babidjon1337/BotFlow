@@ -21,9 +21,13 @@ export interface FunnelNode {
   y: number;
   paymentMode?: 'auto' | 'application' | 'hybrid';
   managerText?: string;
+  managerUrl?: string;
   tariffs?: Tariff[];
   tariffSelectionText?: string;
   media?: boolean;
+  mediaFileId?: string | null;
+  mediaAssetId?: string | null;
+  mediaType?: 'photo' | 'video' | 'document' | null;
 }
 
 export type TabType = 'home' | 'build' | 'flow' | 'profile' | 'subscription' | 'manage' | 'admin_stats';
@@ -61,6 +65,8 @@ export interface AppState {
   subscriptionAutoRenew?: boolean;
   subscriptionRetryCount?: number;
   userEmail: string;
+  emailReceiptsEnabled?: boolean;
+  emailBillingNotificationsEnabled?: boolean;
   activeSheet: SheetType;
   sheetData?: { tariff: 'basic' | 'pro' } | { botId: string };
   isDirty: boolean;

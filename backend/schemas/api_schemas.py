@@ -41,6 +41,14 @@ class BillingCheckoutRequest(BaseModel):
     email: Optional[str] = None
 
 
+class NotificationSettingsRequest(BaseModel):
+    email: Optional[str] = None
+    email_receipts_enabled: bool = Field(default=True, alias="emailReceiptsEnabled")
+    email_billing_notifications_enabled: bool = Field(default=True, alias="emailBillingNotificationsEnabled")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class BillingCheckoutResponse(BaseModel):
     payment_id: str = Field(..., alias="paymentId")
     confirmation_url: str = Field(..., alias="confirmationUrl")

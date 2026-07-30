@@ -106,6 +106,32 @@ const START_STEPS = [
   },
 ];
 
+type FunnelStats = {
+  views: number;
+  clicks: number;
+  sales: number;
+  conversion: number;
+  revenue: number;
+  funnel_data: Array<{ name: string; value: number }>;
+  chart_data?: Array<Record<string, string | number>>;
+  usersCount?: number;
+  clicksCount?: number;
+  salesCount?: number;
+};
+
+type LeadView = {
+  telegramId: number;
+  username: string;
+  firstName?: string;
+  createdAt?: string;
+  hasPurchased?: boolean;
+  name: string;
+  time: string;
+  paid: boolean;
+  tariffName: string;
+  price?: string | number;
+};
+
 export const Home = () => {
   const {
     appState,
@@ -119,40 +145,49 @@ export const Home = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [modalSearchQuery, setModalSearchQuery] = useState("");
   const [showAllClients, setShowAllClients] = useState(false);
-  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<
-    any | null
-  >(null);
+  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<LeadView | null>(null);
   const [selectedTariffs, setSelectedTariffs] = useState<string[]>([]);
   const [isSendingInvoice, setIsSendingInvoice] = useState(false);
   const [isInvoiceSent, setIsInvoiceSent] = useState(false);
   const paymentTariffs = blocks.find((block) => block.id === "payment")?.tariffs ?? [];
 
-  const [stats, setStats] = useState<any>(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(false);
+  const [stats, setStats] = useState<FunnelStats | null>(null);
+  const [statsStatus, setStatsStatus] = useState<"idle" | "loading" | "ready">("idle");
+  const isLoadingStats = statsStatus === "idle" || statsStatus === "loading";
 
   useEffect(() => {
-    if (appState.activeBot) {
-      setIsLoadingStats(true);
-      import("../../services/api").then(({ apiService }) => {
-        apiService
-          .getStats(appState.activeBot!.id)
-          .then((res) => {
-            setStats(res);
-            setIsLoadingStats(false);
-          })
-          .catch((e) => {
-            console.error("Stats err", e);
-            setIsLoadingStats(false);
-          });
+    const botId = appState.activeBot?.id;
+    if (!botId) return;
+    let cancelled = false;
+    void import("../../services/api")
+      .then(({ apiService }) => {
+        if (!cancelled) {
+          setStats(null);
+          setStatsStatus("loading");
+        }
+        return apiService.getStats(botId);
+      })
+      .then((result) => {
+        if (!cancelled) {
+          setStats(result);
+          setStatsStatus("ready");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Stats err", error);
+          setStatsStatus("ready");
+        }
       });
-    }
+    return () => { cancelled = true; };
   }, [appState.activeBot?.id, appState.activeBot?.status]);
 
   useEffect(() => {
     if (!showAllClients) return;
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg && tg.BackButton) {
-      tg.BackButton.show();
+    const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void } } } }).Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (backButton) {
+      backButton.show();
       const handleBack = () => {
         if (selectedClientForInvoice) {
           setSelectedClientForInvoice(null);
@@ -166,10 +201,10 @@ export const Home = () => {
           setModalSearchQuery("");
         }
       };
-      tg.BackButton.onClick(handleBack);
+      backButton.onClick(handleBack);
       return () => {
-        tg.BackButton.hide();
-        tg.BackButton.offClick(handleBack);
+        backButton.hide();
+        backButton.offClick(handleBack);
       };
     }
   }, [showAllClients, selectedClientForInvoice]);
@@ -215,34 +250,49 @@ export const Home = () => {
     return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
   };
 
-  const [leads, setLeads] = useState<any[]>([]);
-  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
+  const [leads, setLeads] = useState<LeadView[]>([]);
+  const [leadsStatus, setLeadsStatus] = useState<"idle" | "loading" | "ready">("idle");
+  const isLoadingLeads = appState.activeBot !== null && leadsStatus !== "ready";
 
   useEffect(() => {
-    if (appState.activeBot) {
-      setIsLoadingLeads(true);
-      import("../../services/api").then(({ apiService }) => {
-        apiService
-          .getLeads(appState.activeBot!.id, "", 1, 50)
-          .then((res) => {
-            const mappedLeads = (res.leads || []).map((l: any) => ({
+    const botId = appState.activeBot?.id;
+    if (!botId) return;
+    let cancelled = false;
+    void import("../../services/api")
+      .then(({ apiService }) => {
+        if (!cancelled) {
+          setLeads([]);
+          setLeadsStatus("loading");
+        }
+        return apiService.getLeads(botId, "", 1, 50);
+      })
+      .then((res) => {
+        if (!cancelled) {
+            const mappedLeads = (res.leads || []).map((lead) => {
+              const l = lead as { telegramId?: number; username?: string; firstName?: string; createdAt?: string; hasPurchased?: boolean };
+              return {
               ...l,
+              telegramId: l.telegramId ?? 0,
               name: l.firstName || "Без имени",
               time: l.createdAt
                 ? new Date(l.createdAt).toLocaleDateString()
                 : "",
-              paid: l.hasPurchased,
+              username: l.username ?? "",
+              paid: l.hasPurchased === true,
               tariffName: "Оплата получена",
-            }));
-            setLeads(mappedLeads);
-            setIsLoadingLeads(false);
-          })
-          .catch((e) => {
-            console.error("Leads err", e);
-            setIsLoadingLeads(false);
-          });
+              };
+            });
+          setLeads(mappedLeads);
+          setLeadsStatus("ready");
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error("Leads err", error);
+          setLeadsStatus("ready");
+        }
       });
-    }
+    return () => { cancelled = true; };
   }, [appState.activeBot?.id]);
 
   const sendInvoice = async () => {

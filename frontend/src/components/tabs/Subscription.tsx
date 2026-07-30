@@ -156,10 +156,11 @@ export const Subscription = () => {
         color: colors[Math.floor(Math.random() * colors.length)],
         delay: Math.random() * 0.5,
       }));
-      setConfetti(newConfetti);
-      setTimeout(() => {
+      const startTimer = window.setTimeout(() => setConfetti(newConfetti), 0);
+      const finishTimer = window.setTimeout(() => {
         setStep("select");
       }, 3500);
+      return () => { window.clearTimeout(startTimer); window.clearTimeout(finishTimer); };
     }
   }, [step]);
 
@@ -175,7 +176,7 @@ export const Subscription = () => {
     try {
       const { apiService } = await import("../../services/api");
       const checkout = await apiService.createBillingCheckout(selectedPlan, email || undefined);
-      const telegram = (window as any).Telegram?.WebApp;
+      const telegram = (window as Window & { Telegram?: { WebApp?: { openLink?: (url: string) => void } } }).Telegram?.WebApp;
       if (telegram?.openLink) telegram.openLink(checkout.confirmationUrl);
       else window.location.assign(checkout.confirmationUrl);
     } catch (error) {

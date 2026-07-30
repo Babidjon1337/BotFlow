@@ -28,15 +28,7 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
   const canEditPayment = true;
 
   const handleSave = () => {
-    if (activeBot) {
-      activeBot.name = name;
-      activeBot.username = username;
-      activeBot.token = token;
-      activeBot.paymentProvider = provider;
-      activeBot.paymentKeys = keys;
-      // You can trigger a save or toast here
-    } else {
-      // Connect new bot
+    if (!activeBot) {
       onConnect();
     }
   };

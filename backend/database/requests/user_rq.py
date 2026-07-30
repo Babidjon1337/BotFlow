@@ -2,11 +2,30 @@ from typing import Optional, Any
 from sqlalchemy import select, update, delete, func, or_, String
 from sqlalchemy.orm import selectinload
 from database.models import User, BotConfig, ScheduledTask, Lead, async_session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
 from services.funnel_schema import parse_stored_funnel_schema
 from loggers import logger
+
+
+async def update_user_notification_settings(
+    user_id: int,
+    *,
+    email: str | None,
+    email_receipts_enabled: bool,
+    email_billing_notifications_enabled: bool,
+) -> User | None:
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            return None
+        user.email = email
+        user.email_receipts_enabled = email_receipts_enabled
+        user.email_billing_notifications_enabled = email_billing_notifications_enabled
+        await session.commit()
+        await session.refresh(user)
+        return user
 
 
 
@@ -236,7 +255,7 @@ async def create_reminder(
             )
 
             if not existing_task:
-                execute_at = datetime.now() + timedelta(seconds=reminder_after)
+                execute_at = datetime.now(timezone.utc) + timedelta(seconds=reminder_after)
 
                 task = ScheduledTask(
                     bot_id=bot_id,
@@ -257,7 +276,7 @@ async def get_reminder_tasks():
         result = await session.scalars(
             select(ScheduledTask)
             .options(selectinload(ScheduledTask.lead).selectinload(Lead.bot))
-            .where(ScheduledTask.execute_at <= datetime.now())
+            .where(ScheduledTask.execute_at <= datetime.now(timezone.utc))
         )
 
         return result.all()

@@ -1,6 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
@@ -52,6 +53,9 @@ class User(Base):
     subscription_grace_until: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True)
     )
+    email: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
+    email_receipts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    email_billing_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -111,6 +115,9 @@ class BotConfig(Base):
     leads: Mapped[list["Lead"]] = relationship(
         back_populates="bot", cascade="all, delete-orphan"
     )
+    client_payments: Mapped[list["ClientPayment"]] = relationship(
+        back_populates="bot", cascade="all, delete-orphan"
+    )
 
 
 # ==========================================
@@ -141,6 +148,55 @@ class Lead(Base):
     tasks: Mapped[list["ScheduledTask"]] = relationship(
         back_populates="lead", cascade="all, delete-orphan"
     )
+    client_payments: Mapped[list["ClientPayment"]] = relationship(
+        back_populates="lead", cascade="all, delete-orphan"
+    )
+
+
+# ==========================================
+# 4. CLIENT_PAYMENTS (orders for client bots)
+# ==========================================
+class ClientPayment(Base):
+    """An immutable tariff snapshot and its provider payment lifecycle."""
+
+    __tablename__ = "client_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
+    invoice_batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), index=True)
+    tariff_id: Mapped[str] = mapped_column(String(128))
+    tariff_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RUB")
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_payment_id: Mapped[Optional[str]] = mapped_column(String(128), unique=True, index=True)
+    idempotence_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    bot: Mapped["BotConfig"] = relationship(back_populates="client_payments")
+    lead: Mapped["Lead"] = relationship(back_populates="client_payments")
+
+
+class MediaAsset(Base):
+    """Telegram media bound to one client bot and a funnel node."""
+
+    __tablename__ = "media_assets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+    node_id: Mapped[str] = mapped_column(String(64))
+    media_type: Mapped[str] = mapped_column(String(16))
+    telegram_file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    mime_type: Mapped[Optional[str]] = mapped_column(String(128))
+    file_name: Mapped[Optional[str]] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 # ==========================================
@@ -197,41 +253,15 @@ class ScheduledTask(Base):
 
 engine = create_async_engine(url=DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
-
-
 async def init_models():
-    # Создаем таблицы в БД
+    """Verify database connectivity; schema changes are handled by Alembic."""
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        
-        # Миграция новых колонок для существующих таблиц
         from sqlalchemy import text
-        try:
-            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS display_name VARCHAR(255) DEFAULT 'Мой бот';"))
-            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS offer_url TEXT NULL;"))
-            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS offer_installments BOOLEAN DEFAULT FALSE;"))
-            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS funnel_complete BOOLEAN DEFAULT FALSE;"))
-            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS media_sync_done BOOLEAN DEFAULT FALSE;"))
-            # Keep deployments that still rely on init_models compatible with
-            # the billing migration. Alembic remains the source of truth, but
-            # these guards prevent a 500 during a rolling upgrade.
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_auto_renew BOOLEAN NOT NULL DEFAULT FALSE;"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_payment_method_enc BYTEA NULL;"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_retry_count INTEGER NOT NULL DEFAULT 0;"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_next_retry_at TIMESTAMPTZ NULL;"))
-            await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_grace_until TIMESTAMPTZ NULL;"))
-            await conn.execute(text("ALTER TABLE bots ADD COLUMN IF NOT EXISTS has_lifetime_license BOOLEAN NOT NULL DEFAULT FALSE;"))
-            
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS username VARCHAR(255) NULL;"))
-            await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS first_name VARCHAR(255) NULL;"))
-        except Exception as e:
-            logger.warning(f"Миграция колонок (ALTER TABLE) пропущена или не удалась: {e}")
-
-        logger.info("✅ Подключение к БД успешно. Таблицы проверены!")
+        await conn.execute(text("SELECT 1"))
+        logger.info("✅ Подключение к БД успешно. Схема управляется Alembic.")
 
 
 if __name__ == "__main__":
     import asyncio
 
-    # Запускаем создание таблиц
     asyncio.run(init_models())

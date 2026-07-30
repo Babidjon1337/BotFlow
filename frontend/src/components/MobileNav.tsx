@@ -1,4 +1,4 @@
-import { Home, Layers, User, Bot, Crown } from 'lucide-react';
+import { Home, Layers, User, Bot, Crown, type LucideIcon } from 'lucide-react';
 import type { TabType } from '../types';
 import { useAppState } from '../providers/AppStateProvider';
 
@@ -7,7 +7,9 @@ interface MobileNavProps {
   setActiveTab: (tab: TabType) => void;
 }
 
-const TABS: { id: TabType; icon: React.FC<any>; label: string; activeColor: string }[] = [
+type TelegramWebApp = { HapticFeedback?: { selectionChanged: () => void } };
+
+const TABS: { id: TabType; icon: LucideIcon; label: string; activeColor: string }[] = [
   { id: 'home',    icon: Home,   label: 'Главная',  activeColor: 'var(--color-primary)' },
   { id: 'build',   icon: Layers, label: 'Воронка',  activeColor: 'var(--color-accent)' },
   { id: 'manage',  icon: Bot,    label: 'Боты',     activeColor: 'var(--color-warning)' },
@@ -40,8 +42,8 @@ export const MobileNav = ({ activeTab, setActiveTab }: MobileNavProps) => {
             <button
               key={tab.id}
               onClick={() => {
-                const tg = (window as any).Telegram?.WebApp;
-                if (tg) tg.HapticFeedback.selectionChanged();
+                const tg = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
+                tg?.HapticFeedback?.selectionChanged();
                 setActiveTab(tab.id);
               }}
               aria-label={tab.label}

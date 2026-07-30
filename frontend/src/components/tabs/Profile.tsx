@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Crown,
@@ -13,8 +14,37 @@ import {
 import { useAppState } from "../../providers/AppStateProvider";
 
 export const Profile = () => {
-  const { appState, theme, toggleTheme, setActiveTab, isAdmin } = useAppState();
+  const { appState, theme, toggleTheme, setActiveTab, isAdmin, setAppState } = useAppState();
   const isSubscribed = appState.subscriptionStatus === "active" || isAdmin;
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [email, setEmail] = useState(appState.userEmail || "");
+  const [receiptsEnabled, setReceiptsEnabled] = useState(appState.emailReceiptsEnabled !== false);
+  const [isSavingNotifications, setIsSavingNotifications] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const telegramUser = (window as Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { first_name?: string; username?: string; photo_url?: string } }; HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp?.initDataUnsafe?.user;
+
+  const saveNotifications = async () => {
+    setIsSavingNotifications(true);
+    setNotificationError(null);
+    try {
+      const { apiService } = await import("../../services/api");
+      const saved = await apiService.updateNotificationSettings({
+        email: email.trim() || undefined,
+        emailReceiptsEnabled: receiptsEnabled,
+        emailBillingNotificationsEnabled: appState.emailBillingNotificationsEnabled !== false,
+      });
+      setAppState((prev) => ({
+        ...prev,
+        userEmail: saved.email || "",
+        emailReceiptsEnabled: saved.email_receipts_enabled,
+        emailBillingNotificationsEnabled: saved.email_billing_notifications_enabled,
+      }));
+    } catch (error) {
+      setNotificationError(error instanceof Error ? error.message : "Не удалось сохранить настройки.");
+    } finally {
+      setIsSavingNotifications(false);
+    }
+  };
 
   return (
     <motion.div
@@ -131,10 +161,10 @@ export const Profile = () => {
                     marginBottom: "12px",
                   }}
                 >
-                  {((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.photo_url) ? (
-                    <img src={(window as any).Telegram.WebApp.initDataUnsafe.user.photo_url} alt="avatar" className="w-full h-full object-cover" />
+                  {telegramUser?.photo_url ? (
+                    <img src={telegramUser.photo_url} alt="avatar" className="w-full h-full object-cover" />
                   ) : (
-                    ((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.first_name || "User").charAt(0).toUpperCase()
+                    (telegramUser?.first_name || "User").charAt(0).toUpperCase()
                   )}
                 </div>
                 <h2
@@ -146,7 +176,7 @@ export const Profile = () => {
                     letterSpacing: "-0.01em",
                   }}
                 >
-                  {(window as any).Telegram?.WebApp?.initDataUnsafe?.user?.first_name || "Мой аккаунт"}
+                  {telegramUser?.first_name || "Мой аккаунт"}
                 </h2>
                 <p
                   style={{
@@ -155,7 +185,7 @@ export const Profile = () => {
                     marginTop: "2px",
                   }}
                 >
-                  {((window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username) ? `@${(window as any).Telegram.WebApp.initDataUnsafe.user.username}` : "TG User"}
+                  {telegramUser?.username ? `@${telegramUser.username}` : "TG User"}
                 </p>
               </div>
             </motion.div>
@@ -505,13 +535,9 @@ export const Profile = () => {
               <div className="flex flex-col">
                 <button
                   onClick={() => {
-                    const tg = (window as any).Telegram?.WebApp;
-                    if (tg) tg.HapticFeedback.impactOccurred("light");
-                    const el = document.getElementById("notifications-expand");
-                    if (el) {
-                      el.style.display =
-                        el.style.display === "none" ? "block" : "none";
-                    }
+                    const tg = (window as Window & { Telegram?: { WebApp?: { HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
+                    tg?.HapticFeedback?.impactOccurred("light");
+                    setNotificationsOpen((open) => !open);
                   }}
                   className="w-full flex items-center gap-4 px-5 py-4 hover:bg-[var(--color-surface-2)] transition-colors text-left group"
                 >
@@ -550,24 +576,11 @@ export const Profile = () => {
                 </button>
 
                 {/* Expanded Content */}
-                <div
-                  id="notifications-expand"
-                  style={{ display: "none", padding: "0 20px 20px 20px" }}
-                >
+                {notificationsOpen && <div style={{ padding: "0 20px 20px 20px" }}>
                   <div className="pt-4 border-t border-[var(--color-border)] space-y-5">
-                    <label className="flex items-start gap-4 cursor-pointer group">
-                      <div className="relative inline-flex h-[28px] w-[50px] shrink-0 items-center rounded-full bg-[var(--color-primary)] transition-colors mt-0.5">
-                        <span className="inline-block h-5 w-5 transform rounded-full bg-white translate-x-[26px] transition-transform shadow-sm" />
-                      </div>
-                      <div>
-                        <div className="text-[14px] font-bold text-[var(--color-foreground)] group-hover:text-[var(--color-primary)] transition-colors">
-                          Уведомления в Telegram
-                        </div>
-                        <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-0.5 leading-relaxed">
-                          Получать информацию о лидах и оплатах
-                        </div>
-                      </div>
-                    </label>
+                    <div className="rounded-xl bg-[var(--color-surface-2)] p-3 text-[13px] text-[var(--color-foreground-secondary)]">
+                      Telegram-уведомления о покупке, продлении и сбое списания обязательны: так вы не пропустите изменение доступа.
+                    </div>
                     <div>
                       <label className="text-[13px] font-bold text-[var(--color-foreground)] block mb-1.5">
                         Email для отправки чеков
@@ -575,13 +588,22 @@ export const Profile = () => {
                       <input
                         type="email"
                         placeholder="ваша@почта.ru"
-                        defaultValue={appState.userEmail || ""}
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
                         className="input w-full"
                         style={{ height: "44px", fontSize: "14px" }}
                       />
                     </div>
+                    <label className="flex items-center justify-between gap-4 text-[13px] text-[var(--color-foreground)]">
+                      <span><b>Чеки на email</b><br /><span className="text-[var(--color-foreground-secondary)]">Использовать email при оплате лицензии и PRO</span></span>
+                      <input type="checkbox" checked={receiptsEnabled} onChange={(event) => setReceiptsEnabled(event.target.checked)} />
+                    </label>
+                    {notificationError && <p className="text-[13px] text-[var(--color-danger)]">{notificationError}</p>}
+                    <button type="button" onClick={saveNotifications} disabled={isSavingNotifications} className="btn-primary w-full">
+                      {isSavingNotifications ? "Сохраняем…" : "Сохранить настройки"}
+                    </button>
                   </div>
-                </div>
+                </div>}
               </div>
             </motion.div>
           </motion.div>

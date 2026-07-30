@@ -7,8 +7,25 @@ import { useViewportHeight } from '../../hooks';
 
 interface BotCreateSheetProps {
   onClose: () => void;
-  onCreate: (botData: any) => Promise<void>;
+  onCreate: (botData: BotCreateData) => Promise<void>;
+  onError?: (message: string) => void;
 }
+
+type BotCreateData = {
+  displayName: string;
+  token: string;
+  paymentProvider?: PaymentProvider;
+  paymentCreds: Record<string, string>;
+  offerUrl: string;
+};
+
+type TelegramWebApp = {
+  BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void };
+  HapticFeedback?: { notificationOccurred: (type: 'success' | 'error' | 'warning') => void };
+};
+
+const previousStep = (current: 1 | 2 | 3): 1 | 2 | 3 => current === 1 ? 1 : current === 2 ? 1 : 2;
+const nextStep = (current: 1 | 2 | 3): 1 | 2 | 3 => current === 3 ? 3 : current === 1 ? 2 : 3;
 
 const PROVIDER_INFO: Record<PaymentProvider, { label: string, logo: string, color: string }> = {
   yookassa: { label: 'ЮKassa', logo: '/yookassa.png', color: '#3390ec' },
@@ -22,7 +39,7 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
   prodamus: "Секретный токен выдается технической поддержкой Продамуса при интеграции."
 };
 
-export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
+export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetProps) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isCreating, setIsCreating] = useState(false);
   const vh = useViewportHeight();
@@ -48,17 +65,18 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
 
   // TG BackButton wiring
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (!tg?.BackButton) return;
-    tg.BackButton.show();
+    const tg = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (!backButton) return;
+    backButton.show();
     const handler = () => {
-      if (step > 1) setStep((s) => (s - 1) as any);
+      if (step > 1) setStep(previousStep);
       else onClose();
     };
-    tg.BackButton.onClick(handler);
+    backButton.onClick(handler);
     return () => {
-      tg.BackButton.offClick(handler);
-      tg.BackButton.hide();
+      backButton.offClick(handler);
+      backButton.hide();
     };
   }, [step, onClose]);
 
@@ -72,11 +90,9 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
   
   const handleCreate = async () => {
     if (!navigator.onLine) {
-      alert('Отсутствует подключение к интернету. Проверьте сеть.');
+      onError?.('Отсутствует подключение к интернету. Проверьте сеть.');
       return;
     }
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
 
     setIsCreating(true);
     try {
@@ -87,8 +103,10 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
         paymentCreds: skipPayment ? {} : keys,
         offerUrl: offerUrl.trim(),
       });
-    } catch (e: any) {
-      alert(e.message || 'Ошибка при создании бота');
+      const tg = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
+      tg?.HapticFeedback?.notificationOccurred('success');
+    } catch (error) {
+      onError?.(error instanceof Error ? error.message : 'Ошибка при создании бота');
     } finally {
       setIsCreating(false);
     }
@@ -392,7 +410,7 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() => setStep((s) => (s - 1) as any)}
+              onClick={() => setStep(previousStep)}
               className="h-[52px] px-6 rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[1]"
               style={{ background: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
             >
@@ -404,7 +422,7 @@ export const BotCreateSheet = ({ onClose, onCreate }: BotCreateSheetProps) => {
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() => setStep((s) => (s + 1) as any)}
+              onClick={() => setStep(nextStep)}
               disabled={(step === 1 && !canGoNext1) || (step === 2 && !canGoNext2)}
               className="h-[52px] rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[2] text-white disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))', boxShadow: '0 8px 16px -6px rgba(99,102,241,0.4)' }}

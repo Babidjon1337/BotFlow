@@ -1,6 +1,10 @@
 import json
 import datetime
-from fastapi import APIRouter, Request, HTTPException
+import io
+from uuid import UUID
+
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from loggers import logger
 from config import ADMIN_TELEGRAM_IDS, ALLOW_INSECURE_DEV_AUTH, WEBHOOK_URL, SECRET_KEY
 from services.security import crypto
@@ -26,6 +30,7 @@ from schemas.api_schemas import (
     BotApiResponse,
     BillingCheckoutRequest,
     BillingCheckoutResponse,
+    NotificationSettingsRequest,
     ManualInvoiceRequest,
     FunnelApiResponse,
     FunnelUpdateApiRequest,
@@ -37,6 +42,14 @@ from services.funnel_readiness import evaluate_funnel_readiness
 from services.payment_link import validate_payment_credentials
 
 api_router = APIRouter()
+
+
+def _validate_installments(provider: str | None, enabled: bool) -> None:
+    if enabled and (provider or "").casefold() != "yookassa":
+        raise HTTPException(
+            status_code=422,
+            detail="Рассрочка сейчас поддерживается только для ЮKassa.",
+        )
 
 
 def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
@@ -61,6 +74,9 @@ def _user_payload(user, telegram_id: int) -> dict:
         "slots_bought": user.lifetime_slots,
         "subscription_auto_renew": user.subscription_auto_renew,
         "subscription_retry_count": user.subscription_retry_count,
+        "email": user.email,
+        "email_receipts_enabled": user.email_receipts_enabled,
+        "email_billing_notifications_enabled": user.email_billing_notifications_enabled,
         "is_admin": telegram_id in ADMIN_TELEGRAM_IDS,
     }
 
@@ -142,11 +158,41 @@ async def auth_user(request: Request, body: dict = None):
 async def create_billing_checkout(request: Request, body: BillingCheckoutRequest):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    checkout_email = body.email.strip().lower() if body.email else user.email
+    if checkout_email and ("@" not in checkout_email or len(checkout_email) > 320):
+        raise HTTPException(status_code=422, detail="Введите корректный email.")
+    if body.email and checkout_email != user.email:
+        user = await update_user_notification_settings(
+            user.id,
+            email=checkout_email,
+            email_receipts_enabled=user.email_receipts_enabled,
+            email_billing_notifications_enabled=user.email_billing_notifications_enabled,
+        ) or user
     try:
-        checkout = await create_checkout(user.id, body.product)
+        checkout = await create_checkout(
+            user.id,
+            body.product,
+            receipt_email=checkout_email if user.email_receipts_enabled else None,
+        )
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return checkout
+
+
+@api_router.put("/api/profile/notification-settings")
+async def update_notification_settings(request: Request, body: NotificationSettingsRequest):
+    current_user = await get_current_user(request)
+    user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    email = body.email.strip().lower() if body.email else None
+    if email and ("@" not in email or len(email) > 320):
+        raise HTTPException(status_code=422, detail="Введите корректный email.")
+    updated = await update_user_notification_settings(
+        user.id,
+        email=email,
+        email_receipts_enabled=body.email_receipts_enabled,
+        email_billing_notifications_enabled=body.email_billing_notifications_enabled,
+    )
+    return _user_payload(updated or user, current_user.telegram_id)
 
 
 @api_router.get("/api/billing/catalog")
@@ -204,6 +250,8 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
         user_bots = await get_user_bots(owner_id=user.id)
         bot_count = len(user_bots)
         body.display_name = "Мой бот" if bot_count == 0 else f"Мой бот {bot_count + 1}"
+
+    _validate_installments(body.payment_provider, body.offer_installments)
 
     if body.payment_provider and body.payment_creds is not None:
         is_valid, validation_message = await validate_payment_credentials(
@@ -290,6 +338,11 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
 
     update_data = {}
     token_changed = False
+    effective_provider = body.payment_provider or bot.payment_provider
+    _validate_installments(
+        effective_provider,
+        body.offer_installments if body.offer_installments is not None else bot.offer_installments,
+    )
 
     if body.display_name is not None:
         update_data["display_name"] = body.display_name
@@ -301,7 +354,7 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         update_data["payment_provider"] = body.payment_provider
     if body.payment_creds is not None:
         is_valid, validation_message = await validate_payment_credentials(
-            body.payment_provider or bot.payment_provider,
+            effective_provider,
             body.payment_creds,
         )
         if not is_valid:
@@ -336,6 +389,19 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
             )
         update_data["bot_token_enc"] = crypto.encrypt(body.token)
         update_data["media_sync_done"] = False
+        # Keep the webhook only for the owner's /start synchronization, but do
+        # not leave the replacement bot publicly serving an incomplete funnel.
+        update_data["status"] = "draft"
+        # Telegram file_id values belong to a particular bot token.  Never let
+        # a new token reuse files uploaded through the previous bot.
+        schema = dict(bot.funnel_schema or {})
+        for node in schema.get("nodes") or []:
+            if node.get("mediaFileId"):
+                node["mediaFileId"] = None
+                node["mediaAssetId"] = None
+                node["mediaType"] = None
+                node["media"] = False
+        update_data["funnel_schema"] = schema
         token_changed = True
 
     updated_bot = await update_bot_config(bot_id, **update_data)
@@ -510,6 +576,104 @@ async def sync_bot_media(bot_id: int, request: Request):
     }
 
 
+@api_router.post("/api/bots/{bot_id}/media")
+async def upload_bot_media(
+    bot_id: int,
+    request: Request,
+    node_id: str,
+    file: UploadFile = File(...),
+):
+    """Store a Telegram file_id for one bot; raw uploads are never persisted."""
+    bot = await get_owned_bot(bot_id, request)
+    if not bot.media_sync_done:
+        raise HTTPException(status_code=409, detail="Сначала нажмите /start в созданном боте для синхронизации.")
+    content_type = (file.content_type or "").lower()
+    media_type = (
+        "photo" if content_type.startswith("image/")
+        else "video" if content_type.startswith("video/")
+        else "document" if content_type else None
+    )
+    if not media_type:
+        raise HTTPException(status_code=415, detail="Не удалось определить тип файла.")
+    schema = dict(bot.funnel_schema or {})
+    nodes = list(schema.get("nodes") or [])
+    if not any(node.get("id") == node_id for node in nodes):
+        raise HTTPException(status_code=404, detail="Блок воронки не найден")
+    payload = await file.read(20 * 1024 * 1024 + 1)
+    if not payload or len(payload) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Размер файла должен быть не больше 20 МБ.")
+
+    from aiogram import Bot
+    from aiogram.types import BufferedInputFile
+    from database.requests.media_rq import create_media_asset
+
+    telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
+    try:
+        upload = BufferedInputFile(payload, filename=file.filename or f"{node_id}.{media_type}")
+        if media_type == "photo":
+            sent = await telegram_bot.send_photo(bot.owner.telegram_id, upload, disable_notification=True)
+            telegram_file_id = sent.photo[-1].file_id
+        elif media_type == "video":
+            sent = await telegram_bot.send_video(bot.owner.telegram_id, upload, disable_notification=True)
+            telegram_file_id = sent.video.file_id
+        else:
+            sent = await telegram_bot.send_document(bot.owner.telegram_id, upload, disable_notification=True)
+            telegram_file_id = sent.document.file_id
+        await telegram_bot.delete_message(bot.owner.telegram_id, sent.message_id)
+    except Exception as exc:
+        logger.warning("Не удалось синхронизировать медиа для бота %s: %s", bot_id, exc)
+        raise HTTPException(status_code=502, detail="Telegram не смог обработать файл. Повторите попытку.") from exc
+
+    asset = await create_media_asset(
+        bot.id,
+        node_id,
+        media_type,
+        telegram_file_id,
+        mime_type=content_type,
+        file_name=file.filename,
+    )
+    updated = False
+    for node in nodes:
+        if node.get("id") == node_id:
+            node["mediaFileId"] = telegram_file_id
+            node["mediaAssetId"] = str(asset.id)
+            node["mediaType"] = media_type
+            node["media"] = True
+            updated = True
+            break
+    if not updated:  # Defensive guard for malformed schemas changed concurrently.
+        raise HTTPException(status_code=409, detail="Воронка была изменена. Обновите страницу и повторите загрузку.")
+    schema["nodes"] = nodes
+    await update_bot_funnel(bot.id, schema, bot.funnel_complete)
+    return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
+
+
+@api_router.get("/api/bots/{bot_id}/media/{asset_id}/preview")
+async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
+    """Stream a saved Telegram file for the owner's Mini App preview only."""
+    bot = await get_owned_bot(bot_id, request)
+    from aiogram import Bot
+    from database.requests.media_rq import get_bot_media_asset
+
+    asset = await get_bot_media_asset(bot.id, asset_id)
+    if not asset:
+        raise HTTPException(status_code=404, detail="Файл не найден для этого бота.")
+    try:
+        telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
+        telegram_file = await telegram_bot.get_file(asset.telegram_file_id)
+        payload = io.BytesIO()
+        await telegram_bot.download_file(telegram_file.file_path, destination=payload)
+    except Exception as exc:
+        logger.warning("Не удалось получить preview медиа %s: %s", asset_id, exc)
+        raise HTTPException(status_code=502, detail="Не удалось получить файл из Telegram.") from exc
+
+    return Response(
+        content=payload.getvalue(),
+        media_type=asset.mime_type or "application/octet-stream",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @api_router.delete("/api/bots/{bot_id}/leads")
 async def reset_bot_leads(bot_id: int, request: Request):
     """Clear lead data without resetting the permanent token-lock history."""
@@ -536,48 +700,22 @@ async def send_manual_invoice(
     if not tariffs:
         raise HTTPException(status_code=400, detail="Выберите действующий тариф из воронки")
 
-    try:
-        amount = sum(float(tariff.get("price", 0)) for tariff in tariffs)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="У выбранного тарифа неверная цена") from exc
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Сумма счёта должна быть больше нуля")
-
     from aiogram import Bot
     from aiogram.client.default import DefaultBotProperties
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    from services.payment_link import generate_payment_link
-    from services.billing_notifications import notify_billing_user
+    from database.requests.client_payment_rq import create_client_payment
+    import uuid
 
-    description = ", ".join(str(tariff.get("name", "Тариф")) for tariff in tariffs)
-    tariff_details = "\n\n".join(
-        "\n".join(
-            part
-            for part in [
-                f"<b>{tariff.get('name') or 'Тариф'}</b>",
-                str(tariff.get("description") or "").strip(),
-                f"{float(tariff.get('price', 0)):,.0f} ₽".replace(",", " "),
-            ]
-            if part
+    if not bot.payment_provider or not bot.payment_creds_enc:
+        raise HTTPException(status_code=400, detail="Сначала подключите платёжную систему")
+    batch_id = uuid.uuid4()
+    payments = [
+        await create_client_payment(
+            bot_id=bot.id, lead_id=lead.id, provider=bot.payment_provider,
+            tariff=tariff, invoice_batch_id=batch_id,
         )
         for tariff in tariffs
-    )
-    payment_url = await generate_payment_link(bot, amount, description, lead.telegram_id)
-    if not payment_url:
-        try:
-            token = crypto.decrypt(bot.bot_token_enc)
-            telegram_bot = Bot(token=token, session=request.app.state.session)
-            await telegram_bot.send_message(
-                lead.telegram_id,
-                "⚠️ Не удалось сформировать счёт. Мы уже сообщили владельцу — попробуйте немного позже.",
-            )
-        except Exception as exc:
-            logger.warning("Не удалось сообщить лиду об ошибке счёта: %s", exc)
-        await notify_billing_user(
-            bot.owner.telegram_id,
-            f"⚠️ Не удалось сформировать счёт для лида {lead.first_name or lead.telegram_id}. Проверьте реквизиты кассы в настройках бота «{bot.display_name}».",
-        )
-        raise HTTPException(status_code=400, detail="Счёт не создан: проверьте реквизиты платёжной системы")
+    ]
     try:
         token = crypto.decrypt(bot.bot_token_enc)
         telegram_bot = Bot(
@@ -587,10 +725,13 @@ async def send_manual_invoice(
         )
         await telegram_bot.send_message(
             lead.telegram_id,
-            f"🧾 <b>Ваш счёт готов</b>\n\n{tariff_details}\n\n<b>К оплате: {amount:,.0f} ₽</b>".replace(",", " "),
+            "🧾 <b>Выберите товар для оплаты</b>\n\nНажмите нужный тариф — покажем описание, цену и ссылку.",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="Оплатить", url=payment_url, style="success")
-            ]]),
+                InlineKeyboardButton(
+                    text=f"{payment.tariff_snapshot.get('name', 'Тариф')} · {payment.amount:,.0f} ₽".replace(",", " "),
+                    callback_data=f"manual_invoice:{payment.id}",
+                )
+            ] for payment in payments]),
         )
     except Exception as exc:
         logger.exception("Не удалось отправить ручной счёт")
@@ -623,13 +764,8 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
         for l in leads
         if l.current_step_id and l.current_step_id != "node_start"
     )
-    sales = sum(
-        1
-        for l in leads
-        if l.has_purchased or l.current_step_id in ["node_success", "success", "delivery"]
-    )
+    sales, revenue = await get_client_payment_stats(bot_id)
     conversion = round((sales / views * 100), 1) if views > 0 else 0.0
-    revenue = sales * 1500
 
     return {
         "views": views,
@@ -640,7 +776,7 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
         "funnel_data": [
             {"name": "Старт", "value": views},
             {"name": "Клик", "value": clicks},
-            {"name": "Дожим 1", "value": int(clicks * 0.4)},
+            {"name": "Дожим 1", "value": sum(1 for l in leads if l.current_step_id == "push1")},
             {"name": "Оплата", "value": sales},
         ],
         "chart_data": [

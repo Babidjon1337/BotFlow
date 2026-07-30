@@ -19,7 +19,7 @@ export const BillingRenew = ({ onClose, onSuccess }: BillingRenewProps) => {
     try {
       const { apiService } = await import('../../services/api');
       const checkout = await apiService.createBillingCheckout('pro');
-      const telegram = (window as any).Telegram?.WebApp;
+      const telegram = (window as Window & { Telegram?: { WebApp?: { openLink?: (url: string) => void } } }).Telegram?.WebApp;
       if (telegram?.openLink) telegram.openLink(checkout.confirmationUrl);
       else window.location.assign(checkout.confirmationUrl);
       onSuccess();

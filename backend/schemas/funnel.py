@@ -85,10 +85,12 @@ class FunnelNodeSchema(BaseModel):
     button_text2: str = Field(default="", alias="buttonText2")
     payment_mode: Literal["auto", "application", "hybrid"] = Field(default="auto", alias="paymentMode")
     manager_text: str = Field(default="", alias="managerText")
+    manager_url: str = Field(default="", alias="managerUrl")
     tariffs: list[TariffSchema] = Field(default_factory=list)
     tariff_selection_text: str = Field(default="", alias="tariffSelectionText")
     media_file_id: Optional[str] = Field(default=None, alias="mediaFileId")
-    media_type: Optional[Literal["photo", "video"]] = Field(default=None, alias="mediaType")
+    media_asset_id: Optional[str] = Field(default=None, alias="mediaAssetId")
+    media_type: Optional[Literal["photo", "video", "document"]] = Field(default=None, alias="mediaType")
     media: Optional[bool] = False
     x: Optional[float] = 0
     y: Optional[float] = 0

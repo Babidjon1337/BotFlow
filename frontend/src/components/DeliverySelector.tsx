@@ -1,4 +1,4 @@
-import { Link2, MailPlus, FileBox, Info } from 'lucide-react';
+import { Link2, MailPlus, FileBox, Info, type LucideIcon } from 'lucide-react';
 import type { DeliveryType } from '../types';
 
 interface DeliverySelectorProps {
@@ -8,7 +8,7 @@ interface DeliverySelectorProps {
   onDeliveryValueChange: (val: string) => void;
 }
 
-const OPTIONS: { id: DeliveryType; icon: React.FC<any>; label: string }[] = [
+const OPTIONS: { id: DeliveryType; icon: LucideIcon; label: string }[] = [
   { id: 'link',   icon: Link2,   label: 'Ссылка' },
   { id: 'invite', icon: MailPlus, label: 'Инвайт' },
   { id: 'file',   icon: FileBox,  label: 'Файл' },

@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from services.manager_link import build_manager_deep_link
+
 
 REQUIRED_MESSAGE_NODE_IDS = ("start", "push1", "push2")
 PAYMENT_NODE_ID = "payment"
@@ -103,10 +105,15 @@ def evaluate_funnel_readiness(
 
     if mode not in {"auto", "application", "hybrid"}:
         reasons.append("Выберите корректный режим продажи.")
-    if mode in {"application", "hybrid"} and not _text(
-        _node_value(payment, "manager_text", "managerText")
-    ):
-        reasons.append("Добавьте текст для обращения к менеджеру.")
+    if mode in {"application", "hybrid"}:
+        manager_text = _text(_node_value(payment, "manager_text", "managerText"))
+        manager_url = _text(_node_value(payment, "manager_url", "managerUrl"))
+        if not manager_text:
+            reasons.append("Добавьте текст для обращения к менеджеру.")
+        if manager_url and not build_manager_deep_link(manager_url, manager_text or "черновик"):
+            reasons.append("Укажите корректную ссылку на публичный Telegram username менеджера.")
+        elif not manager_url:
+            reasons.append("Добавьте ссылку на Telegram менеджера.")
     if mode == "hybrid":
         for node_id in REQUIRED_MESSAGE_NODE_IDS:
             node = nodes.get(node_id)
@@ -114,9 +121,10 @@ def evaluate_funnel_readiness(
                 reasons.append("В гибридном режиме заполните вторую кнопку каждого сообщения.")
                 break
 
-    if not has_payment_provider:
-        reasons.append("Подключите платёжную систему.")
-    elif not has_payment_credentials:
-        reasons.append("Сохраните рабочие реквизиты платёжной системы.")
+    if mode in {"auto", "hybrid"}:
+        if not has_payment_provider:
+            reasons.append("Подключите платёжную систему.")
+        elif not has_payment_credentials:
+            reasons.append("Сохраните рабочие реквизиты платёжной системы.")
 
     return FunnelReadiness(tuple(dict.fromkeys(reasons)))

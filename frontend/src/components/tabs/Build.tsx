@@ -21,6 +21,7 @@ import {
   MessageCircle,
   RefreshCw,
   Bot,
+  FileText,
 } from "lucide-react";
 import { EmptyBotState } from "../EmptyBotState";
 import { FunnelCard } from "../FunnelCard";
@@ -30,6 +31,7 @@ import { InfoTooltip } from "../InfoTooltip";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
+import type { Tariff } from "../../types";
 // --- Button Input with Telegram Limit Validator ---
 const ButtonInput = ({
   label,
@@ -90,21 +92,80 @@ const ButtonInput = ({
   );
 };
 
+const SyncedMediaPreview = ({
+  botId,
+  assetId,
+  mediaType,
+}: {
+  botId: string;
+  assetId: string;
+  mediaType: "photo" | "video";
+}) => {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | null = null;
+    let cancelled = false;
+    void import("../../services/api")
+      .then(({ apiService }) => {
+        setPreviewError(false);
+        setPreviewUrl(null);
+        return apiService.getBotMediaPreview(botId, assetId);
+      })
+      .then((blob) => {
+        if (!cancelled) {
+          objectUrl = URL.createObjectURL(blob);
+          setPreviewUrl(objectUrl);
+        }
+      })
+      .catch(() => !cancelled && setPreviewError(true));
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [assetId, botId]);
+
+  if (previewError) {
+    return <p className="text-[11px] text-[var(--color-danger)]">Не удалось загрузить предпросмотр. Файл остаётся привязан к сообщению.</p>;
+  }
+  if (!previewUrl) {
+    return <p className="text-[11px] text-[var(--color-foreground-tertiary)]">Загружаем предпросмотр…</p>;
+  }
+  return mediaType === "video" ? (
+    <video src={previewUrl} controls className="max-h-44 w-full rounded-lg object-contain bg-black" />
+  ) : (
+    <img src={previewUrl} alt="Предпросмотр прикреплённого файла" className="max-h-44 w-full rounded-lg object-contain bg-[var(--color-surface-2)]" />
+  );
+};
+
 // --- Rich Text Editor with Telegram Limits & Media ---
 export const RichTextEditor = ({
   value,
   onChange,
   placeholder,
   hasMedia = false,
-  onToggleMedia,
+  botId,
+  mediaFileId,
+  mediaAssetId,
+  mediaType,
+  onUploadMedia,
+  onRemoveMedia,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   hasMedia?: boolean;
-  onToggleMedia?: () => void;
+  botId?: string;
+  mediaFileId?: string | null;
+  mediaAssetId?: string | null;
+  mediaType?: "photo" | "video" | "document" | null;
+  onUploadMedia?: (file: File) => Promise<void>;
+  onRemoveMedia?: () => void;
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (
@@ -132,6 +193,18 @@ export const RichTextEditor = ({
   const charCount = plainText.length;
   const maxChars = hasMedia ? 1024 : 4096;
   const isOverLimit = charCount > maxChars;
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    event.target.value = "";
+    if (!selectedFile || !onUploadMedia) return;
+    setIsUploading(true);
+    try {
+      await onUploadMedia(selectedFile);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   return (
     <div className={`flex flex-col border rounded-xl overflow-hidden bg-[var(--color-surface)] transition-all shadow-2xs ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)] focus-within:border-[var(--color-primary)]"}`}>
@@ -188,10 +261,11 @@ export const RichTextEditor = ({
         </div>
 
         {/* Media Toggle Button */}
-        {onToggleMedia && (
+        {onUploadMedia && (
           <button
             type="button"
-            onClick={onToggleMedia}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploading}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold transition-all ${
               hasMedia
                 ? "bg-[var(--color-primary)] text-white shadow-xs"
@@ -200,10 +274,18 @@ export const RichTextEditor = ({
             title="Прикрепить фото или видео к сообщению в Telegram"
           >
             <ImageIcon size={13} />
-            <span>{hasMedia ? "С фото / видео" : "Добавить фото/видео"}</span>
+            <span>{isUploading ? "Загружаем…" : hasMedia ? "Заменить фото/видео" : "Добавить фото/видео"}</span>
           </button>
         )}
       </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+        className="sr-only"
+        onChange={handleFileChange}
+      />
 
       {/* Media Uploader Preview Area */}
       <AnimatePresence>
@@ -221,21 +303,31 @@ export const RichTextEditor = ({
               </div>
               <button
                 type="button"
-                onClick={onToggleMedia}
+                onClick={onRemoveMedia}
                 className="text-[11px] font-semibold text-[var(--color-danger)] hover:underline"
               >
                 Удалить медиа
               </button>
             </div>
-            <div className="border border-dashed border-[var(--color-border-strong)] rounded-xl p-3.5 bg-[var(--color-surface)] flex flex-col items-center justify-center text-center gap-1 cursor-pointer hover:border-[var(--color-primary)] transition-colors">
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border border-dashed border-[var(--color-border-strong)] rounded-xl p-3.5 bg-[var(--color-surface)] flex flex-col items-center justify-center text-center gap-1 cursor-pointer hover:border-[var(--color-primary)] transition-colors"
+            >
               <ImageIcon size={20} className="text-[var(--color-foreground-tertiary)]" />
               <div className="text-[12px] font-semibold text-[var(--color-foreground)]">
-                Нажмите для загрузки или перетащите фото/видео
+                {isUploading ? "Загружаем и синхронизируем с Telegram…" : mediaFileId ? "Файл синхронизирован с Telegram" : "Нажмите для загрузки или перетащите фото/видео"}
               </div>
               <div className="text-[11px] text-[var(--color-foreground-tertiary)]">
-                MP4, JPG, PNG до 20 МБ. Лимит подписи в ТГ с медиа — 1024 символа.
+                Фото, видео или документ до 20 МБ. Лимит подписи с медиа — 1024 символа.
               </div>
             </div>
+            {mediaType === "document" ? (
+              <div className="flex items-center gap-2 text-[12px] text-[var(--color-foreground-secondary)]">
+                <FileText size={16} /> Документ синхронизирован с Telegram
+              </div>
+            ) : botId && mediaAssetId && mediaType ? (
+              <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} />
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
@@ -414,12 +506,61 @@ export const Build = () => {
   const [previewScreen, setPreviewScreen] = useState<
     "start" | "push1" | "push2" | "tariffs" | "invoice" | "manager"
   >("start");
-  const [selectedTariff, setSelectedTariff] = useState<any>(null);
+  const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const { showConfirm: showAlert } = useAlert();
-  const [, setForceRender] = useState(0);
   const { toggleBot, isToggling } = useBotToggle();
+
+  const resetBotLeads = async () => {
+    if (!appState.activeBot) return;
+    try {
+      const { apiService } = await import("../../services/api");
+      await apiService.resetBotLeads(appState.activeBot.id);
+      setAppState((previous) => ({
+        ...previous,
+        activeBot: previous.activeBot ? { ...previous.activeBot, usersCount: 0 } : null,
+        bots: previous.bots.map((bot) => bot.id === previous.activeBot?.id ? { ...bot, usersCount: 0 } : bot),
+      }));
+      setToastMessage("База пользователей очищена");
+    } catch (error) {
+      showAlert({ title: "Не удалось очистить базу", message: error instanceof Error ? error.message : "Повторите попытку.", type: "danger", confirmText: "Понятно", cancelText: "" });
+    } finally {
+      setShowConfirm(false);
+    }
+  };
+
+  const handleMediaUpload = async (nodeId: string, file: File) => {
+    if (!appState.activeBot) return;
+    if (file.size > 20 * 1024 * 1024) {
+      throw new Error("Размер файла не должен превышать 20 МБ.");
+    }
+    try {
+      const { apiService } = await import("../../services/api");
+      const media = await apiService.uploadBotMedia(appState.activeBot.id, nodeId, file);
+      updateBlock(nodeId, "media", true);
+      updateBlock(nodeId, "mediaFileId", media.fileId);
+      updateBlock(nodeId, "mediaAssetId", media.id);
+      updateBlock(nodeId, "mediaType", media.mediaType);
+      setToastMessage("Файл синхронизирован с Telegram");
+    } catch (error) {
+      showAlert({
+        title: "Не удалось загрузить файл",
+        message: error instanceof Error ? error.message : "Повторите попытку.",
+        type: "danger",
+        confirmText: "Понятно",
+        cancelText: "",
+      });
+      throw error;
+    }
+  };
+
+  const removeMedia = (nodeId: string) => {
+    updateBlock(nodeId, "media", false);
+    updateBlock(nodeId, "mediaFileId", null);
+    updateBlock(nodeId, "mediaAssetId", null);
+    updateBlock(nodeId, "mediaType", null);
+  };
 
   const handleSave = async () => {
     if (!appState.activeBot) return;
@@ -497,7 +638,7 @@ export const Build = () => {
         : !!t.actionData?.trim()),
     ) &&
     (paymentMode === "application" || paymentMode === "hybrid"
-      ? !!paymentBlock?.managerText?.trim()
+      ? !!paymentBlock?.managerText?.trim() && !!paymentBlock?.managerUrl?.trim()
       : true) &&
     (paymentBlock.tariffs.length > 1
       ? !!paymentBlock?.tariffSelectionText?.trim()
@@ -695,7 +836,7 @@ export const Build = () => {
             </p>
             <button 
               onClick={() => {
-                const tg = (window as any).Telegram?.WebApp;
+                const tg = (window as Window & { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram?.WebApp;
                 const botUrl = appState.activeBot!.botUrl || `https://t.me/${appState.activeBot!.username}`;
                 if (tg && tg.openTelegramLink) {
                   tg.openTelegramLink(`${botUrl}?start=sync`);
@@ -785,13 +926,26 @@ export const Build = () => {
                   >
                     <div className="flex items-center mb-1.5">
                       <label className="text-[13px] font-semibold text-[var(--color-foreground)]">
-                        Текст для связи
+                        Ссылка на Telegram менеджера
                       </label>
                       <InfoTooltip
-                        title="Шаблон обращения в ЛС"
-                        text="Этот текст автоматически подставится в поле ввода Telegram, когда клиент нажмет на кнопку консультации и перейдет в чат с менеджером/администратором."
+                        title="Куда перейдёт клиент"
+                        text="Укажите публичный @username или ссылку вида https://t.me/username. Клиент перейдёт в личный чат, а текст ниже Telegram подставит в поле ввода."
                       />
                     </div>
+                    <input
+                      type="text"
+                      className="input w-full text-[13px] h-9 bg-[var(--color-surface-2)] border-[var(--color-border)] focus:border-[var(--color-primary)] font-medium"
+                      value={paymentBlock?.managerUrl || ""}
+                      placeholder="@manager или https://t.me/manager"
+                      onChange={(e) => updateBlock("payment", "managerUrl", e.target.value)}
+                      onFocus={(e) => {
+                        if (window.innerWidth <= 768) { setTimeout(() => { e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300); }
+                      }}
+                    />
+                    <label className="text-[13px] font-semibold text-[var(--color-foreground)] block mt-3 mb-1.5">
+                      Текст для связи
+                    </label>
                     <input
                       type="text"
                       className="input w-full text-[13px] h-9 bg-[var(--color-surface-2)] border-[var(--color-border)] focus:border-[var(--color-primary)] font-medium"
@@ -803,7 +957,7 @@ export const Build = () => {
                       }}
                     />
                     <div className="text-[11px] text-[var(--color-foreground-tertiary)] mt-1">
-                      Клиент попадет прямо в чат к владельцу бота с этим готовым текстом.
+                      Telegram подставит этот текст в поле ввода клиента. Сообщение отправится менеджеру только после нажатия «Отправить» самим клиентом.
                     </div>
                   </motion.div>
                 )}
@@ -835,7 +989,12 @@ export const Build = () => {
                     onChange={(v) => updateBlock("start", "content", v)}
                     placeholder="Первое сообщение бота..."
                     hasMedia={!!getBlock("start")?.media}
-                    onToggleMedia={() => updateBlock("start", "media" as any, !getBlock("start")?.media)}
+                    botId={appState.activeBot.id}
+                    mediaFileId={getBlock("start")?.mediaFileId}
+                    mediaAssetId={getBlock("start")?.mediaAssetId}
+                    mediaType={getBlock("start")?.mediaType}
+                    onUploadMedia={(file) => handleMediaUpload("start", file)}
+                    onRemoveMedia={() => removeMedia("start")}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -894,7 +1053,12 @@ export const Build = () => {
                     onChange={(v) => updateBlock("push1", "content", v)}
                     placeholder="Напоминание пользователю..."
                     hasMedia={!!getBlock("push1")?.media}
-                    onToggleMedia={() => updateBlock("push1", "media" as any, !getBlock("push1")?.media)}
+                    botId={appState.activeBot.id}
+                    mediaFileId={getBlock("push1")?.mediaFileId}
+                    mediaAssetId={getBlock("push1")?.mediaAssetId}
+                    mediaType={getBlock("push1")?.mediaType}
+                    onUploadMedia={(file) => handleMediaUpload("push1", file)}
+                    onRemoveMedia={() => removeMedia("push1")}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -953,7 +1117,12 @@ export const Build = () => {
                     onChange={(v) => updateBlock("push2", "content", v)}
                     placeholder="Последний шанс..."
                     hasMedia={!!getBlock("push2")?.media}
-                    onToggleMedia={() => updateBlock("push2", "media" as any, !getBlock("push2")?.media)}
+                    botId={appState.activeBot.id}
+                    mediaFileId={getBlock("push2")?.mediaFileId}
+                    mediaAssetId={getBlock("push2")?.mediaAssetId}
+                    mediaType={getBlock("push2")?.mediaType}
+                    onUploadMedia={(file) => handleMediaUpload("push2", file)}
+                    onRemoveMedia={() => removeMedia("push2")}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1238,7 +1407,7 @@ export const Build = () => {
                                 ? getBlock("start")?.buttonText2
                                 : undefined
                             }
-                            media={(getBlock("start") as any)?.media}
+                            media={getBlock("start")?.media}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
                           />
@@ -1270,7 +1439,7 @@ export const Build = () => {
                                 ? getBlock("push1")?.buttonText2
                                 : undefined
                             }
-                            media={(getBlock("push1") as any)?.media}
+                            media={getBlock("push1")?.media}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
                           />
@@ -1302,7 +1471,7 @@ export const Build = () => {
                                 ? getBlock("push2")?.buttonText2
                                 : undefined
                             }
-                            media={(getBlock("push2") as any)?.media}
+                            media={getBlock("push2")?.media}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
                           />
@@ -1615,12 +1784,7 @@ export const Build = () => {
                       Отмена
                     </button>
                     <button
-                      onClick={() => {
-                        if (appState.activeBot)
-                          appState.activeBot.usersCount = 0;
-                        setShowConfirm(false);
-                        setForceRender((prev) => prev + 1);
-                      }}
+                      onClick={() => void resetBotLeads()}
                       className="btn"
                       style={{
                         flex: 1,
@@ -1677,8 +1841,8 @@ export const Build = () => {
                   margin: 5,
                 }}
                 onClick={() => {
-                  const tg = (window as any).Telegram?.WebApp;
-                  if (tg) tg.HapticFeedback.impactOccurred("medium");
+                  const tg = (window as Window & { Telegram?: { WebApp?: { HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
+                  tg?.HapticFeedback?.impactOccurred("medium");
                   handleSave();
                 }}
                 disabled={isSaving}

@@ -157,7 +157,7 @@ export const OnboardingTour = ({ onComplete }: OnboardingTourProps) => {
   }, [current.targetId, current.tooltipSide, spX, spY, spW, spH]);
 
   useLayoutEffect(() => {
-    measure();
+    const initialMeasure = requestAnimationFrame(measure);
     const t1 = setInterval(measure, 50);
     const t2 = setTimeout(() => clearInterval(t1), 600); // Poll during smooth scroll
     
@@ -167,6 +167,7 @@ export const OnboardingTour = ({ onComplete }: OnboardingTourProps) => {
     return () => {
       clearInterval(t1);
       clearTimeout(t2);
+      cancelAnimationFrame(initialMeasure);
       window.removeEventListener('resize', measure);
       window.removeEventListener('scroll', measure);
     };

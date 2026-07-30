@@ -3,13 +3,13 @@ from keyboard.user_kb import *
 from loggers import logger
 
 
-async def send_funnel_node_message(bot: Bot, chat_id: int, node) -> None:
+async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=None) -> None:
     if isinstance(node, dict):
         text = node.get("content", "")
         if isinstance(text, dict):
             text = text.get("text", "")
-        media_type = node.get("media_type")
-        file_id = node.get("media_file_id")
+        media_type = node.get("mediaType") or node.get("media_type")
+        file_id = node.get("mediaFileId") or node.get("media_file_id")
         if not file_id and isinstance(node.get("content"), dict):
             media = node["content"].get("media", {})
             media_type = media.get("type")
@@ -31,8 +31,7 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node) -> None:
         if not button_text and hasattr(node, "button") and node.button:
             button_text = getattr(node.button, "text", None)
 
-    reply_markup = None
-    if button_text:
+    if reply_markup is None and button_text:
         reply_markup = user_payment_button(button_text)
 
     try:
@@ -47,6 +46,13 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node) -> None:
             await bot.send_photo(
                 chat_id=chat_id,
                 photo=file_id,
+                caption=text,
+                reply_markup=reply_markup,
+            )
+        elif media_type == "document" and file_id:
+            await bot.send_document(
+                chat_id=chat_id,
+                document=file_id,
                 caption=text,
                 reply_markup=reply_markup,
             )

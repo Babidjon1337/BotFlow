@@ -7,7 +7,7 @@ import type { FunnelNode, Tariff } from '../types';
 
 interface PaymentBlockEditorProps {
   node?: FunnelNode;
-  onChange: (field: keyof FunnelNode, value: any) => void;
+  onChange: <K extends keyof FunnelNode>(field: K, value: FunnelNode[K]) => void;
 }
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, onChange }) => {
@@ -34,7 +34,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
     updateTariffs(tariffs.filter(t => t.id !== id));
   };
 
-  const updateTariff = (id: string, field: keyof Tariff, value: any) => {
+  const updateTariff = <K extends keyof Tariff>(id: string, field: K, value: Tariff[K]) => {
     updateTariffs(tariffs.map(t => t.id === id ? { ...t, [field]: value } : t));
   };
 
@@ -239,8 +239,8 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
                     >
                       <div className="p-3.5">
                         <DeliverySelector
-                          value={tariff.actionType as any}
-                          onChange={(type) => updateTariff(tariff.id, 'actionType', type)}
+                          value={tariff.actionType === 'group' ? 'invite' : tariff.actionType === 'text' ? 'link' : tariff.actionType}
+                          onChange={(type) => updateTariff(tariff.id, 'actionType', type === 'invite' ? 'group' : type)}
                           deliveryValue={tariff.actionData}
                           onDeliveryValueChange={(val) => updateTariff(tariff.id, 'actionData', val)}
                         />

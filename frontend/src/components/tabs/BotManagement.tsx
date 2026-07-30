@@ -47,7 +47,7 @@ export const BotManagement = () => {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [openMenuId]);
 
-  const tg = (window as any).Telegram?.WebApp;
+  const tg = (window as Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number } }; HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id || 123456;
 
   if (!hasBots) {
@@ -80,8 +80,7 @@ export const BotManagement = () => {
   };
 
   const onDeleteBot = async (botId: string) => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred("medium");
+    tg?.HapticFeedback?.impactOccurred("medium");
     try {
       const { apiService } = await import('../../services/api');
       await apiService.deleteBot(botId);

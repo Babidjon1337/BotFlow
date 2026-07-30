@@ -1,6 +1,5 @@
 import json
 import re
-import random
 import hmac
 import hashlib
 import uuid
@@ -8,7 +7,8 @@ import httpx
 from typing import Any, Optional
 from urllib.parse import urlencode
 from prodamuspy import ProdamusPy
-from database.models import BotConfig
+from database.models import BotConfig, ClientPayment
+from database.requests.client_payment_rq import set_client_payment_provider_id
 from services.security import crypto
 from loggers import logger
 
@@ -55,7 +55,12 @@ async def validate_payment_credentials(provider: str | None, creds: dict | None)
 
 
 async def generate_payment_link(
-    bot_config: BotConfig, amount: float, description: str, lead_telegram_id: int
+    bot_config: BotConfig,
+    amount: float,
+    description: str,
+    lead_telegram_id: int,
+    *,
+    client_payment: ClientPayment | None = None,
 ) -> Optional[str]:
     """
     Универсальная функция генерации платежной ссылки.
@@ -75,11 +80,17 @@ async def generate_payment_link(
     provider = bot_config.payment_provider.lower()
 
     if provider == "yookassa":
-        return await _create_yookassa_link(creds, amount, description, lead_telegram_id)
+        return await _create_yookassa_link(
+            creds, amount, description, lead_telegram_id, bot_config, client_payment
+        )
     elif provider == "robokassa":
-        return _create_robokassa_link(creds, amount, description, lead_telegram_id)
+        return await _create_robokassa_link(
+            creds, amount, description, lead_telegram_id, bot_config, client_payment
+        )
     elif provider == "prodamus":
-        return await _create_prodamus_link(creds, amount, description, lead_telegram_id)
+        return await _create_prodamus_link(
+            creds, amount, description, lead_telegram_id, bot_config, client_payment
+        )
     else:
         logger.warning(f"Неподдерживаемый платежный провайдер: {provider}")
         return None
@@ -89,7 +100,8 @@ async def generate_payment_link(
 # 1. ИНТЕГРАЦИЯ ЮKASSA
 # ==========================================
 async def _create_yookassa_link(
-    creds: dict, amount: float, description: str, telegram_id: int
+    creds: dict, amount: float, description: str, telegram_id: int,
+    bot_config: BotConfig, client_payment: ClientPayment | None,
 ) -> Optional[str]:
     shop_id, api_key = _yookassa_credentials(creds)
 
@@ -98,7 +110,10 @@ async def _create_yookassa_link(
         return None
 
     url = "https://api.yookassa.ru/v3/payments"
-    headers = {"Idempotence-Key": str(uuid.uuid4()), "Content-Type": "application/json"}
+    headers = {
+        "Idempotence-Key": client_payment.idempotence_key if client_payment else str(uuid.uuid4()),
+        "Content-Type": "application/json",
+    }
 
     payload = {
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
@@ -107,6 +122,8 @@ async def _create_yookassa_link(
         "description": description,
         "metadata": {
             "telegram_id": str(telegram_id),
+            "bot_id": str(bot_config.id),
+            **({"client_payment_id": str(client_payment.id), "tariff_id": client_payment.tariff_id} if client_payment else {}),
         },
         "receipt": {
             "customer": {"email": f"client_{telegram_id}@telegram-bot.ru"},
@@ -122,13 +139,23 @@ async def _create_yookassa_link(
             ],
         },
     }
+    if bot_config.offer_installments:
+        # YooKassa's documented "Плати частями" method. It is available only
+        # for amounts from 1,000 to 50,000 RUB and enabled merchant accounts.
+        if not 1_000 <= amount <= 50_000:
+            logger.error("Рассрочка ЮKassa доступна только для суммы от 1 000 до 50 000 ₽.")
+            return None
+        payload["payment_method_data"] = {"type": "sber_bnpl"}
 
     try:
         response = await http_client.post(
             url, json=payload, headers=headers, auth=(str(shop_id), str(api_key))
         )
         if response.status_code == 200:
-            return response.json()["confirmation"]["confirmation_url"]
+            data = response.json()
+            if client_payment:
+                await set_client_payment_provider_id(client_payment.id, str(data["id"]))
+            return data["confirmation"]["confirmation_url"]
         logger.error(f"Ошибка API ЮKassa: {response.text}")
     except Exception as e:
         logger.error(f"Сетевой сбой при обращении к ЮKassa: {e}")
@@ -138,19 +165,25 @@ async def _create_yookassa_link(
 # ==========================================
 # 2. ИНТЕГРАЦИЯ РОБОКАССЫ
 # ==========================================
-def _create_robokassa_link(
-    creds: dict, amount: float, description: str, telegram_id: int
+async def _create_robokassa_link(
+    creds: dict, amount: float, description: str, telegram_id: int,
+    bot_config: BotConfig, client_payment: ClientPayment | None,
 ) -> Optional[str]:
     merchant_login = creds.get("merchant_login")
-    password_1 = creds.get("password_1")
+    password_1 = creds.get("password1") or creds.get("password_1")
     is_test = creds.get("is_test", True)
 
     if not merchant_login or not password_1:
         logger.error("Для Робокассы не переданы merchant_login или password_1!")
         return None
 
-    inv_id = int(uuid.uuid4().int >> 96)
-    signature_str = f"{merchant_login}:{amount:.2f}:{inv_id}:{password_1}:shp_telegram_id={telegram_id}"
+    inv_id = str(client_payment.id) if client_payment else str(uuid.uuid4())
+    signature_parts = [f"shp_bot_id={bot_config.id}"]
+    if client_payment:
+        signature_parts.append(f"shp_client_payment_id={client_payment.id}")
+    signature_parts.append(f"shp_telegram_id={telegram_id}")
+    extra = ":".join(signature_parts)
+    signature_str = f"{merchant_login}:{amount:.2f}:{inv_id}:{password_1}:{extra}"
     signature = hashlib.md5(signature_str.encode("utf-8")).hexdigest()
 
     params = {
@@ -159,10 +192,15 @@ def _create_robokassa_link(
         "InvId": str(inv_id),
         "SignatureValue": signature,
         "Description": description,
+        "shp_bot_id": str(bot_config.id),
         "shp_telegram_id": str(telegram_id),
     }
     if is_test:
         params["IsTest"] = "1"
+
+    if client_payment:
+        params["shp_client_payment_id"] = str(client_payment.id)
+        await set_client_payment_provider_id(client_payment.id, inv_id)
 
     return f"https://auth.robokassa.ru/Merchant/Index.aspx?{urlencode(params)}"
 
@@ -171,9 +209,13 @@ def _create_robokassa_link(
 # 3. ИНТЕГРАЦИЯ PRODAMUS
 # ==========================================
 async def _create_prodamus_link(
-    creds: dict, amount: float, description: str, telegram_id: int
+    creds: dict, amount: float, description: str, telegram_id: int,
+    bot_config: BotConfig, client_payment: ClientPayment | None,
 ) -> Optional[str]:
-    payment_page = creds.get("payment_page", "").rstrip("/") + "/"
+    payment_page = creds.get("payment_page") or creds.get("domain", "")
+    if payment_page and not payment_page.startswith("http"):
+        payment_page = f"https://{payment_page}"
+    payment_page = payment_page.rstrip("/") + "/"
     api_key = creds.get("api_key")
 
     if not payment_page or not api_key:
@@ -181,11 +223,12 @@ async def _create_prodamus_link(
         return None
 
     prodamus = ProdamusPy(api_key)
-    order_id = f"{telegram_id}_{random.randint(100000, 999999)}"
+    order_id = str(client_payment.id) if client_payment else f"{telegram_id}_{uuid.uuid4()}"
 
     data = {
         "do": "link",
         "order_id": order_id,
+        "tg_user_id": str(telegram_id),
         "products": [
             {
                 "name": description,
@@ -198,6 +241,8 @@ async def _create_prodamus_link(
     }
 
     data["signature"] = prodamus.sign(data)
+    if client_payment:
+        await set_client_payment_provider_id(client_payment.id, order_id)
 
     def _flatten(prefix, value):
         items = []
@@ -234,7 +279,12 @@ async def _create_prodamus_link(
     return None
 
 
-async def send_success_message(tg_bot_id: int, telegram_id: int, http_session: Any):
+async def send_success_message(
+    tg_bot_id: int,
+    telegram_id: int,
+    http_session: Any,
+    tariff_snapshot: dict[str, Any] | None = None,
+):
     """
     Вспомогательная функция: достает настройки бота и отправляет node_success или delivery ноду V2.
     """
@@ -256,6 +306,15 @@ async def send_success_message(tg_bot_id: int, telegram_id: int, http_session: A
             nodes = funnel_schema.get("nodes")
             if isinstance(nodes, list):
                 node_success = next((n for n in nodes if n.get("id") in ["success", "delivery", "node_success"]), None)
+                if not node_success and tariff_snapshot:
+                    tariff = tariff_snapshot
+                    action_type = tariff.get("action_type") or tariff.get("actionType", "text")
+                    action_data = tariff.get("action_data") or tariff.get("actionData", "")
+                    node_success = {
+                        "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text", "group"] else "✅ <b>Оплата успешно получена!</b>",
+                        "media_file_id": action_data if action_type == "file" else None,
+                        "media_type": "photo" if action_type == "file" else None,
+                    }
                 if not node_success:
                     payment_node = next((n for n in nodes if n.get("id") == "payment"), None)
                     if payment_node and payment_node.get("tariffs"):

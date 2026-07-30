@@ -10,6 +10,7 @@ from config import (
     SAAS_PRO_PRICE_RUB,
     SAAS_YOOKASSA_SECRET_KEY,
     SAAS_YOOKASSA_SHOP_ID,
+    SAAS_YOOKASSA_VAT_CODE,
     WEBAPP_URL,
 )
 from database.requests.billing_rq import (
@@ -40,7 +41,12 @@ def _credentials() -> tuple[str, str]:
     return SAAS_YOOKASSA_SHOP_ID, SAAS_YOOKASSA_SECRET_KEY
 
 
-async def create_checkout(user_id: int, product_key: str) -> dict[str, str]:
+async def create_checkout(
+    user_id: int,
+    product_key: str,
+    *,
+    receipt_email: str | None = None,
+) -> dict[str, str]:
     try:
         product, amount, description = PRODUCTS[product_key]
     except KeyError as exc:
@@ -61,6 +67,18 @@ async def create_checkout(user_id: int, product_key: str) -> dict[str, str]:
             "product": product,
         },
     }
+    if receipt_email:
+        payload["receipt"] = {
+            "customer": {"email": receipt_email},
+            "items": [{
+                "description": description,
+                "quantity": "1.00",
+                "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+                "vat_code": SAAS_YOOKASSA_VAT_CODE,
+                "payment_mode": "full_payment",
+                "payment_subject": "service",
+            }],
+        }
     if product == "pro_initial":
         payload["save_payment_method"] = True
 

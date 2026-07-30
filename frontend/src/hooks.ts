@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
 
+type TelegramWebApp = {
+  viewportHeight?: number;
+  onEvent?: (event: 'viewportChanged', handler: () => void) => void;
+  offEvent?: (event: 'viewportChanged', handler: () => void) => void;
+};
+
 export const useViewportHeight = () => {
   const [vh, setVh] = useState(window.innerHeight);
 
   useEffect(() => {
-    const tg = (window as any).Telegram?.WebApp;
+    const tg = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
     
     const update = () => {
       setVh(tg?.viewportHeight || window.visualViewport?.height || window.innerHeight);
