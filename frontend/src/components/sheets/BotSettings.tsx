@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { KeyRound, X, Info, Copy } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider, AppState } from '../../types';
@@ -28,6 +28,7 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
 export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => {
   const { setSheet, setActiveTab, isAdmin, setAppState, setToastMessage, blocks, funnelLoadState, getFunnelRevision, replaceFunnelWorkspace } = useAppState();
   const vh = useViewportHeight();
+  const formId = useId();
   
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
     setTimeout(() => {
@@ -35,19 +36,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
     }, 400);
   };
   
-  useEffect(() => {
-    const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void } } } }).Telegram?.WebApp;
-    const backButton = tg?.BackButton;
-    if (backButton) {
-      backButton.show();
-      backButton.onClick(onClose);
-      return () => {
-        backButton.hide();
-        backButton.offClick(onClose);
-      };
-    }
-  }, [onClose]);
-
   const activeBot = appState.activeBot;
   
   const [name, setName] = useState(activeBot?.name || '');
@@ -61,6 +49,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const [paymentCredsChanged, setPaymentCredsChanged] = useState(false);
   const [changedCredentialFields, setChangedCredentialFields] = useState<Set<string>>(new Set());
   const [providerChanged, setProviderChanged] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const showsStoredToken = Boolean(activeBot?.tokenPreview) && !tokenChanged;
   const showsStoredCredentials = provider === initialProvider && !providerChanged;
 
@@ -72,12 +61,48 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const canEditToken = !isTokenLocked;
   const canEditPayment = true;
 
-  const { showAlert } = useAlert();
+  const { showAlert, showConfirm } = useAlert();
   const isFunnelReady = Boolean(
     activeBot &&
     funnelLoadState.status === 'ready' &&
     funnelLoadState.botId === activeBot.id,
   );
+  const hasUnsavedChanges =
+    name !== (activeBot?.name || '') ||
+    tokenChanged ||
+    offerUrl !== (activeBot?.offerUrl || '') ||
+    offerInstallments !== (activeBot?.offerInstallments || false) ||
+    provider !== initialProvider ||
+    paymentCredsChanged;
+
+  const requestClose = useCallback(() => {
+    if (isSaving) return;
+    if (!hasUnsavedChanges) {
+      onClose();
+      return;
+    }
+    showConfirm({
+      title: 'Закрыть без сохранения?',
+      message: 'Несохранённые изменения в настройках бота будут потеряны.',
+      type: 'warning',
+      confirmText: 'Закрыть',
+      cancelText: 'Остаться',
+      onConfirm: onClose,
+    });
+  }, [hasUnsavedChanges, isSaving, onClose, showConfirm]);
+
+  useEffect(() => {
+    const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void } } } }).Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (backButton) {
+      backButton.show();
+      backButton.onClick(requestClose);
+      return () => {
+        backButton.hide();
+        backButton.offClick(requestClose);
+      };
+    }
+  }, [requestClose]);
 
   const handleSave = async () => {
     if (!activeBot) return;
@@ -105,6 +130,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
       });
       return;
     }
+    setIsSaving(true);
     try {
       const { apiService } = await import('../../services/api');
       const updated = await apiService.updateBot(activeBot.id, {
@@ -178,6 +204,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         confirmText: "Закрыть",
         cancelText: ""
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -185,8 +213,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
     <>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100]"
+        onClick={requestClose}
+        className="fixed inset-0 bg-black/40 z-[100]"
       />
       
       {/* Centering container */}
@@ -203,19 +231,29 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           style={{ maxHeight: '100dvh' }}
         >
           {/* Header */}
-          <div className="flex justify-center lg:justify-between items-center p-5 border-b border-[var(--color-border)] shrink-0 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:pt-5 relative">
-            <h3 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-foreground)' }}>Главные настройки</h3>
-            <button onClick={onClose} className="w-8 h-8 rounded-full bg-[var(--color-surface-2)] border-none cursor-pointer hidden lg:flex items-center justify-center hover:bg-[var(--color-border)] transition-colors absolute right-5 top-1/2 -translate-y-1/2 lg:static lg:translate-y-0">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-5 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:pt-5 shrink-0">
+            <div className="min-w-0">
+              <h3 className="text-[18px] font-semibold text-[var(--color-foreground)]">Настройки бота</h3>
+              <p className="mt-0.5 truncate text-[12px] text-[var(--color-foreground-secondary)]">{activeBot?.name || 'Бот'}</p>
+            </div>
+            <button type="button" onClick={requestClose} aria-label="Закрыть настройки" className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-border)] hover:text-[var(--color-foreground)]">
               <X size={16} style={{ color: 'var(--color-foreground-secondary)' }} />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-5 py-6 flex flex-col gap-6">
+          <fieldset disabled={isSaving} aria-busy={isSaving || undefined} className="m-0 flex flex-1 flex-col gap-6 overflow-y-auto border-0 px-5 py-6 disabled:opacity-70">
+
+          <section aria-labelledby={`${formId}-telegram-title`} className="space-y-4">
+            <div>
+              <h4 id={`${formId}-telegram-title`} className="text-[14px] font-semibold text-[var(--color-foreground)]">Telegram-бот</h4>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Имя видно только в Mini App. Токен меняйте, только если получили новый в BotFather.</p>
+            </div>
 
           {/* Name */}
           <div>
-            <label className="text-label" style={{ display: 'block', marginBottom: '8px' }}>Имя бота</label>
+            <label htmlFor={`${formId}-name`} className="text-label" style={{ display: 'block', marginBottom: '8px' }}>Имя бота</label>
             <input
+              id={`${formId}-name`}
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -227,46 +265,42 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
 
           {/* Token */}
           <div>
-            <label className="text-label" style={{ display: 'block', marginBottom: '8px' }}>Токен Telegram бота</label>
-            <div style={{ position: 'relative' }}>
-              <KeyRound size={15} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-foreground-tertiary)' }} />
-              <input
-                type={tokenChanged ? "password" : "text"}
-                value={tokenChanged ? token : (activeBot?.tokenPreview || '')}
-                onChange={(e) => { setTokenChanged(true); setToken(e.target.value); }}
-                onFocus={(e) => {
-                  if (!tokenChanged) {
-                    e.currentTarget.value = '';
-                    setTokenChanged(true);
-                    setToken('');
-                  }
-                  handleFocus(e);
-                }}
-                disabled={!canEditToken}
-                placeholder="Введите новый токен только для замены"
-                className="input"
-                style={{ paddingLeft: '40px', opacity: !canEditToken ? 0.6 : 1, cursor: !canEditToken ? 'not-allowed' : 'text', width: '100%' }}
-              />
-            </div>
-            {showsStoredToken && (
-              <p className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">
-                Токен показан в безопасной маске. Нажмите на поле, чтобы заменить его.
-              </p>
+            <label htmlFor={`${formId}-token`} className="text-label" style={{ display: 'block', marginBottom: '8px' }}>Токен Telegram бота</label>
+            {showsStoredToken ? (
+              <div className="flex items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <KeyRound size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" />
+                  <input id={`${formId}-token`} type="text" value={activeBot?.tokenPreview || ''} readOnly className="input w-full cursor-default pl-10" aria-describedby={`${formId}-token-help`} />
+                </div>
+                <button type="button" disabled={!canEditToken} onClick={() => { setTokenChanged(true); setToken(''); }} className="btn btn-secondary h-11 shrink-0 px-3 text-[13px]">Заменить</button>
+              </div>
+            ) : (
+              <div className="relative">
+                <KeyRound size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" />
+                <input id={`${formId}-token`} type="password" value={token} onChange={(e) => setToken(e.target.value)} onFocus={handleFocus} disabled={!canEditToken} placeholder="Введите новый токен" className="input w-full pl-10" autoComplete="new-password" />
+              </div>
             )}
+            {showsStoredToken && <p id={`${formId}-token-help`} className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">Токен показан в безопасной маске. Для замены нажмите «Заменить».</p>}
             {isTokenLocked && (
               <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                 <span style={{ fontSize: '14px' }}>🔒</span>
                 <span>
-                  У вас более 10 пользователей. Токен заблокирован. (Для смены нужна <span onClick={() => { setSheet(null); setActiveTab('subscription'); }} style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}>PRO подписка</span> или новый слот).
+                  У вас более 10 пользователей. Токен заблокирован. Для смены нужна <button type="button" onClick={() => { setSheet(null); setActiveTab('subscription'); }} className="font-medium text-[var(--color-primary)] underline underline-offset-2">PRO-подписка</button> или новый слот.
                 </span>
               </p>
             )}
           </div>
+          </section>
 
-          {/* Offer */}
+          <section aria-labelledby={`${formId}-legal-title`} className="space-y-3">
+            <div>
+              <h4 id={`${formId}-legal-title`} className="text-[14px] font-semibold text-[var(--color-foreground)]">Юридические документы</h4>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Ссылка показывается клиенту перед началом воронки.</p>
+            </div>
           <div>
-            <label className="text-label" style={{ display: 'block', marginBottom: '8px' }}>Ссылка на оферту</label>
+            <label htmlFor={`${formId}-offer-url`} className="text-label" style={{ display: 'block', marginBottom: '8px' }}>Ссылка на оферту</label>
             <input
+              id={`${formId}-offer-url`}
               type="text"
               value={offerUrl}
               onChange={(e) => setOfferUrl(e.target.value)}
@@ -275,16 +309,26 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
               className="input w-full"
             />
           </div>
+          </section>
+
+          <section aria-labelledby={`${formId}-payment-title`} className="space-y-4">
+            <div>
+              <h4 id={`${formId}-payment-title`} className="text-[14px] font-semibold text-[var(--color-foreground)]">Приём оплаты</h4>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Реквизиты зашифрованы и проверяются сервером при сохранении.</p>
+            </div>
 
           {/* Installments Toggle */}
-          {provider === 'yookassa' && <div className="flex items-center justify-between p-4 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)]">
+          {provider === 'yookassa' && <div className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
             <div className="pr-3">
-              <span className="text-[14px] font-medium text-[var(--color-foreground)] block">Предлагать рассрочку от банка</span>
-              <span className="text-[12px] text-[var(--color-foreground-secondary)] leading-tight block mt-0.5">ЮKassa «Плати частями»: доступно для сумм от 1 000 до 50 000 ₽ при подключённой услуге в кассе.</span>
+              <span id={`${formId}-installments-label`} className="text-[14px] font-medium text-[var(--color-foreground)] block">Предлагать рассрочку от банка</span>
+              <span className="text-[12px] text-[var(--color-foreground-secondary)] leading-tight block mt-0.5">ЮKassa «Плати частями»: от 1 000 до 50 000 ₽ при подключённой услуге.</span>
             </div>
             <button
               type="button"
               onClick={() => setOfferInstallments(!offerInstallments)}
+              role="switch"
+              aria-checked={offerInstallments}
+              aria-labelledby={`${formId}-installments-label`}
               className={`w-12 h-7 rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 relative ${
                 offerInstallments ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'
               }`}
@@ -299,13 +343,13 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
 
           {/* Payment provider */}
           <div>
-            <label className="text-label" style={{ display: 'block', marginBottom: '12px' }}>Платёжная система</label>
+            <p className="text-label" style={{ display: 'block', marginBottom: '12px' }}>Платёжная система</p>
             {activeBot?.hasPaymentCredentials && !paymentCredsChanged && (
               <p className="mb-3 rounded-lg bg-[var(--color-success-soft)] px-3 py-2 text-[12px] font-medium text-[var(--color-success)]">
                 Ключи API сохранены. В целях безопасности они не отображаются; заполните поля, только если хотите заменить ключи.
               </p>
             )}
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="mb-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Платёжная система">
               {(Object.keys(PAYMENT_PROVIDERS) as PaymentProvider[]).map(p => {
                 const info = PROVIDER_INFO[p];
                 const isSelected = provider === p;
@@ -313,6 +357,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 return (
                   <button
                     key={p}
+                    type="button"
                     onClick={() => {
                       setProvider(p);
                       setProviderChanged(p !== initialProvider);
@@ -322,7 +367,9 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                       setPaymentCredsChanged(p !== provider);
                     }}
                     disabled={!canEditPayment}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${!canEditPayment ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--color-surface-2)]'}`}
+                    role="radio"
+                    aria-checked={isSelected}
+                    className={`flex min-h-24 flex-col items-center justify-center rounded-xl border-2 p-3 transition-colors ${!canEditPayment ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:bg-[var(--color-surface-2)]'}`}
                     style={{
                       borderColor: isSelected ? info.color : 'var(--color-border)',
                       background: isSelected ? `${info.color}10` : 'var(--color-surface)',
@@ -358,33 +405,33 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                       initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                       transition={{ duration: 0.15 }}
                     >
-                      <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">{field.label}</label>
-                      <input
-                        type={changedCredentialFields.has(field.key) ? "password" : "text"}
-                        placeholder={field.hint}
-                        value={changedCredentialFields.has(field.key)
-                          ? (keys[field.key] || '')
-                          : (showsStoredCredentials ? activeBot?.paymentCredentialsPreview?.[field.key] || '' : '')}
-                        onChange={(e) => {
-                          setPaymentCredsChanged(true);
-                          setChangedCredentialFields((previous) => new Set(previous).add(field.key));
-                          setKeys(prev => ({ ...prev, [field.key]: e.target.value }));
-                        }}
-                        onFocus={(e) => {
-                          if (!changedCredentialFields.has(field.key)) {
-                            e.currentTarget.value = '';
+                      <label htmlFor={`${formId}-payment-${field.key}`} className="mb-1.5 block text-[13px] font-medium text-[var(--color-foreground-secondary)]">{field.label}</label>
+                      {showsStoredCredentials && activeBot?.paymentCredentialsPreview?.[field.key] && !changedCredentialFields.has(field.key) ? (
+                        <div className="flex items-center gap-2">
+                          <input id={`${formId}-payment-${field.key}`} type="text" value={activeBot.paymentCredentialsPreview[field.key]} readOnly className="input min-w-0 flex-1 cursor-default" aria-describedby={`${formId}-payment-${field.key}-help`} />
+                          <button type="button" onClick={() => { setPaymentCredsChanged(true); setChangedCredentialFields((previous) => new Set(previous).add(field.key)); setKeys((previous) => ({ ...previous, [field.key]: '' })); }} className="btn btn-secondary h-11 shrink-0 px-3 text-[13px]">Заменить</button>
+                        </div>
+                      ) : (
+                        <input
+                          id={`${formId}-payment-${field.key}`}
+                          type="password"
+                          placeholder={field.hint}
+                          value={keys[field.key] || ''}
+                          onChange={(e) => {
+                            setPaymentCredsChanged(true);
                             setChangedCredentialFields((previous) => new Set(previous).add(field.key));
-                            setKeys((previous) => ({ ...previous, [field.key]: '' }));
-                          }
-                          handleFocus(e);
-                        }}
-                        disabled={!canEditPayment}
-                        className="input w-full"
-                        style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
-                      />
+                            setKeys(prev => ({ ...prev, [field.key]: e.target.value }));
+                          }}
+                          onFocus={handleFocus}
+                          disabled={!canEditPayment}
+                          className="input w-full"
+                          autoComplete="new-password"
+                          style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
+                        />
+                      )}
                       {showsStoredCredentials && activeBot?.paymentCredentialsPreview?.[field.key] && !changedCredentialFields.has(field.key) && (
-                        <p className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">
-                          Значение показано в безопасной маске. Нажмите, чтобы заменить его.
+                        <p id={`${formId}-payment-${field.key}-help`} className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">
+                          Значение показано в безопасной маске. Для замены нажмите «Заменить».
                         </p>
                       )}
                     </motion.div>
@@ -403,8 +450,17 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                         aria-label="Скопировать ссылку webhook"
                         title="Скопировать"
                         onClick={async () => {
-                          await navigator.clipboard?.writeText(activeBot.paymentWebhookUrl!);
-                          setToastMessage('Ссылка webhook скопирована');
+                          try {
+                            await navigator.clipboard?.writeText(activeBot.paymentWebhookUrl!);
+                            setToastMessage('Ссылка webhook скопирована');
+                          } catch {
+                            showAlert({
+                              title: 'Не удалось скопировать ссылку',
+                              message: 'Скопируйте webhook вручную из поля ниже.',
+                              type: 'warning',
+                              confirmText: 'Понятно',
+                            });
+                          }
                         }}
                         className="flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]"
                       >
@@ -416,7 +472,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
               </div>
             </AnimatePresence>
           </div>
-        </div>
+          </section>
+        </fieldset>
 
         <div className="p-5 border-t border-[var(--color-border)] shrink-0">
           {!isFunnelReady && (
@@ -429,10 +486,13 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           <button
             type="button"
             onClick={handleSave}
-            disabled={!isFunnelReady}
+            disabled={!isFunnelReady || isSaving}
             className="btn btn-action w-full h-[48px] text-[15px]"
+            aria-busy={isSaving || undefined}
           >
-            {funnelLoadState.status === 'loading'
+            {isSaving
+              ? 'Сохраняем изменения…'
+              : funnelLoadState.status === 'loading'
               ? 'Загружаем воронку…'
               : funnelLoadState.status === 'error'
                 ? 'Воронка недоступна'
