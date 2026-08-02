@@ -340,10 +340,20 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
             drop_pending_updates=True,
             allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
         )
-    except Exception as e:
-        logger.warning(
-            f"Не удалось установить вебхук для бота {bot.id}: {e}"
-        )
+    except Exception as exc:
+        logger.warning("Не удалось установить webhook для нового бота %s: %s", bot.id, exc)
+        try:
+            await delete_bot_config(bot.id)
+        except Exception as cleanup_exc:
+            logger.exception(
+                "Не удалось удалить черновик бота %s после сбоя webhook: %s",
+                bot.id,
+                cleanup_exc,
+            )
+        raise HTTPException(
+            status_code=502,
+            detail="Telegram не подтвердил подключение бота. Повторите попытку.",
+        ) from exc
 
     resp = BotApiResponse.from_orm_bot(bot, WEBHOOK_URL)
     return resp.model_dump(by_alias=True)
@@ -513,11 +523,11 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
             await temp_bot.delete_webhook()
     except Exception as exc:
         logger.warning("Ошибка переключения webhook для бота %s: %s", bot_id, exc)
-        if new_status == "active":
-            raise HTTPException(
-                status_code=502,
-                detail="Telegram не подтвердил запуск бота. Проверьте токен и повторите попытку.",
-            ) from exc
+        operation = "запуск" if new_status == "active" else "остановку"
+        raise HTTPException(
+            status_code=502,
+            detail=f"Telegram не подтвердил {operation} бота. Проверьте токен и повторите попытку.",
+        ) from exc
 
     updated_bot = await set_bot_status(bot_id, new_status)
     bot_url = (
