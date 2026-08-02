@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 
 import { Sidebar } from './components/Sidebar';
@@ -6,12 +6,6 @@ import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
 
 import { Home } from './components/tabs/Home';
-import { Build } from './components/tabs/Build';
-import { Flow } from './components/tabs/Flow';
-import { BotManagement } from './components/tabs/BotManagement';
-import { Profile } from './components/tabs/Profile';
-import { Subscription } from './components/tabs/Subscription';
-import { AdminStats } from './components/tabs/AdminStats';
 
 import { BotSettings } from './components/sheets/BotSettings';
 import { CheckoutSheet } from './components/sheets/CheckoutSheet';
@@ -37,6 +31,19 @@ type TelegramWebApp = {
 
 const getTelegramWebApp = (): TelegramWebApp | undefined =>
   (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
+
+const Build = lazy(() => import('./components/tabs/Build').then(({ Build: Component }) => ({ default: Component })));
+const Flow = lazy(() => import('./components/tabs/Flow').then(({ Flow: Component }) => ({ default: Component })));
+const BotManagement = lazy(() => import('./components/tabs/BotManagement').then(({ BotManagement: Component }) => ({ default: Component })));
+const Profile = lazy(() => import('./components/tabs/Profile').then(({ Profile: Component }) => ({ default: Component })));
+const Subscription = lazy(() => import('./components/tabs/Subscription').then(({ Subscription: Component }) => ({ default: Component })));
+const AdminStats = lazy(() => import('./components/tabs/AdminStats').then(({ AdminStats: Component }) => ({ default: Component })));
+
+const TabLoading = () => (
+  <div className="flex min-h-[240px] w-full items-center justify-center" role="status" aria-label="Загрузка раздела">
+    <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-primary-soft)] border-t-[var(--color-primary)]" />
+  </div>
+);
 
 export default function App() {
   const {
@@ -274,6 +281,7 @@ export default function App() {
             className={`flex-1 flex flex-col ${activeTab === 'flow' ? 'flow-padding' : activeTab === 'subscription' ? 'px-3 lg:px-4 py-4 lg:py-8 mobile-padding' : 'px-4 pt-3 pb-4 lg:p-8 mobile-padding'}`} 
             style={{ maxWidth: activeTab === 'flow' ? '100%' : activeTab === 'build' ? '1240px' : '900px', margin: '0 auto', width: '100%' }}
           >
+          <Suspense fallback={<TabLoading />}>
           <AnimatePresence mode="wait">
             {activeTab === 'home' && (
               <Home key="home" />
@@ -301,6 +309,7 @@ export default function App() {
               <AdminStats key="admin_stats" />
             )}
           </AnimatePresence>
+          </Suspense>
         </div>
         </div>
       </main>
