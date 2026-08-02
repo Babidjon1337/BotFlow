@@ -17,16 +17,9 @@ import {
   Check,
   ArrowLeft,
   Search,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as ReChartsTooltip,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-} from "recharts";
 import { useAppState } from "../../providers/AppStateProvider";
 
 
@@ -54,8 +47,8 @@ const FEATURES = [
     colorSoft: "var(--color-accent-soft)",
   },
   {
-    title: "Реальная аналитика продаж",
-    desc: "Следите за показателями в реальном времени. Графики просмотров, статистика переходов и воронка конверсии помогут оптимизировать продажи.",
+    title: "Аналитика продаж",
+    desc: "Следите за подтверждёнными показателями: пользователями, переходами, продажами и выручкой.",
     icon: <BarChart2 size={22} />,
     color: "#F59E0B",
     colorSoft: "rgba(245,158,11,0.1)",
@@ -113,10 +106,6 @@ type FunnelStats = {
   conversion: number;
   revenue: number;
   funnel_data: Array<{ name: string; value: number }>;
-  chart_data?: Array<Record<string, string | number>>;
-  usersCount?: number;
-  clicksCount?: number;
-  salesCount?: number;
 };
 
 type LeadView = {
@@ -128,8 +117,39 @@ type LeadView = {
   name: string;
   time: string;
   paid: boolean;
-  tariffName: string;
-  price?: string | number;
+};
+
+type LoadStatus = "idle" | "loading" | "ready" | "refreshing" | "error";
+
+type ResourceState<T> = {
+  botId: string | number | null;
+  status: LoadStatus;
+  data: T | null;
+  error: string | null;
+  fetchedAt: Date | null;
+};
+
+type LeadsData = { items: LeadView[]; total: number };
+
+const emptyResource = <T,>(): ResourceState<T> => ({
+  botId: null,
+  status: "idle",
+  data: null,
+  error: null,
+  fetchedAt: null,
+});
+
+const formatUpdatedAt = (date: Date) =>
+  new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(date);
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value) + " ₽";
+
+const getDashboardError = (error: unknown, subject: string) => {
+  const detail = error instanceof Error ? error.message.trim() : "";
+  return detail && detail !== "Failed to fetch"
+    ? detail
+    : `Не удалось получить ${subject}. Проверьте подключение и повторите запрос.`;
 };
 
 export const Home = () => {
@@ -151,9 +171,8 @@ export const Home = () => {
   const [isInvoiceSent, setIsInvoiceSent] = useState(false);
   const paymentTariffs = blocks.find((block) => block.id === "payment")?.tariffs ?? [];
 
-  const [stats, setStats] = useState<FunnelStats | null>(null);
-  const [statsStatus, setStatsStatus] = useState<"idle" | "loading" | "ready">("idle");
-  const isLoadingStats = statsStatus === "idle" || statsStatus === "loading";
+  const [statsState, setStatsState] = useState<ResourceState<FunnelStats>>(emptyResource);
+  const [statsRefreshKey, setStatsRefreshKey] = useState(0);
 
   useEffect(() => {
     const botId = appState.activeBot?.id;
@@ -162,25 +181,44 @@ export const Home = () => {
     void import("../../services/api")
       .then(({ apiService }) => {
         if (!cancelled) {
-          setStats(null);
-          setStatsStatus("loading");
+          setStatsState((previous) => {
+            const canKeepData = previous.botId === botId && previous.data !== null;
+            return {
+              botId,
+              status: canKeepData ? "refreshing" : "loading",
+              data: canKeepData ? previous.data : null,
+              error: null,
+              fetchedAt: canKeepData ? previous.fetchedAt : null,
+            };
+          });
         }
         return apiService.getStats(botId);
       })
       .then((result) => {
         if (!cancelled) {
-          setStats(result);
-          setStatsStatus("ready");
+          setStatsState({
+            botId,
+            status: "ready",
+            data: result,
+            error: null,
+            fetchedAt: new Date(),
+          });
         }
       })
       .catch((error) => {
         if (!cancelled) {
           console.error("Stats err", error);
-          setStatsStatus("ready");
+          setStatsState((previous) => ({
+            botId,
+            status: "error",
+            data: previous.botId === botId ? previous.data : null,
+            error: getDashboardError(error, "статистику"),
+            fetchedAt: previous.botId === botId ? previous.fetchedAt : null,
+          }));
         }
       });
     return () => { cancelled = true; };
-  }, [appState.activeBot?.id, appState.activeBot?.status]);
+  }, [appState.activeBot?.id, statsRefreshKey]);
 
   useEffect(() => {
     if (!showAllClients) return;
@@ -250,9 +288,8 @@ export const Home = () => {
     return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
   };
 
-  const [leads, setLeads] = useState<LeadView[]>([]);
-  const [leadsStatus, setLeadsStatus] = useState<"idle" | "loading" | "ready">("idle");
-  const isLoadingLeads = appState.activeBot !== null && leadsStatus !== "ready";
+  const [leadsState, setLeadsState] = useState<ResourceState<LeadsData>>(emptyResource);
+  const [leadsRefreshKey, setLeadsRefreshKey] = useState(0);
 
   useEffect(() => {
     const botId = appState.activeBot?.id;
@@ -261,8 +298,16 @@ export const Home = () => {
     void import("../../services/api")
       .then(({ apiService }) => {
         if (!cancelled) {
-          setLeads([]);
-          setLeadsStatus("loading");
+          setLeadsState((previous) => {
+            const canKeepData = previous.botId === botId && previous.data !== null;
+            return {
+              botId,
+              status: canKeepData ? "refreshing" : "loading",
+              data: canKeepData ? previous.data : null,
+              error: null,
+              fetchedAt: canKeepData ? previous.fetchedAt : null,
+            };
+          });
         }
         return apiService.getLeads(botId, "", 1, 50);
       })
@@ -279,21 +324,35 @@ export const Home = () => {
                 : "",
               username: l.username ?? "",
               paid: l.hasPurchased === true,
-              tariffName: "Оплата получена",
               };
             });
-          setLeads(mappedLeads);
-          setLeadsStatus("ready");
+          setLeadsState({
+            botId,
+            status: "ready",
+            data: { items: mappedLeads, total: res.total },
+            error: null,
+            fetchedAt: new Date(),
+          });
         }
       })
       .catch((error) => {
         if (!cancelled) {
           console.error("Leads err", error);
-          setLeadsStatus("ready");
+          setLeadsState((previous) => ({
+            botId,
+            status: "error",
+            data: previous.botId === botId ? previous.data : null,
+            error: getDashboardError(error, "список клиентов"),
+            fetchedAt: previous.botId === botId ? previous.fetchedAt : null,
+          }));
         }
       });
     return () => { cancelled = true; };
-  }, [appState.activeBot?.id]);
+  }, [appState.activeBot?.id, leadsRefreshKey]);
+
+  const stats = statsState.data;
+  const leads = leadsState.data?.items ?? [];
+  const leadsTotal = leadsState.data?.total ?? 0;
 
   const sendInvoice = async () => {
     if (!appState.activeBot || !selectedClientForInvoice || selectedTariffs.length === 0) return;
@@ -716,7 +775,7 @@ export const Home = () => {
                 style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}
               >
                 {appState.subscriptionStatus === "expired"
-                  ? "Боты остановлены — продлите подписку"
+                  ? "Возможности PRO недоступны — продлите подписку"
                   : "Приём платежей, воронки, аналитика"}
               </div>
             </div>
@@ -742,8 +801,32 @@ export const Home = () => {
         className="card-saas flex flex-col w-full"
         style={{ padding: "24px" }}
       >
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
+        {statsState.status === "loading" || statsState.status === "idle" ? (
+          <div className="animate-pulse" aria-label="Загрузка статистики">
+            <div className="h-3 w-36 rounded bg-[var(--color-surface-3)] mb-4" />
+            <div className="h-10 w-48 rounded-lg bg-[var(--color-surface-3)] mb-3" />
+            <div className="h-3 w-28 rounded bg-[var(--color-surface-3)]" />
+          </div>
+        ) : statsState.status === "error" && !stats ? (
+          <div className="flex flex-col items-start gap-3" role="alert">
+            <div className="w-10 h-10 rounded-xl bg-[var(--color-danger-soft)] text-[var(--color-danger)] flex items-center justify-center">
+              <AlertCircle size={20} />
+            </div>
+            <div>
+              <div className="text-[16px] font-bold text-[var(--color-foreground)]">Статистика временно недоступна</div>
+              <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-1 max-w-[520px]">{statsState.error}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatsRefreshKey((key) => key + 1)}
+              className="h-10 px-4 rounded-xl bg-[var(--color-primary)] text-white text-[13px] font-bold flex items-center gap-2"
+            >
+              <RefreshCw size={15} /> Повторить
+            </button>
+          </div>
+        ) : stats ? (
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div>
             <div
               style={{
                 fontSize: "13px",
@@ -754,30 +837,30 @@ export const Home = () => {
                 marginBottom: "12px",
               }}
             >
-              Выручка за месяц
+              Выручка за всё время
             </div>
             <div
               className="text-[32px] md:text-[40px] font-extrabold text-[var(--color-foreground)] tracking-tight leading-none flex items-end gap-3"
               style={{ marginBottom: "8px" }}
             >
-              {isLoadingStats
-                ? "..."
-                : stats?.revenue
-                  ? `${stats.revenue} ₽`
-                  : "0 ₽"}
+              {formatCurrency(stats.revenue)}
             </div>
-            <div
-              style={{
-                fontSize: "14px",
-                color: "var(--color-foreground-tertiary)",
-                fontWeight: 500,
-              }}
-            >
-              Реальные данные с бэкенда
+            <div className="text-[13px] text-[var(--color-foreground-tertiary)] font-medium">
+              {statsState.fetchedAt ? `Обновлено в ${formatUpdatedAt(statsState.fetchedAt)}` : ""}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setStatsRefreshKey((key) => key + 1)}
+              disabled={statsState.status === "refreshing"}
+              className="h-8 px-3 rounded-full text-[12px] font-bold flex items-center gap-1.5 bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] disabled:opacity-60"
+              aria-label="Обновить статистику"
+            >
+              <RefreshCw size={13} className={statsState.status === "refreshing" ? "animate-spin" : ""} />
+              {statsState.status === "refreshing" ? "Обновляем" : "Обновить"}
+            </button>
             <div
               className={`px-3 py-1.5 rounded-full text-[12px] font-bold flex items-center gap-2 ${appState.activeBot?.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)]"}`}
             >
@@ -789,23 +872,31 @@ export const Home = () => {
                 : "Черновик"}
             </div>
           </div>
-        </div>
+          </div>
+        ) : null}
+
+        {statsState.status === "error" && stats && (
+          <div className="mt-4 p-3 rounded-xl bg-[var(--color-warning-soft)] text-[var(--color-foreground-secondary)] text-[13px] flex flex-col sm:flex-row sm:items-center gap-2 justify-between" role="status">
+            <span>Не удалось обновить данные. Показана версия на {statsState.fetchedAt ? formatUpdatedAt(statsState.fetchedAt) : "момент последней загрузки"}.</span>
+            <button type="button" onClick={() => setStatsRefreshKey((key) => key + 1)} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
+          </div>
+        )}
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-3 gap-4">
+      {stats && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
         {[
           {
             label: "Пользователи",
-            value: isLoadingStats ? "..." : stats?.usersCount || 0,
+            value: stats.views,
           },
           {
-            label: "Клики по кнопкам",
-            value: isLoadingStats ? "..." : stats?.clicksCount || 0,
+            label: "Перешли дальше",
+            value: stats.clicks,
           },
           {
             label: "Продажи",
-            value: isLoadingStats ? "..." : stats?.salesCount || 0,
+            value: stats.sales,
           },
         ].map((stat, i) => (
           <div
@@ -840,107 +931,13 @@ export const Home = () => {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
-      {/* Chart */}
-      <div className="card-saas" style={{ padding: "24px" }}>
-        <div
-          className="flex items-center justify-between"
-          style={{ marginBottom: "20px" }}
-        >
-          <span
-            style={{
-              fontSize: "14px",
-              fontWeight: 500,
-              color: "var(--color-foreground)",
-            }}
-          >
-            Активность
-          </span>
-          <div className="flex gap-4">
-            {[
-              { label: "Просмотры", color: "#2E9ADB" },
-              { label: "Продажи", color: "#30B56B" },
-            ].map((s) => (
-              <div key={s.label} className="flex items-center gap-1.5">
-                <div
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: s.color,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: "12px",
-                    color: "var(--color-foreground-secondary)",
-                  }}
-                >
-                  {s.label}
-                </span>
-              </div>
-            ))}
-          </div>
+      {stats && stats.views === 0 && stats.sales === 0 && (
+        <div className="card-saas px-5 py-4 text-[13px] text-[var(--color-foreground-secondary)]">
+          Данных пока нет. После первого запуска клиента в боте здесь появятся подтверждённые показатели.
         </div>
-        <ResponsiveContainer width="100%" height={180}>
-          <AreaChart
-            data={stats?.chart_data || []}
-            margin={{ left: 10, right: 10, top: 10, bottom: 0 }}
-          >
-            <defs>
-              <linearGradient id="gViews" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#2E9ADB" stopOpacity={0.1} />
-                <stop offset="95%" stopColor="#2E9ADB" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="gSales" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#30B56B" stopOpacity={0.1} />
-                <stop offset="95%" stopColor="#30B56B" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="var(--color-border)"
-              vertical={false}
-            />
-            <XAxis
-              dataKey="name"
-              stroke="var(--color-foreground-tertiary)"
-              fontSize={11}
-              axisLine={false}
-              tickLine={false}
-              dy={8}
-              interval="preserveStartEnd"
-            />
-            <YAxis hide />
-            <ReChartsTooltip
-              contentStyle={{
-                background: "var(--color-surface)",
-                borderColor: "var(--color-border)",
-                borderRadius: "8px",
-                fontSize: "12px",
-                color: "var(--color-foreground)",
-              }}
-            />
-            <Area
-              type="monotone"
-              dataKey="Просмотры"
-              stroke="#2E9ADB"
-              strokeWidth={1.5}
-              fillOpacity={1}
-              fill="url(#gViews)"
-            />
-            <Area
-              type="monotone"
-              dataKey="Продажи"
-              stroke="#30B56B"
-              strokeWidth={1.5}
-              fillOpacity={1}
-              fill="url(#gSales)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      )}
 
       {/* CRM Section: Clients & Applications */}
       <div className="p-5 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs">
@@ -953,11 +950,52 @@ export const Home = () => {
               Клиенты
             </span>
           </div>
-          <span className="text-[12px] font-bold px-2.5 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-foreground-secondary)] rounded-full">
-            Всего: {isLoadingLeads ? "..." : leads.length}
-          </span>
+          <div className="flex items-center gap-2">
+            {leadsState.fetchedAt && (
+              <span className="hidden sm:inline text-[12px] text-[var(--color-foreground-tertiary)]">
+                {formatUpdatedAt(leadsState.fetchedAt)}
+              </span>
+            )}
+            {leadsState.data && (
+              <button
+                type="button"
+                onClick={() => setLeadsRefreshKey((key) => key + 1)}
+                disabled={leadsState.status === "refreshing"}
+                className="w-8 h-8 rounded-full bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] flex items-center justify-center disabled:opacity-60"
+                aria-label="Обновить список клиентов"
+                title="Обновить список клиентов"
+              >
+                <RefreshCw size={14} className={leadsState.status === "refreshing" ? "animate-spin" : ""} />
+              </button>
+            )}
+            <span className="text-[12px] font-bold px-2.5 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-foreground-secondary)] rounded-full">
+              {leadsState.data ? `Всего: ${leadsTotal}` : "Всего: —"}
+            </span>
+          </div>
         </div>
 
+        {leadsState.status === "error" && leadsState.data && (
+          <div className="mb-4 p-3 rounded-xl bg-[var(--color-warning-soft)] text-[13px] text-[var(--color-foreground-secondary)] flex flex-col sm:flex-row sm:items-center justify-between gap-2" role="status">
+            <span>Список не обновился. Показаны данные на {leadsState.fetchedAt ? formatUpdatedAt(leadsState.fetchedAt) : "момент последней загрузки"}.</span>
+            <button type="button" onClick={() => setLeadsRefreshKey((key) => key + 1)} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
+          </div>
+        )}
+
+        {leadsState.status === "loading" || leadsState.status === "idle" ? (
+          <div className="space-y-3 animate-pulse" aria-label="Загрузка списка клиентов">
+            <div className="h-10 rounded-xl bg-[var(--color-surface-2)]" />
+            {[0, 1, 2].map((item) => <div key={item} className="h-16 rounded-xl bg-[var(--color-surface-2)]" />)}
+          </div>
+        ) : leadsState.status === "error" && !leadsState.data ? (
+          <div className="py-6 flex flex-col items-center text-center" role="alert">
+            <AlertCircle size={24} className="text-[var(--color-danger)] mb-3" />
+            <div className="text-[15px] font-bold text-[var(--color-foreground)]">Клиенты временно недоступны</div>
+            <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-1 max-w-[440px]">{leadsState.error}</div>
+            <button type="button" onClick={() => setLeadsRefreshKey((key) => key + 1)} className="mt-4 h-10 px-4 rounded-xl bg-[var(--color-primary)] text-white text-[13px] font-bold flex items-center gap-2">
+              <RefreshCw size={15} /> Повторить
+            </button>
+          </div>
+        ) : leadsState.data ? <>
         <div className="mb-3.5">
           <div className="relative flex items-center">
             <Search
@@ -1003,7 +1041,7 @@ export const Home = () => {
                         {client.paid ? (
                           <span className="text-[var(--color-success)] font-semibold flex items-center gap-1">
                             <CheckCircle2 size={13} className="shrink-0" />
-                            <span>{client.tariffName}</span>
+                            <span>Оплата подтверждена</span>
                           </span>
                         ) : (
                           <span className="text-[var(--color-warning)] font-medium flex items-center gap-1">
@@ -1030,13 +1068,22 @@ export const Home = () => {
                 </div>
               ))
             ) : (
-              <div className="text-center py-8 text-[13px] text-[var(--color-foreground-tertiary)]">
-                Ничего не найдено
+              <div className="text-center py-8 px-4 text-[13px] text-[var(--color-foreground-tertiary)]">
+                <div>
+                  {leadsTotal === 0
+                    ? "Клиентов пока нет. Они появятся после первого запуска бота."
+                    : "По вашему запросу ничего не найдено."}
+                </div>
+                {searchQuery && leadsTotal > 0 && (
+                  <button type="button" onClick={() => setSearchQuery("")} className="mt-3 font-bold text-[var(--color-primary)]">
+                    Сбросить поиск
+                  </button>
+                )}
               </div>
             )}
           </div>
 
-          {filteredClients.length > 3 && (
+          {(searchQuery ? filteredClients.length > 3 : leadsTotal > 3) && (
             <button
               onClick={() => {
                 setSelectedClientForInvoice(null);
@@ -1048,11 +1095,21 @@ export const Home = () => {
               }}
               className="w-full py-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[13px] font-bold text-[var(--color-foreground)] hover:bg-[var(--color-surface-3)] transition-all flex items-center justify-center gap-2 shadow-xs active:scale-[0.99]"
             >
-              <span>Показать всех клиентов ({filteredClients.length})</span>
+              <span>
+                {searchQuery
+                  ? `Показать результаты (${filteredClients.length})`
+                  : `Открыть список (${Math.min(leads.length, leadsTotal)} из ${leadsTotal})`}
+              </span>
               <ArrowRight size={15} className="opacity-70" />
             </button>
           )}
+          {leadsTotal > leads.length && (
+            <div className="text-[12px] text-[var(--color-foreground-tertiary)] text-center px-3">
+              Показаны первые {leads.length} клиентов. Поиск работает по загруженному списку.
+            </div>
+          )}
         </div>
+        </> : null}
       </div>
 
       {/* Full Screen / Modal Clients Sheet via Portal */}
@@ -1105,7 +1162,7 @@ export const Home = () => {
                       <h2 className="text-[18px] font-bold text-[var(--color-foreground)] leading-tight">
                         {selectedClientForInvoice
                           ? `Выставить счет`
-                          : `Все клиенты (${modalFilteredClients.length})`}
+                          : `Клиенты (${leadsTotal})`}
                       </h2>
                       {selectedClientForInvoice && (
                         <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-0.5">
@@ -1296,11 +1353,7 @@ export const Home = () => {
                                         size={13}
                                         className="shrink-0"
                                       />
-                                      <span>
-                                        Оплатил: {client.tariffName} (
-                                        {client.price?.toLocaleString("ru-RU")}{" "}
-                                        ₽)
-                                      </span>
+                                      <span>Оплата подтверждена</span>
                                     </span>
                                   ) : (
                                     <span className="text-[var(--color-warning)] font-medium flex items-center gap-1">
@@ -1327,7 +1380,9 @@ export const Home = () => {
                         ))
                       ) : (
                         <div className="text-center py-8 text-[13px] text-[var(--color-foreground-tertiary)]">
-                          Ничего не найдено
+                          {leadsTotal === 0
+                            ? "Клиентов пока нет"
+                            : "По вашему запросу ничего не найдено"}
                         </div>
                       )}
                     </div>
