@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useId, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   RotateCcw,
@@ -44,6 +43,7 @@ const ButtonInput = ({
   onChange: (v: string) => void;
   placeholder?: string;
 }) => {
+  const inputId = useId();
   const len = (value || "").length;
   const isOverRecommended = len > 30;
   const isOverLimit = len > 64;
@@ -51,7 +51,7 @@ const ButtonInput = ({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between">
-        <label className="text-label">{label}</label>
+        <label htmlFor={inputId} className="text-label">{label}</label>
         <span
           className={`text-[11px] font-semibold ${
             isOverLimit
@@ -65,6 +65,7 @@ const ButtonInput = ({
         </span>
       </div>
       <input
+        id={inputId}
         value={value || ""}
         maxLength={64}
         onChange={(e) => onChange(e.target.value)}
@@ -165,6 +166,7 @@ export const RichTextEditor = ({
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorId = useId();
   const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
@@ -189,6 +191,10 @@ export const RichTextEditor = ({
     editorRef.current?.focus();
   };
 
+  const keepEditorSelection = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+  };
+
   const plainText = value ? value.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ").trim() : "";
   const charCount = plainText.length;
   const maxChars = hasMedia ? 1024 : 4096;
@@ -207,40 +213,37 @@ export const RichTextEditor = ({
   };
 
   return (
-    <div className={`flex flex-col border rounded-xl overflow-hidden bg-[var(--color-surface)] transition-all shadow-2xs ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)] focus-within:border-[var(--color-primary)]"}`}>
+    <div className={`flex flex-col overflow-hidden rounded-[var(--radius-sm)] border bg-[var(--color-surface)] shadow-2xs transition-colors ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)] focus-within:border-[var(--color-primary)]"}`}>
       {/* Toolbar */}
-      <div className="order-2 flex items-center justify-between gap-1 p-1.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
-        <div className="flex items-center gap-0.5">
+      <div className="order-2 flex items-center justify-between gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5">
+        <div className="flex items-center gap-0.5" role="toolbar" aria-label="Форматирование текста">
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              execCmd("bold");
-            }}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] transition-colors"
+            onMouseDown={keepEditorSelection}
+            onClick={() => execCmd("bold")}
+            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
             title="Жирный"
+            aria-label="Жирный"
           >
             <Bold size={13} />
           </button>
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              execCmd("italic");
-            }}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] transition-colors"
+            onMouseDown={keepEditorSelection}
+            onClick={() => execCmd("italic")}
+            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
             title="Курсив"
+            aria-label="Курсив"
           >
             <Italic size={13} />
           </button>
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              execCmd("strikeThrough");
-            }}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] transition-colors"
+            onMouseDown={keepEditorSelection}
+            onClick={() => execCmd("strikeThrough")}
+            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
             title="Зачёркнутый"
+            aria-label="Зачёркнутый"
           >
             <Strikethrough size={13} />
           </button>
@@ -248,13 +251,14 @@ export const RichTextEditor = ({
           <div className="w-px h-4 bg-[var(--color-border)] mx-1 shrink-0" />
           <button
             type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
+            onMouseDown={keepEditorSelection}
+            onClick={() => {
               const url = prompt("Введите URL:");
               if (url) execCmd("createLink", url);
             }}
-            className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] transition-colors"
+            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
             title="Добавить ссылку"
+            aria-label="Добавить ссылку"
           >
             <Link2 size={13} />
           </button>
@@ -272,6 +276,7 @@ export const RichTextEditor = ({
                 : "bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] border border-[var(--color-border)] hover:border-[var(--color-primary)]"
             }`}
             title="Прикрепить фото или видео к сообщению в Telegram"
+            aria-label="Добавить фото, видео или документ"
           >
             <ImageIcon size={13} />
             <span>{isUploading ? "Загружаем…" : hasMedia ? "Заменить фото/видео" : "Добавить фото/видео"}</span>
@@ -342,8 +347,12 @@ export const RichTextEditor = ({
 
       {/* Editable Area */}
       <div
+        id={editorId}
         ref={editorRef}
         contentEditable
+        role="textbox"
+        aria-multiline="true"
+        aria-label={placeholder || "Текст сообщения"}
         onInput={handleInput}
         onBlur={handleInput}
         className="order-3 p-3 min-h-[96px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor"
@@ -517,28 +526,9 @@ export const Build = () => {
     "start" | "push1" | "push2" | "tariffs" | "invoice" | "manager"
   >("start");
   const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const { showAlert } = useAlert();
   const { toggleBot, isToggling } = useBotToggle();
-
-  const resetBotLeads = async () => {
-    if (!appState.activeBot) return;
-    try {
-      const { apiService } = await import("../../services/api");
-      await apiService.resetBotLeads(appState.activeBot.id);
-      setAppState((previous) => ({
-        ...previous,
-        activeBot: previous.activeBot ? { ...previous.activeBot, usersCount: 0 } : null,
-        bots: previous.bots.map((bot) => bot.id === previous.activeBot?.id ? { ...bot, usersCount: 0 } : bot),
-      }));
-      setToastMessage("База пользователей очищена");
-    } catch (error) {
-      showAlert({ title: "Не удалось очистить базу", message: error instanceof Error ? error.message : "Повторите попытку.", type: "danger", confirmText: "Понятно", cancelText: "" });
-    } finally {
-      setShowConfirm(false);
-    }
-  };
 
   const handleMediaUpload = async (nodeId: string, file: File) => {
     if (!appState.activeBot) return;
@@ -667,6 +657,20 @@ export const Build = () => {
   const isAllBlocksComplete =
     isStartComplete && isPush1Complete && isPush2Complete && isPaymentComplete;
 
+  const funnelSteps = [
+    { label: "Старт", complete: isStartComplete },
+    { label: "Дожим 1", complete: isPush1Complete },
+    { label: "Дожим 2", complete: isPush2Complete },
+    { label: "Оплата и выдача", complete: isPaymentComplete },
+  ];
+  const incompleteSteps = funnelSteps.filter((step) => !step.complete);
+  const completedStepsCount = funnelSteps.length - incompleteSteps.length;
+  const modeOutcome = paymentMode === "application"
+    ? "Клиент напишет менеджеру, а вы выставите счёт вручную."
+    : paymentMode === "hybrid"
+      ? "Клиент сможет оплатить сразу или написать менеджеру."
+      : "Клиент выберет тариф, оплатит онлайн и получит доступ автоматически.";
+
   const handlePreviewButtonClick = (btnIndex: 1 | 2) => {
     if (btnIndex === 2 || paymentMode === "application") {
       setPreviewScreen("manager");
@@ -789,6 +793,7 @@ export const Build = () => {
               color: "var(--color-foreground-secondary)",
             }}
             title="Настройки бота"
+            aria-label="Открыть настройки бота"
           >
             <Settings
               size={18}
@@ -820,6 +825,12 @@ export const Build = () => {
                 ? "Остановить"
                 : "Запустить"
             }
+            aria-label={
+              appState.activeBot.status === "active"
+                ? "Остановить бота"
+                : "Запустить бота"
+            }
+            aria-busy={isToggling[appState.activeBot.id] || undefined}
           >
             {isToggling[appState.activeBot.id] ? (
               <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
@@ -843,11 +854,11 @@ export const Build = () => {
         className={!appState.activeBot.mediaSyncDone ? "flex-1 flex flex-col justify-center items-center h-[calc(100vh-160px)] w-full" : "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"}
       >
         {!appState.activeBot.mediaSyncDone ? (
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[24px] p-8 md:p-12 text-center shadow-lg flex flex-col items-center max-w-2xl w-full mx-auto my-auto mt-12 lg:mt-0">
-            <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center mb-6 shadow-sm">
-              <RefreshCw size={32} className="animate-spin-slow" />
+          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-xl)] p-8 md:p-12 text-center shadow-[var(--shadow-card)] flex flex-col items-center max-w-2xl w-full mx-auto my-auto mt-12 lg:mt-0">
+            <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center mb-6">
+              <RefreshCw size={32} className="animate-spin" />
             </div>
-            <h2 className="text-2xl md:text-3xl font-black text-[var(--color-foreground)] mb-4">
+            <h2 className="text-2xl md:text-3xl font-bold text-[var(--color-foreground)] mb-4">
               Остался один шаг!
             </h2>
             <p className="text-[15px] md:text-[16px] text-[var(--color-foreground-secondary)] leading-relaxed mb-8 max-w-[400px]">
@@ -863,7 +874,7 @@ export const Build = () => {
                   window.open(`${botUrl}?start=sync`, '_blank');
                 }
               }}
-              className="btn-primary-saas px-8 py-3.5 rounded-xl text-[15px] flex items-center gap-2"
+              className="btn btn-primary min-h-11 px-6 text-[15px] flex items-center gap-2"
             >
               <Bot size={18} /> Открыть бота в Telegram
             </button>
@@ -885,6 +896,48 @@ export const Build = () => {
             data-tour="tour-funnel-steps"
             style={{ display: "flex", flexDirection: "column", gap: "8px" }}
           >
+            <section
+              aria-live="polite"
+              className={`rounded-[var(--radius-lg)] border p-4 ${
+                isAllBlocksComplete
+                  ? "border-[var(--color-success-soft)] bg-[var(--color-success-soft)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)]"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {isAllBlocksComplete ? (
+                    <CheckCircle2 size={18} className="shrink-0 text-[var(--color-success)]" />
+                  ) : (
+                    <ShieldAlert size={18} className="shrink-0 text-[var(--color-warning)]" />
+                  )}
+                  <h3 className="text-[14px] font-semibold text-[var(--color-foreground)]">
+                    Готовность воронки
+                  </h3>
+                </div>
+                <span className="text-[13px] font-semibold text-[var(--color-foreground-secondary)]">
+                  {completedStepsCount} из {funnelSteps.length} шагов
+                </span>
+              </div>
+
+              {isAllBlocksComplete ? (
+                <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
+                  Все обязательные шаги заполнены. Воронку можно сохранить и запустить.
+                </p>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  <p className="text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
+                    Заполните: {incompleteSteps.map((step) => step.label).join(", ")}.
+                  </p>
+                  {appState.activeBot.status === "active" && (
+                    <p className="text-[12px] leading-relaxed text-[var(--color-warning)]">
+                      Если сохранить неполную воронку, бот остановится до завершения настройки.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
             {/* Global Mode Switcher */}
             <div className="p-4 rounded-[20px] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm mb-2 flex flex-col gap-3">
               <div className="flex items-center justify-between">
@@ -908,10 +961,12 @@ export const Build = () => {
               <p className="text-[12px] text-[var(--color-foreground-secondary)] mt-1">
                 Определяет глобальное действие при нажатии целевых кнопок клиентом
               </p>
-              <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1">
+              <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1" role="radiogroup" aria-label="Режим работы воронки">
                 <button
                   type="button"
                   onClick={() => updateBlock("payment", "paymentMode", "auto")}
+                  role="radio"
+                  aria-checked={paymentMode === "auto"}
                   className={`flex-1 py-2 px-2 text-[12px] md:text-[13px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${paymentMode === "auto" ? "bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
                 >
                   <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-success)] inline-block shrink-0" />
@@ -920,6 +975,8 @@ export const Build = () => {
                 <button
                   type="button"
                   onClick={() => updateBlock("payment", "paymentMode", "application")}
+                  role="radio"
+                  aria-checked={paymentMode === "application"}
                   className={`flex-1 py-2 px-2 text-[12px] md:text-[13px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${paymentMode === "application" ? "bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
                 >
                   <span className="w-2.5 h-2.5 rounded-full bg-[#3b82f6] inline-block shrink-0" />
@@ -928,12 +985,18 @@ export const Build = () => {
                 <button
                   type="button"
                   onClick={() => updateBlock("payment", "paymentMode", "hybrid")}
+                  role="radio"
+                  aria-checked={paymentMode === "hybrid"}
                   className={`flex-1 py-2 px-2 text-[12px] md:text-[13px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${paymentMode === "hybrid" ? "bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
                 >
                   <span className="w-2.5 h-2.5 rounded-full bg-[#a855f7] inline-block shrink-0" />
                   <span>Гибрид</span>
                 </button>
               </div>
+
+              <p className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">
+                {modeOutcome}
+              </p>
 
               <AnimatePresence>
                 {(paymentMode === "application" || paymentMode === "hybrid") && (
@@ -944,7 +1007,7 @@ export const Build = () => {
                     className="pt-2 border-t border-[var(--color-border)] mt-1"
                   >
                     <div className="flex items-center mb-1.5">
-                      <label className="text-[13px] font-semibold text-[var(--color-foreground)]">
+                      <label htmlFor="manager-url" className="text-[13px] font-semibold text-[var(--color-foreground)]">
                         Ссылка на Telegram менеджера
                       </label>
                       <InfoTooltip
@@ -953,6 +1016,7 @@ export const Build = () => {
                       />
                     </div>
                     <input
+                      id="manager-url"
                       type="text"
                       className="input w-full text-[13px] h-9 bg-[var(--color-surface-2)] border-[var(--color-border)] focus:border-[var(--color-primary)] font-medium"
                       value={paymentBlock?.managerUrl || ""}
@@ -962,10 +1026,11 @@ export const Build = () => {
                         if (window.innerWidth <= 768) { setTimeout(() => { e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300); }
                       }}
                     />
-                    <label className="text-[13px] font-semibold text-[var(--color-foreground)] block mt-3 mb-1.5">
+                    <label htmlFor="manager-text" className="text-[13px] font-semibold text-[var(--color-foreground)] block mt-3 mb-1.5">
                       Текст для связи
                     </label>
                     <input
+                      id="manager-text"
                       type="text"
                       className="input w-full text-[13px] h-9 bg-[var(--color-surface-2)] border-[var(--color-border)] focus:border-[var(--color-primary)] font-medium"
                       value={paymentBlock?.managerText || ""}
@@ -1551,7 +1616,7 @@ export const Build = () => {
                             ))}
                             <button
                               onClick={() => setPreviewScreen("start")}
-                              className="w-full py-2 px-3 rounded-xl font-semibold text-[12px] text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors mt-1 flex items-center justify-center gap-1.5"
+                              className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-surface-2)] px-3 py-2 text-[12px] font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-border)]"
                             >
                               <ArrowLeft size={14} />
                               <span>Назад</span>
@@ -1631,7 +1696,7 @@ export const Build = () => {
                                   setPreviewScreen("start");
                                 }
                               }}
-                              className="w-full py-2 px-3 rounded-xl font-semibold text-[12px] text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors mt-1 flex items-center justify-center gap-1.5"
+                              className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-surface-2)] px-3 py-2 text-[12px] font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-border)]"
                             >
                               <ArrowLeft size={14} />
                               <span>Назад</span>
@@ -1688,7 +1753,7 @@ export const Build = () => {
 
                           <button
                             onClick={() => setPreviewScreen("start")}
-                            className="w-full py-2 px-3 rounded-xl font-semibold text-[12px] text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] transition-colors mt-1 flex items-center justify-center gap-1.5"
+                            className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-xl bg-[var(--color-surface-2)] px-3 py-2 text-[12px] font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-border)]"
                           >
                             <ArrowLeft size={14} />
                             <span>Вернуться в бота</span>
@@ -1705,167 +1770,41 @@ export const Build = () => {
         </>
         )}
 
-        {createPortal(
-          <AnimatePresence>
-            {showConfirm && (
-              <>
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  onClick={() => setShowConfirm(false)}
-                  style={{
-                    position: "fixed",
-                    inset: 0,
-                    background: "rgba(0,0,0,0.5)",
-                    zIndex: 100000,
-                    backdropFilter: "blur(4px)",
-                  }}
-                />
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: 10, x: "-50%" }}
-                  animate={{ opacity: 1, scale: 1, y: "-50%", x: "-50%" }}
-                  exit={{ opacity: 0, scale: 0.95, y: 10, x: "-50%" }}
-                  style={{
-                    position: "fixed",
-                    top: "50%",
-                    left: "50%",
-                    zIndex: 100001,
-                    background: "var(--color-surface)",
-                    width: "90%",
-                    maxWidth: "340px",
-                    borderRadius: "24px",
-                    padding: "24px",
-                    boxShadow: "var(--shadow-float)",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "40px",
-                        height: "40px",
-                        borderRadius: "12px",
-                        background: "var(--color-danger-soft)",
-                        color: "var(--color-danger)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <ShieldAlert size={20} />
-                    </div>
-                    <h3
-                      style={{
-                        fontSize: "17px",
-                        fontWeight: 600,
-                        color: "var(--color-foreground)",
-                        margin: 0,
-                      }}
-                    >
-                      Очистить базу?
-                    </h3>
-                  </div>
-                  <p
-                    style={{
-                      fontSize: "14px",
-                      color: "var(--color-foreground-secondary)",
-                      lineHeight: 1.5,
-                      marginBottom: "24px",
-                    }}
-                  >
-                    Вы уверены, что хотите безвозвратно удалить базу лидов этого
-                    бота?
-                    <br />
-                    <br />
-                    <span
-                      style={{
-                        color: "var(--color-danger)",
-                        fontSize: "13px",
-                        fontWeight: 500,
-                      }}
-                    >
-                      Полное удаление базы пользователей сбросит счетчик юзеров
-                      и разблокирует смену токена.
-                    </span>
-                  </p>
-                  <div style={{ display: "flex", gap: "12px" }}>
-                    <button
-                      onClick={() => setShowConfirm(false)}
-                      className="btn btn-secondary"
-                      style={{ flex: 1, height: "44px" }}
-                    >
-                      Отмена
-                    </button>
-                    <button
-                      onClick={() => void resetBotLeads()}
-                      className="btn"
-                      style={{
-                        flex: 1,
-                        height: "44px",
-                        background: "var(--color-danger)",
-                        color: "#fff",
-                        border: "none",
-                      }}
-                    >
-                      Очистить
-                    </button>
-                  </div>
-                </motion.div>
-              </>
-            )}
-          </AnimatePresence>,
-          document.body,
-        )}
       </motion.div>
 
       {/* Floating Save Action Bar (appears only when dirty) */}
       <AnimatePresence>
         {appState.isDirty && (
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.95 }}
-            transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.18 }}
             className="fixed inset-x-0 mx-auto w-[calc(100%-32px)]  max-w-[400px] z-[99] action-bar-fixed pointer-events-none"
           >
             <div
-              className="flex items-center justify-between p-1 rounded-full shadow-[0_16px_32px_-12px_rgba(79,70,229,0.3)] pointer-events-auto"
+              className="pointer-events-auto flex items-center justify-between gap-2 rounded-[var(--radius-lg)] p-2 shadow-[var(--shadow-float)]"
               style={{
                 background: "var(--color-surface)",
                 border: "1px solid var(--color-border)",
-                backdropFilter: "blur(12px)",
               }}
             >
-              <div className="flex items-center gap-2 pl-3 pr-2 min-w-0">
-                <div className="relative flex items-center justify-center shrink-0">
-                  <div className="absolute w-2 h-2 rounded-full bg-[var(--color-warning)] opacity-40 animate-ping" />
-                  <div className="relative w-2 h-2 rounded-full bg-[var(--color-warning)]" />
-                </div>
-                <span className="text-[13px] md:text-[14px] font-semibold text-[var(--color-foreground)] tracking-tight truncate">
-                  Не сохранено
+              <div className="flex min-w-0 items-center gap-2 px-2">
+                <span className="size-2 shrink-0 rounded-full bg-[var(--color-warning)]" aria-hidden="true" />
+                <span className="truncate text-[13px] font-medium text-[var(--color-foreground)]" aria-live="polite">
+                  Есть несохранённые изменения
                 </span>
               </div>
               <button
-                className="btn-primary-saas flex items-center justify-center gap-1.5 rounded-full shrink-0 shadow-sm"
-                style={{
-                  height: "36px",
-                  padding: "0 16px",
-                  fontSize: "13px",
-                  margin: 5,
-                }}
+                type="button"
+                className="btn btn-primary min-h-10 shrink-0 px-4 text-[13px]"
                 onClick={() => {
                   const tg = (window as Window & { Telegram?: { WebApp?: { HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
                   tg?.HapticFeedback?.impactOccurred("medium");
                   handleSave();
                 }}
                 disabled={isSaving}
+                aria-busy={isSaving || undefined}
               >
                 {isSaving ? (
                   <RotateCcw size={14} className="animate-spin" />

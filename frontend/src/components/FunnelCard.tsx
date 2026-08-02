@@ -10,7 +10,7 @@ interface FunnelCardProps {
   children: React.ReactNode;
 }
 
-export const FunnelCard = ({ title, isComplete, defaultExpanded = false, children }: FunnelCardProps) => {
+export const FunnelCard = ({ stepId, title, isComplete, defaultExpanded = false, children }: FunnelCardProps) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
@@ -33,7 +33,10 @@ export const FunnelCard = ({ title, isComplete, defaultExpanded = false, childre
       }}
     >
       <button
+        type="button"
         onClick={() => setIsExpanded(!isExpanded)}
+        aria-expanded={isExpanded}
+        aria-controls={`funnel-step-${stepId}`}
         className="w-full flex items-center justify-between transition-colors duration-200 hover:bg-[var(--color-surface-2)]"
         style={{
           padding: '14px 18px',
@@ -85,7 +88,7 @@ export const FunnelCard = ({ title, isComplete, defaultExpanded = false, childre
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
           >
-            <div style={{ padding: '20px 20px 24px' }}>
+            <div id={`funnel-step-${stepId}`} style={{ padding: '20px 20px 24px' }}>
               {children}
             </div>
           </motion.div>
