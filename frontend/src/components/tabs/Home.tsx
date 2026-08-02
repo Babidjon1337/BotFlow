@@ -19,6 +19,10 @@ import {
   Search,
   AlertCircle,
   RefreshCw,
+  Settings,
+  Copy,
+  LineChart,
+  Play,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
 
@@ -159,6 +163,8 @@ export const Home = () => {
     handleCreateBotClick: onCreateBot,
     isAdmin,
     blocks,
+    setSheet,
+    setToastMessage,
   } = useAppState();
   const hasBot = appState.activeBot !== null;
   const isSubscribed = appState.subscriptionStatus === "active" || isAdmin;
@@ -359,13 +365,22 @@ export const Home = () => {
     setStatsRefreshKey((key) => key + 1);
     setLeadsRefreshKey((key) => key + 1);
   };
-  const hasFunnelData = Boolean(
-    stats?.funnel_data?.some((point) => Number(point.value) > 0),
-  );
-  const funnelMaxValue = Math.max(
-    1,
-    ...(stats?.funnel_data?.map((point) => Number(point.value) || 0) ?? []),
-  );
+  const copyBotLink = async () => {
+    const botUrl = appState.activeBot?.botUrl
+      || (appState.activeBot?.username
+        ? `https://t.me/${appState.activeBot.username.replace("@", "")}`
+        : "");
+    if (!botUrl) {
+      setToastMessage("Ссылка появится после подключения Telegram-бота");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(botUrl);
+      setToastMessage("Ссылка на бота скопирована");
+    } catch {
+      setToastMessage("Не удалось скопировать ссылку");
+    }
+  };
 
   const sendInvoice = async () => {
     if (!appState.activeBot || !selectedClientForInvoice || selectedTariffs.length === 0) return;
@@ -749,83 +764,6 @@ export const Home = () => {
         </button>
       </div>
 
-      {/* Subscription banner */}
-      {!isSubscribed && (
-        <motion.button
-          whileHover={{ scale: 1.01, y: -2 }}
-          whileTap={{ scale: 0.98 }}
-          onClick={() => setActiveTab("subscription")}
-          className="w-full text-left"
-        >
-          <div
-            className="relative overflow-hidden p-5 flex items-center gap-4 transition-shadow hover:shadow-[0_12px_32px_-12px_rgba(79,70,229,0.6)] group"
-            style={{
-              borderRadius: 28,
-              background: "linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)",
-              border: "1px solid rgba(255,255,255,0.1)",
-            }}
-          >
-            {/* Soft inner glow */}
-            <div className="absolute inset-0 pointer-events-none rounded-[28px] border border-white/10" />
-
-            <div
-              className="absolute inset-0 pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity duration-500"
-              style={{
-                background:
-                  "linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.1) 50%, transparent 60%)",
-              }}
-            />
-
-            <div
-              className="w-12 h-12 rounded-[16px] flex items-center justify-center shrink-0 shadow-inner"
-              style={{
-                background: "rgba(255,255,255,0.15)",
-                backdropFilter: "blur(10px)",
-                WebkitBackdropFilter: "blur(10px)",
-              }}
-            >
-              <User size={24} style={{ color: "#fff" }} />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div
-                style={{
-                  fontSize: "16px",
-                  fontWeight: 700,
-                  color: "#fff",
-                  marginBottom: "2px",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {appState.subscriptionStatus === "expired"
-                  ? "Подписка истекла"
-                  : "🚀 Активируй PRO"}
-              </div>
-              <div
-                style={{ fontSize: "13px", color: "rgba(255,255,255,0.75)" }}
-              >
-                {appState.subscriptionStatus === "expired"
-                  ? "Возможности PRO недоступны — продлите подписку"
-                  : "Приём платежей, воронки, аналитика"}
-              </div>
-            </div>
-
-            <div
-              className="shrink-0 px-4 py-2.5 rounded-[14px] text-[14px] font-bold shadow-sm transition-transform group-hover:scale-105"
-              style={{
-                background: "#ffffff",
-                color: "#4F46E5",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {appState.subscriptionStatus === "expired"
-                ? "Продлить"
-                : "Оформить"}
-            </div>
-          </div>
-        </motion.button>
-      )}
-
       {/* Bot Revenue Dashboard Header */}
       <div
         className="card-saas flex flex-col w-full"
@@ -857,16 +795,7 @@ export const Home = () => {
         ) : stats ? (
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
-            <div
-              style={{
-                fontSize: "13px",
-                fontWeight: 600,
-                color: "var(--color-foreground-secondary)",
-                letterSpacing: "0.02em",
-                textTransform: "uppercase",
-                marginBottom: "12px",
-              }}
-            >
+            <div className="mb-3 text-[13px] font-semibold text-[var(--color-foreground-secondary)]">
               Выручка за всё время
             </div>
             <div
@@ -903,20 +832,65 @@ export const Home = () => {
         )}
       </div>
 
+      {stats && appState.activeBot?.status !== "active" && (
+        <section className="card-saas flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="dashboard-next-step">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-warning-soft)] text-[var(--color-warning)]">
+              <Play size={19} aria-hidden="true" />
+            </div>
+            <div>
+              <h2 id="dashboard-next-step" className="text-[15px] font-semibold text-[var(--color-foreground)]">Бот не принимает новых клиентов</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">Проверьте готовность воронки и запустите бота, когда всё будет настроено.</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setActiveTab("build")} className="btn btn-primary h-10 shrink-0 px-4 text-[13px]">Перейти к запуску</button>
+        </section>
+      )}
+
+      {stats && appState.activeBot?.status === "active" && paymentTariffs.length > 0 && !appState.activeBot.hasPaymentCredentials && (
+        <section className="card-saas flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="dashboard-next-step">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-warning-soft)] text-[var(--color-warning)]">
+              <CreditCard size={19} aria-hidden="true" />
+            </div>
+            <div>
+              <h2 id="dashboard-next-step" className="text-[15px] font-semibold text-[var(--color-foreground)]">Приём оплаты не настроен</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">Добавьте реквизиты кассы, чтобы клиенты могли оплачивать выбранные тарифы.</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => setSheet("bot_settings")} className="btn btn-primary h-10 shrink-0 px-4 text-[13px]"><Settings size={15} /> Настроить кассу</button>
+        </section>
+      )}
+
+      {stats && appState.activeBot?.status === "active" && (paymentTariffs.length === 0 || appState.activeBot.hasPaymentCredentials) && stats.views === 0 && (
+        <section className="card-saas flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="dashboard-next-step">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+              <Send size={19} aria-hidden="true" />
+            </div>
+            <div>
+              <h2 id="dashboard-next-step" className="text-[15px] font-semibold text-[var(--color-foreground)]">Пригласите первых посетителей</h2>
+              <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">Скопируйте ссылку на бота и отправьте её аудитории. Первый запуск появится в статистике.</p>
+            </div>
+          </div>
+          <button type="button" onClick={() => void copyBotLink()} className="btn btn-primary h-10 shrink-0 px-4 text-[13px]"><Copy size={15} /> Скопировать ссылку</button>
+        </section>
+      )}
+
       {/* KPI row */}
       {stats && <div className="grid grid-cols-3 gap-2 sm:gap-3 md:gap-4">
         {[
           {
-            label: "Пользователи",
+            label: "Посетители",
             value: stats.views,
-          },
-          {
-            label: "Перешли дальше",
-            value: stats.clicks,
           },
           {
             label: "Продажи",
             value: stats.sales,
+          },
+          {
+            label: "Конверсия",
+            value: `${stats.conversion}%`,
           },
         ].map((stat, i) => (
           <div
@@ -944,47 +918,38 @@ export const Home = () => {
       </div>}
 
       {stats && (
-        <section className="card-saas p-4 sm:p-5" aria-labelledby="funnel-chart-title">
+        <section className="card-saas p-4 sm:p-5" aria-labelledby="timeline-chart-title">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 id="funnel-chart-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Движение по воронке</h2>
-              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Подтверждённые переходы между шагами.</p>
+              <h2 id="timeline-chart-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Динамика бизнеса</h2>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Посетители, продажи и выручка по дням.</p>
             </div>
-            <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+            <LineChart size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
           </div>
-
-          {hasFunnelData ? (
-            <div className="mt-4 h-44 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 pb-2 pt-4 sm:h-52 sm:px-4" aria-label="График движения по воронке">
-              <div className="flex h-full items-end justify-around gap-2">
-                {stats.funnel_data.map((point) => {
-                  const value = Number(point.value) || 0;
-                  const height = Math.max(8, Math.round((value / funnelMaxValue) * 100));
-                  return (
-                    <div key={point.name} className="flex h-full min-w-0 flex-1 flex-col justify-end text-center">
-                      <span className="mb-1 text-[11px] font-semibold text-[var(--color-foreground-secondary)]">{value}</span>
-                      <div className="mx-auto flex h-[calc(100%-36px)] w-full max-w-12 items-end rounded-t-lg bg-[var(--color-primary-soft)] px-1">
-                        <div className="w-full rounded-t-md bg-[var(--color-primary)] transition-[height] duration-200" style={{ height: `${height}%` }} />
-                      </div>
-                      <span className="mt-2 truncate text-[10px] text-[var(--color-foreground-tertiary)] sm:text-[11px]" title={point.name}>{point.name}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4 flex min-h-44 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 text-center">
-              <BarChart2 size={22} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
-              <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">График появится после первых переходов</p>
-              <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Запустите трафик в бота: данные отобразятся здесь, когда пользователи начнут двигаться по воронке.</p>
-            </div>
-          )}
+          <div className="mt-4 flex min-h-40 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 text-center">
+            <LineChart size={22} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+            <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">История по дням пока не собирается</p>
+            <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Мы не показываем приблизительные значения. Здесь появится динамика после подключения истории аналитики.</p>
+          </div>
         </section>
       )}
 
-      {stats && stats.views === 0 && stats.sales === 0 && (
-        <div className="card-saas px-5 py-4 text-[13px] text-[var(--color-foreground-secondary)]">
-          Данных пока нет. После первого запуска клиента в боте здесь появятся подтверждённые показатели.
-        </div>
+      {stats && (
+        <section className="card-saas p-4 sm:p-5" aria-labelledby="sales-funnel-title">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 id="sales-funnel-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Воронка продаж</h2>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Покажет, на каком этапе пользователи перестают двигаться к оплате.</p>
+            </div>
+            <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+          </div>
+          <div className="mt-4 flex min-h-36 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 text-center">
+            <GitMerge size={22} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+            <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">Детальная воронка пока недоступна</p>
+            <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Переходы между этапами ещё не сохраняются в истории, поэтому мы не подменяем их текущим положением клиентов.</p>
+            <button type="button" onClick={() => setActiveTab("flow")} className="mt-3 text-[13px] font-semibold text-[var(--color-primary)] hover:underline">Открыть воронку</button>
+          </div>
+        </section>
       )}
 
       {/* CRM Section: Clients & Applications */}
@@ -1147,6 +1112,24 @@ export const Home = () => {
         </div>
         </> : null}
       </div>
+
+      {!isSubscribed && (
+        <section className="card-saas flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="dashboard-plan-title">
+          <div className="min-w-0">
+            <h2 id="dashboard-plan-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">
+              {appState.subscriptionStatus === "expired" ? "PRO-подписка истекла" : "Нужно больше возможностей?"}
+            </h2>
+            <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
+              {appState.subscriptionStatus === "expired"
+                ? "Продлите подписку, чтобы снова использовать возможности PRO."
+                : "PRO открывает одновременную работу нескольких ботов и расширенные возможности."}
+            </p>
+          </div>
+          <button type="button" onClick={() => setActiveTab("subscription")} className="btn btn-secondary h-10 shrink-0 px-4 text-[13px]">
+            {appState.subscriptionStatus === "expired" ? "Продлить" : "Посмотреть PRO"}
+          </button>
+        </section>
+      )}
 
       {/* Full Screen / Modal Clients Sheet via Portal */}
       {createPortal(
