@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState } from 'react';
 import { KeyRound, X, Info, Copy } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider, AppState } from '../../types';
@@ -61,6 +61,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const [paymentCredsChanged, setPaymentCredsChanged] = useState(false);
   const [changedCredentialFields, setChangedCredentialFields] = useState<Set<string>>(new Set());
   const [providerChanged, setProviderChanged] = useState(false);
+  const showsStoredToken = Boolean(activeBot?.tokenPreview) && !tokenChanged;
+  const showsStoredCredentials = provider === initialProvider && !providerChanged;
 
   const isPro = appState.subscriptionStatus === 'active' || isAdmin;
   // The server keeps this flag after a database reset, so clearing leads cannot
@@ -137,6 +139,9 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           paymentProvider: updated.paymentProvider ?? provider,
           paymentKeys: activeBot.paymentKeys,
           hasPaymentCredentials: updated.hasPaymentCredentials ?? activeBot.hasPaymentCredentials,
+          tokenPreview: updated.tokenPreview ?? activeBot.tokenPreview,
+          paymentCredentialsPreview: updated.paymentCredentialsPreview ?? activeBot.paymentCredentialsPreview,
+          paymentWebhookUrl: updated.paymentWebhookUrl ?? activeBot.paymentWebhookUrl,
           username: updated.username || activeBot.username,
           mediaSyncDone: updated.mediaSyncDone ?? activeBot.mediaSyncDone,
           botUrl: updated.botUrl ?? activeBot.botUrl,
@@ -226,7 +231,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             <div style={{ position: 'relative' }}>
               <KeyRound size={15} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-foreground-tertiary)' }} />
               <input
-                type="password"
+                type={tokenChanged ? "password" : "text"}
                 value={tokenChanged ? token : (activeBot?.tokenPreview || '')}
                 onChange={(e) => { setTokenChanged(true); setToken(e.target.value); }}
                 onFocus={(e) => {
@@ -243,6 +248,11 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 style={{ paddingLeft: '40px', opacity: !canEditToken ? 0.6 : 1, cursor: !canEditToken ? 'not-allowed' : 'text', width: '100%' }}
               />
             </div>
+            {showsStoredToken && (
+              <p className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">
+                Токен показан в безопасной маске. Нажмите на поле, чтобы заменить его.
+              </p>
+            )}
             {isTokenLocked && (
               <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
                 <span style={{ fontSize: '14px' }}>🔒</span>
@@ -350,11 +360,11 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                     >
                       <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">{field.label}</label>
                       <input
-                        type="password"
+                        type={changedCredentialFields.has(field.key) ? "password" : "text"}
                         placeholder={field.hint}
                         value={changedCredentialFields.has(field.key)
                           ? (keys[field.key] || '')
-                          : (activeBot?.paymentCredentialsPreview?.[field.key] || '')}
+                          : (showsStoredCredentials ? activeBot?.paymentCredentialsPreview?.[field.key] || '' : '')}
                         onChange={(e) => {
                           setPaymentCredsChanged(true);
                           setChangedCredentialFields((previous) => new Set(previous).add(field.key));
@@ -372,6 +382,11 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                         className="input w-full"
                         style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
                       />
+                      {showsStoredCredentials && activeBot?.paymentCredentialsPreview?.[field.key] && !changedCredentialFields.has(field.key) && (
+                        <p className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">
+                          Значение показано в безопасной маске. Нажмите, чтобы заменить его.
+                        </p>
+                      )}
                     </motion.div>
                   ))}
                 </div>
