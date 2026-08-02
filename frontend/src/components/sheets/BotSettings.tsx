@@ -241,7 +241,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             </button>
           </div>
 
-          <fieldset disabled={isSaving} aria-busy={isSaving || undefined} className="m-0 flex flex-1 flex-col gap-6 overflow-y-auto border-0 px-5 py-6 disabled:opacity-70">
+          <fieldset disabled={isSaving} aria-busy={isSaving || undefined} className="m-0 min-h-0 flex flex-1 flex-col gap-6 overflow-y-auto border-0 px-5 py-6 pb-[max(24px,calc(env(safe-area-inset-bottom,0px)+16px))] disabled:opacity-70">
 
           <section aria-labelledby={`${formId}-telegram-title`} className="space-y-4">
             <div>
@@ -475,7 +475,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           </section>
         </fieldset>
 
-        <div className="p-5 border-t border-[var(--color-border)] shrink-0">
+        <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 pt-4 pb-[max(20px,calc(env(safe-area-inset-bottom,0px)+12px))]">
           {!isFunnelReady && (
             <p className="mb-3 text-center text-xs leading-5 text-[var(--color-foreground-secondary)]" role="status">
               {funnelLoadState.status === 'error'

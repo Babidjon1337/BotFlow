@@ -353,6 +353,19 @@ export const Home = () => {
   const stats = statsState.data;
   const leads = leadsState.data?.items ?? [];
   const leadsTotal = leadsState.data?.total ?? 0;
+  const isDashboardRefreshing =
+    statsState.status === "refreshing" || leadsState.status === "refreshing";
+  const refreshDashboard = () => {
+    setStatsRefreshKey((key) => key + 1);
+    setLeadsRefreshKey((key) => key + 1);
+  };
+  const hasFunnelData = Boolean(
+    stats?.funnel_data?.some((point) => Number(point.value) > 0),
+  );
+  const funnelMaxValue = Math.max(
+    1,
+    ...(stats?.funnel_data?.map((point) => Number(point.value) || 0) ?? []),
+  );
 
   const sendInvoice = async () => {
     if (!appState.activeBot || !selectedClientForInvoice || selectedTariffs.length === 0) return;
@@ -719,6 +732,23 @@ export const Home = () => {
       transition={{ duration: 0.25, ease: "easeOut" }}
       className="space-y-6 pb-8"
     >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="truncate text-[20px] font-semibold tracking-tight text-[var(--color-foreground)]">Обзор бота</h1>
+          <p className="mt-0.5 truncate text-[12px] text-[var(--color-foreground-secondary)]">{appState.activeBot?.name}</p>
+        </div>
+        <button
+          type="button"
+          onClick={refreshDashboard}
+          disabled={isDashboardRefreshing}
+          className="btn btn-secondary h-10 shrink-0 px-3 text-[13px]"
+          aria-busy={isDashboardRefreshing || undefined}
+        >
+          <RefreshCw size={15} className={isDashboardRefreshing ? "animate-spin" : ""} />
+          {isDashboardRefreshing ? "Обновляем" : "Обновить"}
+        </button>
+      </div>
+
       {/* Subscription banner */}
       {!isSubscribed && (
         <motion.button
@@ -818,7 +848,7 @@ export const Home = () => {
             </div>
             <button
               type="button"
-              onClick={() => setStatsRefreshKey((key) => key + 1)}
+              onClick={refreshDashboard}
               className="h-10 px-4 rounded-xl bg-[var(--color-primary)] text-white text-[13px] font-bold flex items-center gap-2"
             >
               <RefreshCw size={15} /> Повторить
@@ -851,16 +881,6 @@ export const Home = () => {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setStatsRefreshKey((key) => key + 1)}
-              disabled={statsState.status === "refreshing"}
-              className="h-8 px-3 rounded-full text-[12px] font-bold flex items-center gap-1.5 bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] disabled:opacity-60"
-              aria-label="Обновить статистику"
-            >
-              <RefreshCw size={13} className={statsState.status === "refreshing" ? "animate-spin" : ""} />
-              {statsState.status === "refreshing" ? "Обновляем" : "Обновить"}
-            </button>
             <div
               className={`px-3 py-1.5 rounded-full text-[12px] font-bold flex items-center gap-2 ${appState.activeBot?.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)]"}`}
             >
@@ -878,13 +898,13 @@ export const Home = () => {
         {statsState.status === "error" && stats && (
           <div className="mt-4 p-3 rounded-xl bg-[var(--color-warning-soft)] text-[var(--color-foreground-secondary)] text-[13px] flex flex-col sm:flex-row sm:items-center gap-2 justify-between" role="status">
             <span>Не удалось обновить данные. Показана версия на {statsState.fetchedAt ? formatUpdatedAt(statsState.fetchedAt) : "момент последней загрузки"}.</span>
-            <button type="button" onClick={() => setStatsRefreshKey((key) => key + 1)} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
+            <button type="button" onClick={refreshDashboard} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
           </div>
         )}
       </div>
 
       {/* KPI row */}
-      {stats && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+      {stats && <div className="grid grid-cols-3 gap-2 sm:gap-3 md:gap-4">
         {[
           {
             label: "Пользователи",
@@ -901,37 +921,65 @@ export const Home = () => {
         ].map((stat, i) => (
           <div
             key={i}
-            className="card-saas"
-            style={{
-              padding: "20px 16px",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-            }}
+            className="card-saas flex min-w-0 flex-col items-center px-2 py-3 sm:px-4 sm:py-4"
           >
             <div
               style={{
-                fontSize: "24px",
+                fontSize: "clamp(20px, 6vw, 24px)",
                 fontWeight: 700,
                 letterSpacing: "-0.01em",
                 color: "var(--color-foreground)",
-                marginBottom: "4px",
+                marginBottom: "2px",
               }}
             >
               {stat.value}
             </div>
             <div
-              style={{
-                fontSize: "13px",
-                fontWeight: 500,
-                color: "var(--color-foreground-secondary)",
-              }}
+              className="text-center text-[10px] font-medium leading-tight text-[var(--color-foreground-secondary)] sm:text-[12px]"
             >
               {stat.label}
             </div>
           </div>
         ))}
       </div>}
+
+      {stats && (
+        <section className="card-saas p-4 sm:p-5" aria-labelledby="funnel-chart-title">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 id="funnel-chart-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Движение по воронке</h2>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Подтверждённые переходы между шагами.</p>
+            </div>
+            <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+          </div>
+
+          {hasFunnelData ? (
+            <div className="mt-4 h-44 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 pb-2 pt-4 sm:h-52 sm:px-4" aria-label="График движения по воронке">
+              <div className="flex h-full items-end justify-around gap-2">
+                {stats.funnel_data.map((point) => {
+                  const value = Number(point.value) || 0;
+                  const height = Math.max(8, Math.round((value / funnelMaxValue) * 100));
+                  return (
+                    <div key={point.name} className="flex h-full min-w-0 flex-1 flex-col justify-end text-center">
+                      <span className="mb-1 text-[11px] font-semibold text-[var(--color-foreground-secondary)]">{value}</span>
+                      <div className="mx-auto flex h-[calc(100%-36px)] w-full max-w-12 items-end rounded-t-lg bg-[var(--color-primary-soft)] px-1">
+                        <div className="w-full rounded-t-md bg-[var(--color-primary)] transition-[height] duration-200" style={{ height: `${height}%` }} />
+                      </div>
+                      <span className="mt-2 truncate text-[10px] text-[var(--color-foreground-tertiary)] sm:text-[11px]" title={point.name}>{point.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 flex min-h-44 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 text-center">
+              <BarChart2 size={22} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+              <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">График появится после первых переходов</p>
+              <p className="mt-1 max-w-sm text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Запустите трафик в бота: данные отобразятся здесь, когда пользователи начнут двигаться по воронке.</p>
+            </div>
+          )}
+        </section>
+      )}
 
       {stats && stats.views === 0 && stats.sales === 0 && (
         <div className="card-saas px-5 py-4 text-[13px] text-[var(--color-foreground-secondary)]">
@@ -956,18 +1004,6 @@ export const Home = () => {
                 {formatUpdatedAt(leadsState.fetchedAt)}
               </span>
             )}
-            {leadsState.data && (
-              <button
-                type="button"
-                onClick={() => setLeadsRefreshKey((key) => key + 1)}
-                disabled={leadsState.status === "refreshing"}
-                className="w-8 h-8 rounded-full bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] flex items-center justify-center disabled:opacity-60"
-                aria-label="Обновить список клиентов"
-                title="Обновить список клиентов"
-              >
-                <RefreshCw size={14} className={leadsState.status === "refreshing" ? "animate-spin" : ""} />
-              </button>
-            )}
             <span className="text-[12px] font-bold px-2.5 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-foreground-secondary)] rounded-full">
               {leadsState.data ? `Всего: ${leadsTotal}` : "Всего: —"}
             </span>
@@ -977,7 +1013,7 @@ export const Home = () => {
         {leadsState.status === "error" && leadsState.data && (
           <div className="mb-4 p-3 rounded-xl bg-[var(--color-warning-soft)] text-[13px] text-[var(--color-foreground-secondary)] flex flex-col sm:flex-row sm:items-center justify-between gap-2" role="status">
             <span>Список не обновился. Показаны данные на {leadsState.fetchedAt ? formatUpdatedAt(leadsState.fetchedAt) : "момент последней загрузки"}.</span>
-            <button type="button" onClick={() => setLeadsRefreshKey((key) => key + 1)} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
+            <button type="button" onClick={refreshDashboard} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
           </div>
         )}
 
@@ -991,7 +1027,7 @@ export const Home = () => {
             <AlertCircle size={24} className="text-[var(--color-danger)] mb-3" />
             <div className="text-[15px] font-bold text-[var(--color-foreground)]">Клиенты временно недоступны</div>
             <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-1 max-w-[440px]">{leadsState.error}</div>
-            <button type="button" onClick={() => setLeadsRefreshKey((key) => key + 1)} className="mt-4 h-10 px-4 rounded-xl bg-[var(--color-primary)] text-white text-[13px] font-bold flex items-center gap-2">
+            <button type="button" onClick={refreshDashboard} className="mt-4 h-10 px-4 rounded-xl bg-[var(--color-primary)] text-white text-[13px] font-bold flex items-center gap-2">
               <RefreshCw size={15} /> Повторить
             </button>
           </div>
