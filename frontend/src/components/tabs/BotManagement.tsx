@@ -305,6 +305,11 @@ export const BotManagement = () => {
                           onClick={() =>
                             setOpenMenuId(isMenuOpen ? null : bot.id)
                           }
+                          aria-label={`${isMenuOpen ? "Закрыть" : "Открыть"} меню бота ${bot.name}`}
+                          aria-expanded={isMenuOpen}
+                          aria-haspopup="menu"
+                          aria-controls={`bot-menu-${bot.id}`}
+                          title="Действия с ботом"
                           className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-colors ${isMenuOpen ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)]" : "text-[var(--color-foreground-tertiary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"}`}
                         >
                           <Settings size={18} />
@@ -318,10 +323,13 @@ export const BotManagement = () => {
                               animate={{ opacity: 1, scale: 1, y: 0 }}
                               exit={{ opacity: 0, scale: 0.95, y: 10 }}
                               transition={{ duration: 0.15 }}
+                              id={`bot-menu-${bot.id}`}
+                              role="menu"
                               className="absolute right-0 top-11 md:top-12 w-56 bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xl rounded-xl overflow-hidden z-30"
                             >
                               <div className="p-1">
                                 <button
+                                  role="menuitem"
                                   onClick={() => {
                                     setOpenMenuId(null);
                                     onEditBotSettings(bot.id);
@@ -336,6 +344,7 @@ export const BotManagement = () => {
                                 </button>
                                 <div className="h-px w-full bg-[var(--color-border)] my-1" />
                                 <button
+                                  role="menuitem"
                                   onClick={() => {
                                     setOpenMenuId(null);
                                     showConfirm({
@@ -353,6 +362,7 @@ export const BotManagement = () => {
                                   <RefreshCw size={16} /> Сбросить базу
                                 </button>
                                 <button
+                                  role="menuitem"
                                   onClick={() => {
                                     setOpenMenuId(null);
                                     showConfirm({
