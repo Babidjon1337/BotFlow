@@ -1,14 +1,18 @@
 """Persistence operations for individual payments made to client bots."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select, func
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import joinedload
 
-from database.models import ClientPayment, async_session
+from database.models import ClientPayment, Lead, ScheduledTask, async_session
+
+
+class ClientPaymentInvariantError(ValueError):
+    """A verified provider callback does not match its immutable local order."""
 
 
 async def get_client_payment_stats(bot_id: int) -> tuple[int, Decimal]:
@@ -90,35 +94,205 @@ async def mark_client_payment_succeeded(
     provider_payment_id: str,
     amount: Decimal,
     currency: str,
-) -> ClientPayment | None:
-    """Mark exactly one verified provider payment as fulfilled once."""
+    telegram_id: int,
+) -> tuple[ClientPayment, bool]:
+    """Persist verified payment and lead conversion atomically and idempotently."""
     try:
         normalized_id = uuid.UUID(str(payment_id))
     except ValueError:
-        return None
+        raise ClientPaymentInvariantError("Client payment ID is invalid")
     async with async_session() as session:
         payment = await session.scalar(
             select(ClientPayment)
-            .options(joinedload(ClientPayment.lead))
             .where(ClientPayment.id == normalized_id)
-            .with_for_update()
+            .with_for_update(of=ClientPayment)
         )
         if not payment:
-            return None
+            raise ClientPaymentInvariantError("Client payment does not exist")
         if (
             payment.bot_id != bot_id
             or payment.provider != provider.casefold()
             or payment.amount != amount
             or payment.currency != currency
         ):
-            return None
+            raise ClientPaymentInvariantError(
+                "Verified payment does not match the local order"
+            )
         if payment.provider_payment_id and payment.provider_payment_id != provider_payment_id:
-            return None
-        if payment.status == "succeeded":
-            return None
+            raise ClientPaymentInvariantError(
+                "Provider payment ID conflicts with the local order"
+            )
+
+        lead = await session.scalar(
+            select(Lead)
+            .where(Lead.id == payment.lead_id)
+            .with_for_update(of=Lead)
+        )
+        if not lead or lead.bot_id != bot_id or lead.telegram_id != telegram_id:
+            raise ClientPaymentInvariantError(
+                "Verified payer does not match the local order"
+            )
+
+        newly_paid = payment.status != "succeeded"
         payment.provider_payment_id = provider_payment_id
         payment.status = "succeeded"
-        payment.paid_at = datetime.now(timezone.utc)
+        payment.paid_at = payment.paid_at or datetime.now(timezone.utc)
+        lead.current_step_id = "node_success"
+        lead.has_purchased = True
+        await session.execute(
+            delete(ScheduledTask).where(ScheduledTask.lead_id == lead.id)
+        )
+        await session.commit()
+        await session.refresh(payment)
+        return payment, newly_paid
+
+
+async def _claim_delivery_state(
+    payment_id: uuid.UUID,
+    *,
+    status_field: str,
+    attempts_field: str,
+    retry_field: str,
+) -> ClientPayment | None:
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(ClientPayment.id == payment_id)
+            .with_for_update(of=ClientPayment)
+        )
+        if not payment or payment.status != "succeeded":
+            return None
+        status = getattr(payment, status_field)
+        retry_at = getattr(payment, retry_field)
+        if status == "succeeded" or (retry_at and retry_at > now):
+            return None
+        setattr(payment, status_field, "processing")
+        setattr(payment, attempts_field, getattr(payment, attempts_field) + 1)
+        setattr(payment, retry_field, now + timedelta(minutes=5))
         await session.commit()
         await session.refresh(payment)
         return payment
+
+
+async def claim_client_payment_fulfillment(payment_id: uuid.UUID) -> ClientPayment | None:
+    return await _claim_delivery_state(
+        payment_id,
+        status_field="fulfillment_status",
+        attempts_field="fulfillment_attempts",
+        retry_field="fulfillment_next_retry_at",
+    )
+
+
+async def claim_owner_payment_notification(payment_id: uuid.UUID) -> ClientPayment | None:
+    return await _claim_delivery_state(
+        payment_id,
+        status_field="owner_notification_status",
+        attempts_field="owner_notification_attempts",
+        retry_field="owner_notification_next_retry_at",
+    )
+
+
+async def _finish_delivery_state(
+    payment_id: uuid.UUID,
+    *,
+    status_field: str,
+    retry_field: str,
+    error_field: str,
+    completed_field: str,
+    error: str | None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(ClientPayment.id == payment_id)
+            .with_for_update(of=ClientPayment)
+        )
+        if not payment:
+            return
+        if error is None:
+            setattr(payment, status_field, "succeeded")
+            setattr(payment, retry_field, None)
+            setattr(payment, error_field, None)
+            setattr(payment, completed_field, now)
+        else:
+            attempts_field = (
+                "fulfillment_attempts"
+                if status_field == "fulfillment_status"
+                else "owner_notification_attempts"
+            )
+            attempts = max(1, getattr(payment, attempts_field))
+            delay_minutes = min(24 * 60, 2 ** min(attempts - 1, 10))
+            setattr(payment, status_field, "retry")
+            setattr(payment, retry_field, now + timedelta(minutes=delay_minutes))
+            setattr(payment, error_field, error[:2000])
+        await session.commit()
+
+
+async def mark_client_payment_fulfilled(payment_id: uuid.UUID) -> None:
+    await _finish_delivery_state(
+        payment_id,
+        status_field="fulfillment_status",
+        retry_field="fulfillment_next_retry_at",
+        error_field="fulfillment_error",
+        completed_field="fulfilled_at",
+        error=None,
+    )
+
+
+async def mark_client_payment_fulfillment_failed(
+    payment_id: uuid.UUID, error: str
+) -> None:
+    await _finish_delivery_state(
+        payment_id,
+        status_field="fulfillment_status",
+        retry_field="fulfillment_next_retry_at",
+        error_field="fulfillment_error",
+        completed_field="fulfilled_at",
+        error=error,
+    )
+
+
+async def mark_owner_payment_notification_sent(payment_id: uuid.UUID) -> None:
+    await _finish_delivery_state(
+        payment_id,
+        status_field="owner_notification_status",
+        retry_field="owner_notification_next_retry_at",
+        error_field="owner_notification_error",
+        completed_field="owner_notified_at",
+        error=None,
+    )
+
+
+async def mark_owner_payment_notification_failed(
+    payment_id: uuid.UUID, error: str
+) -> None:
+    await _finish_delivery_state(
+        payment_id,
+        status_field="owner_notification_status",
+        retry_field="owner_notification_next_retry_at",
+        error_field="owner_notification_error",
+        completed_field="owner_notified_at",
+        error=error,
+    )
+
+
+async def get_due_client_payment_delivery_ids(limit: int = 50) -> list[uuid.UUID]:
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        rows = await session.scalars(
+            select(ClientPayment.id)
+            .where(
+                ClientPayment.status == "succeeded",
+                or_(
+                    ClientPayment.fulfillment_status.in_(("pending", "retry")),
+                    ClientPayment.fulfillment_next_retry_at <= now,
+                    ClientPayment.owner_notification_status.in_(("pending", "retry")),
+                    ClientPayment.owner_notification_next_retry_at <= now,
+                ),
+            )
+            .order_by(ClientPayment.paid_at)
+            .limit(limit)
+        )
+        return list(rows)

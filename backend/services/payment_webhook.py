@@ -23,6 +23,18 @@ class PaymentProviderUnavailable(RuntimeError):
     """Raised when a provider cannot be reached for mandatory verification."""
 
 
+def _robokassa_digest(value: str, credentials: Mapping[str, Any]) -> str:
+    algorithm = str(credentials.get("hash_algorithm") or "md5").casefold()
+    try:
+        digest = hashlib.new(algorithm)
+    except ValueError as exc:
+        raise PaymentWebhookError("Robokassa hash algorithm is unsupported") from exc
+    if algorithm not in {"md5", "sha256", "sha512"}:
+        raise PaymentWebhookError("Robokassa hash algorithm is unsupported")
+    digest.update(value.encode())
+    return digest.hexdigest()
+
+
 @dataclass(frozen=True)
 class VerifiedPayment:
     provider: str
@@ -54,6 +66,21 @@ def _value(data: Mapping[str, Any], *names: str) -> str | None:
         if value is not None:
             return str(value)
     return None
+
+
+def _prodamus_signature_payload(payload: Mapping[str, Any]) -> str:
+    """Match Prodamus Hmac canonical JSON: sorted keys and escaped slashes."""
+    normalized = {
+        str(key): value
+        for key, value in payload.items()
+        if str(key).casefold() not in {"signature", "sign"}
+    }
+    return json.dumps(
+        normalized,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).replace("/", "\\/")
 
 
 async def verify_payment_notification(
@@ -143,7 +170,7 @@ def _verify_robokassa(
     )
     signature_parts = [out_sum, invoice_id, str(password_2)]
     signature_parts.extend(f"{key}={value}" for key, value in custom_parameters)
-    expected_signature = hashlib.md5(":".join(signature_parts).encode()).hexdigest()
+    expected_signature = _robokassa_digest(":".join(signature_parts), credentials)
     if not hmac.compare_digest(expected_signature.casefold(), signature.casefold()):
         raise PaymentWebhookError("Robokassa signature is invalid")
 
@@ -185,14 +212,7 @@ def _verify_prodamus(
     if not secret or not signature:
         raise PaymentWebhookError("Prodamus signature is missing")
 
-    signed_payload = {
-        str(key): value
-        for key, value in payload.items()
-        if str(key).casefold() not in {"signature", "sign"}
-    }
-    serialized_payload = json.dumps(
-        signed_payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True
-    )
+    serialized_payload = _prodamus_signature_payload(payload)
     expected_signature = hmac.new(
         str(secret).encode(), serialized_payload.encode(), hashlib.sha256
     ).hexdigest()

@@ -1,6 +1,5 @@
 import json
 import re
-import hmac
 import hashlib
 import uuid
 import httpx
@@ -11,11 +10,16 @@ from database.models import BotConfig, ClientPayment
 from database.requests.client_payment_rq import set_client_payment_provider_id
 from services.security import crypto
 from loggers import logger
+from config import WEBHOOK_URL
 
 # Глобальный клиент для всех запросов
 http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=True)
 
 _YOOKASSA_DESCRIPTION_MAX_LENGTH = 128
+
+
+class PaymentDeliveryError(RuntimeError):
+    """Paid access could not be delivered and must be retried."""
 
 
 def _yookassa_description(description: str) -> str:
@@ -63,11 +67,25 @@ async def validate_payment_credentials(provider: str | None, creds: dict | None)
             return False, "ЮKassa отклонила реквизиты. Проверьте Shop ID и секретный ключ."
         return False, "ЮKassa временно не подтвердила реквизиты. Попробуйте сохранить позже."
     if normalized_provider == "robokassa":
-        valid = bool(credentials.get("merchant_login") and credentials.get("password1"))
-        return (True, "Реквизиты Robokassa заполнены.") if valid else (False, "Укажите Merchant Login и пароль Robokassa.")
+        valid = bool(
+            credentials.get("merchant_login")
+            and (credentials.get("password1") or credentials.get("password_1"))
+            and (credentials.get("password2") or credentials.get("password_2"))
+        )
+        return (True, "Реквизиты Robokassa заполнены.") if valid else (
+            False,
+            "Укажите Merchant Login, пароль №1 и пароль №2 Robokassa.",
+        )
     if normalized_provider == "prodamus":
-        valid = bool(credentials.get("api_key") and credentials.get("domain"))
-        return (True, "Реквизиты Prodamus заполнены.") if valid else (False, "Укажите API-ключ и домен Prodamus.")
+        valid = bool(
+            credentials.get("api_key")
+            and credentials.get("domain")
+            and credentials.get("sys")
+        )
+        return (True, "Реквизиты Prodamus заполнены.") if valid else (
+            False,
+            "Укажите API-ключ, домен и код интеграции SYS Prodamus.",
+        )
     return False, "Этот платёжный провайдер не поддерживается."
 
 
@@ -151,19 +169,6 @@ async def _create_yookassa_link(
             "bot_id": str(bot_config.id),
             **({"client_payment_id": str(client_payment.id), "tariff_id": client_payment.tariff_id} if client_payment else {}),
         },
-        "receipt": {
-            "customer": {"email": f"client_{telegram_id}@telegram-bot.ru"},
-            "items": [
-                {
-                    "description": provider_description,
-                    "quantity": "1.00",
-                    "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
-                    "vat_code": 1,
-                    "payment_mode": "full_prepayment",
-                    "payment_subject": "service",
-                }
-            ],
-        },
     }
     if bot_config.offer_installments:
         # YooKassa's documented "Плати частями" method. It is available only
@@ -210,21 +215,31 @@ async def _create_robokassa_link(
         logger.error("Для Робокассы не переданы merchant_login или password_1!")
         return None
 
-    inv_id = str(client_payment.id) if client_payment else str(uuid.uuid4())
+    inv_id = (
+        str(client_payment.provider_order_number)
+        if client_payment
+        else str(uuid.uuid4().int % 9_223_372_036_854_775_807 or 1)
+    )
     signature_parts = [f"shp_bot_id={bot_config.id}"]
     if client_payment:
         signature_parts.append(f"shp_client_payment_id={client_payment.id}")
     signature_parts.append(f"shp_telegram_id={telegram_id}")
     extra = ":".join(signature_parts)
     signature_str = f"{merchant_login}:{amount:.2f}:{inv_id}:{password_1}:{extra}"
-    signature = hashlib.md5(signature_str.encode("utf-8")).hexdigest()
+    algorithm = str(creds.get("hash_algorithm") or "md5").casefold()
+    if algorithm not in {"md5", "sha256", "sha512"}:
+        logger.error("Неподдерживаемый алгоритм подписи Robokassa: %s", algorithm)
+        return None
+    digest = hashlib.new(algorithm)
+    digest.update(signature_str.encode("utf-8"))
+    signature = digest.hexdigest()
 
     params = {
         "MerchantLogin": merchant_login,
         "OutSum": f"{amount:.2f}",
         "InvId": str(inv_id),
         "SignatureValue": signature,
-        "Description": description,
+        "Description": _yookassa_description(description)[:100],
         "shp_bot_id": str(bot_config.id),
         "shp_telegram_id": str(telegram_id),
     }
@@ -250,9 +265,10 @@ async def _create_prodamus_link(
         payment_page = f"https://{payment_page}"
     payment_page = payment_page.rstrip("/") + "/"
     api_key = creds.get("api_key")
+    integration_code = creds.get("sys")
 
-    if not payment_page or not api_key:
-        logger.error("Для Prodamus не переданы payment_page или api_key!")
+    if not payment_page or not api_key or not integration_code:
+        logger.error("Для Prodamus не переданы domain, api_key или sys!")
         return None
 
     prodamus = ProdamusPy(api_key)
@@ -260,6 +276,7 @@ async def _create_prodamus_link(
 
     data = {
         "do": "link",
+        "sys": str(integration_code),
         "order_id": order_id,
         "tg_user_id": str(telegram_id),
         "products": [
@@ -270,8 +287,11 @@ async def _create_prodamus_link(
                 "type": "service",
             }
         ],
-        "customer_email": f"client_{telegram_id}@telegram.bot",
     }
+    if WEBHOOK_URL:
+        data["urlNotification"] = (
+            f"{WEBHOOK_URL.rstrip('/')}/webhook/payments/prodamus/{bot_config.tg_bot_id}"
+        )
 
     data["signature"] = prodamus.sign(data)
     if client_payment:
@@ -329,7 +349,7 @@ async def send_success_message(
 
     bot_config = await get_bot_by_tg_id(tg_bot_id)
     if not bot_config or not bot_config.funnel_schema:
-        return
+        raise PaymentDeliveryError("Bot or funnel configuration is unavailable")
 
     try:
         token = crypto.decrypt(bot_config.bot_token_enc)
@@ -339,12 +359,15 @@ async def send_success_message(
         if isinstance(funnel_schema, dict):
             nodes = funnel_schema.get("nodes")
             if isinstance(nodes, list):
-                node_success = next((n for n in nodes if n.get("id") in ["success", "delivery", "node_success"]), None)
-                if not node_success and tariff_snapshot:
+                configured_success = next((n for n in nodes if n.get("id") in ["success", "delivery", "node_success"]), None)
+                if tariff_snapshot:
                     tariff = tariff_snapshot
+                    has_delivery = tariff.get("has_delivery", tariff.get("hasDelivery", True))
                     action_type = tariff.get("action_type") or tariff.get("actionType", "text")
                     action_data = tariff.get("action_data") or tariff.get("actionData", "")
-                    if action_type == "group" and client_payment:
+                    if has_delivery and not str(action_data).strip():
+                        raise PaymentDeliveryError("The paid tariff delivery is empty")
+                    if has_delivery and action_type == "group" and client_payment:
                         from services.chat_access import (
                             ChatAccessError,
                             chat_delivery_success_text,
@@ -368,9 +391,6 @@ async def send_success_message(
                                 client_payment.id,
                                 exc,
                             )
-                            node_success = {
-                                "content": "⚠️ <b>Оплата получена.</b>\n\nМы не смогли автоматически выдать доступ в закрытый чат. Владелец уже уведомлён."
-                            }
                             try:
                                 from services.billing_notifications import notify_billing_user
 
@@ -380,11 +400,15 @@ async def send_success_message(
                                 )
                             except Exception as notification_error:
                                 logger.warning("Не удалось уведомить владельца о выдаче чата: %s", notification_error)
-                    node_success = {
-                        "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if not node_success and action_type in ["link", "text", "group"] else (node_success or {"content": "✅ <b>Оплата успешно получена!</b>"})["content"],
-                        "media_file_id": action_data if action_type == "file" else None,
-                        "media_type": "photo" if action_type == "file" else None,
-                    }
+                            raise PaymentDeliveryError(str(exc)) from exc
+                    if has_delivery and not node_success:
+                        node_success = {
+                            "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text"] else "✅ <b>Оплата успешно получена!</b>",
+                            "media_file_id": action_data if action_type == "file" else None,
+                            "media_type": "document" if action_type == "file" else None,
+                        }
+                if not node_success:
+                    node_success = configured_success
                 if not node_success:
                     payment_node = next((n for n in nodes if n.get("id") == "payment"), None)
                     if payment_node and payment_node.get("tariffs"):
@@ -395,7 +419,7 @@ async def send_success_message(
                             node_success = {
                                 "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text"] else "✅ <b>Оплата успешно получена!</b>",
                                 "media_file_id": action_data if action_type == "file" else None,
-                                "media_type": "photo" if action_type == "file" else None
+                                "media_type": "document" if action_type == "file" else None
                             }
             elif isinstance(nodes, dict):
                 node_success = nodes.get("node_success") or nodes.get("success") or nodes.get("delivery")
@@ -410,6 +434,11 @@ async def send_success_message(
                 bot=bot, chat_id=telegram_id, node=node_success
             )
             logger.info(f"✅ Сообщение об успехе отправлено {telegram_id}")
+            return
+        raise PaymentDeliveryError("The paid tariff has no delivery content")
 
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения пользователю {telegram_id}: {e}")
+        if isinstance(e, PaymentDeliveryError):
+            raise
+        raise PaymentDeliveryError(str(e)) from e

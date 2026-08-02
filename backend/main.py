@@ -19,7 +19,6 @@ from database.models import init_models
 from services.security import crypto
 from services.scheduler import start_scheduler, stop_scheduler
 from services.funnel_readiness import evaluate_funnel_readiness
-from services.payment_link import send_success_message  # Перенесли логику в сервис
 from services.payment_webhook import (
     PaymentProviderUnavailable,
     PaymentWebhookError,
@@ -31,7 +30,11 @@ from services.saas_billing import (
     verify_billing_notification,
 )
 from services.billing_notifications import notify_billing_user
-from database.requests.client_payment_rq import mark_client_payment_succeeded
+from database.requests.client_payment_rq import (
+    ClientPaymentInvariantError,
+    mark_client_payment_succeeded,
+)
+from services.payment_fulfillment import process_client_payment_fulfillment
 from loggers import logger
 from config import (
     CORS_ALLOWED_ORIGINS,
@@ -213,6 +216,11 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
         normalized_provider = provider.casefold()
         if normalized_provider == "yookassa":
             data = await request.json()
+        elif (
+            normalized_provider == "prodamus"
+            and "application/json" in request.headers.get("content-type", "")
+        ):
+            data = await request.json()
         elif normalized_provider in {"robokassa", "prodamus"}:
             data = await request.form()
         else:
@@ -239,25 +247,29 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
             or not verified_payment.currency
         ):
             raise PaymentWebhookError("Payment is not linked to a client order")
-        payment = await mark_client_payment_succeeded(
-            payment_id=verified_payment.client_payment_id,
-            bot_id=bot_config.id,
-            provider=verified_payment.provider,
-            provider_payment_id=verified_payment.payment_id,
-            amount=verified_payment.amount,
-            currency=verified_payment.currency,
-        )
-        if payment:
-            await mark_lead_as_successful(
-                tg_bot_id=tg_bot_id, telegram_id=verified_payment.telegram_id
-            )
-            await send_success_message(
-                tg_bot_id=tg_bot_id,
+        try:
+            payment, newly_paid = await mark_client_payment_succeeded(
+                payment_id=verified_payment.client_payment_id,
+                bot_id=bot_config.id,
+                provider=verified_payment.provider,
+                provider_payment_id=verified_payment.payment_id,
+                amount=verified_payment.amount,
+                currency=verified_payment.currency,
                 telegram_id=verified_payment.telegram_id,
-                http_session=request.app.state.session,
-                tariff_snapshot=payment.tariff_snapshot,
-                client_payment=payment,
             )
+        except ClientPaymentInvariantError as exc:
+            raise PaymentWebhookError(str(exc)) from exc
+
+        fulfillment = await process_client_payment_fulfillment(
+            payment.id, request.app.state.session
+        )
+        logger.info(
+            "Платёж обработан: payment_id=%s, new=%s, access=%s, owner_notice=%s",
+            payment.id,
+            newly_paid,
+            fulfillment["access_delivered"],
+            fulfillment["owner_notified"],
+        )
 
         if normalized_provider == "robokassa":
             return PlainTextResponse(f"OK{verified_payment.payment_id}")

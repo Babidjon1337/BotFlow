@@ -62,9 +62,11 @@ export const PAYMENT_PROVIDERS: Record<PaymentProvider, { key: string; label: st
     { key: 'merchant_login',  label: 'Merchant Login', hint: 'my_shop' },
     { key: 'password1',       label: 'Пароль 1',       hint: 'pass1' },
     { key: 'password2',       label: 'Пароль 2',       hint: 'pass2' },
+    { key: 'hash_algorithm',  label: 'Алгоритм подписи', hint: 'md5, sha256 или sha512' },
   ],
   prodamus: [
     { key: 'api_key',   label: 'API Ключ',     hint: 'prodamus_xxxxx' },
     { key: 'domain',    label: 'Домен',        hint: 'myshop.payform.ru' },
+    { key: 'sys',       label: 'Код интеграции SYS', hint: 'Код, согласованный с Prodamus' },
   ],
 };

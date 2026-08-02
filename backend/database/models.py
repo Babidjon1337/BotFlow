@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     Numeric,
+    Sequence,
     String,
     Text,
     UniqueConstraint,
@@ -165,6 +166,12 @@ class ClientPayment(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    provider_order_number: Mapped[int] = mapped_column(
+        BigInteger,
+        Sequence("client_payment_order_number_seq"),
+        unique=True,
+        index=True,
+    )
     bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
     lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
     invoice_batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), index=True)
@@ -177,6 +184,16 @@ class ClientPayment(Base):
     idempotence_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    fulfillment_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    fulfillment_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    fulfillment_next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    fulfillment_error: Mapped[Optional[str]] = mapped_column(Text)
+    fulfilled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    owner_notification_status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    owner_notification_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    owner_notification_next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    owner_notification_error: Mapped[Optional[str]] = mapped_column(Text)
+    owner_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

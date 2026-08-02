@@ -22,6 +22,8 @@ from database.requests.billing_rq import get_users_due_for_subscription_renewal
 from services.billing_notifications import notify_billing_user
 from services.saas_billing import BillingError, create_recurring_payment
 from database.requests.bot_rq import enforce_non_pro_bot_limits
+from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
+from services.payment_fulfillment import process_client_payment_fulfillment
 
 scheduler = AsyncIOScheduler()
 shared_scheduler_session = AiohttpSession()
@@ -79,6 +81,15 @@ async def renew_pro_subscriptions_job():
                     user.telegram_id,
                     "⚠️ Не удалось автоматически продлить <b>PRO</b>. Мы повторим попытку завтра.",
                 )
+
+
+async def retry_client_payment_fulfillments_job():
+    """Retry paid access and owner notifications from durable payment state."""
+    payment_ids = await get_due_client_payment_delivery_ids()
+    for payment_id in payment_ids:
+        await process_client_payment_fulfillment(
+            payment_id, shared_scheduler_session
+        )
 
 
 async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[dict]:
@@ -185,6 +196,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="pro-renewals",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        retry_client_payment_fulfillments_job,
+        trigger="interval",
+        seconds=60,
+        max_instances=1,
+        coalesce=True,
+        id="client-payment-fulfillment",
         replace_existing=True,
     )
     scheduler.start()
