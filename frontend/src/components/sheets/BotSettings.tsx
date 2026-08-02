@@ -26,7 +26,7 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
 };
 
 export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => {
-  const { setSheet, setActiveTab, isAdmin, setAppState, setToastMessage, blocks } = useAppState();
+  const { setSheet, setActiveTab, isAdmin, setAppState, setToastMessage, blocks, funnelLoadState, getFunnelRevision, replaceFunnelWorkspace } = useAppState();
   const vh = useViewportHeight();
   
   const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -71,9 +71,24 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const canEditPayment = true;
 
   const { showAlert } = useAlert();
+  const isFunnelReady = Boolean(
+    activeBot &&
+    funnelLoadState.status === 'ready' &&
+    funnelLoadState.botId === activeBot.id,
+  );
 
   const handleSave = async () => {
     if (!activeBot) return;
+    if (!isFunnelReady) {
+      showAlert({
+        title: 'Воронка ещё не загружена',
+        message: 'Настройки не сохранены, чтобы не перезаписать воронку неполными данными. Повторите после её загрузки.',
+        type: 'warning',
+        confirmText: 'Понятно',
+      });
+      return;
+    }
+    let revisionAtSave = getFunnelRevision();
     const changedCredentials = Object.fromEntries(
       Object.entries(keys).filter(([key, value]) => changedCredentialFields.has(key) && value.trim())
     );
@@ -98,7 +113,20 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         paymentProvider: provider,
         paymentCreds: paymentCredsChanged ? changedCredentials : undefined,
       });
-      const savedFunnel = await apiService.saveFunnel(activeBot.id, blocks, false);
+      const didTokenChange = updated.token_changed === true;
+      const blocksForSave = didTokenChange
+        ? blocks.map(block => ({
+            ...block,
+            media: false,
+            mediaFileId: null,
+            mediaAssetId: null,
+            mediaType: null,
+          }))
+        : blocks;
+      if (didTokenChange) {
+        revisionAtSave = replaceFunnelWorkspace(blocksForSave);
+      }
+      const savedFunnel = await apiService.saveFunnel(activeBot.id, blocksForSave, false);
       setAppState(prev => {
         const nextBot = {
           ...activeBot,
@@ -125,7 +153,9 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             funnelComplete: savedFunnel.funnelComplete,
             status: savedFunnel.botStatus === 'active' ? 'active' : 'inactive',
           } : prev.activeBot,
-          isDirty: false,
+          isDirty: prev.activeBot?.id === activeBot.id && getFunnelRevision() === revisionAtSave
+            ? false
+            : prev.isDirty,
         };
       });
       setToastMessage(savedFunnel.stopped
@@ -374,11 +404,24 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         </div>
 
         <div className="p-5 border-t border-[var(--color-border)] shrink-0">
+          {!isFunnelReady && (
+            <p className="mb-3 text-center text-xs leading-5 text-[var(--color-foreground-secondary)]" role="status">
+              {funnelLoadState.status === 'error'
+                ? 'Воронка недоступна. Закройте настройки и повторите её загрузку.'
+                : 'Дождитесь загрузки воронки перед сохранением.'}
+            </p>
+          )}
           <button
+            type="button"
             onClick={handleSave}
+            disabled={!isFunnelReady}
             className="btn btn-action w-full h-[48px] text-[15px]"
           >
-            Сохранить изменения
+            {funnelLoadState.status === 'loading'
+              ? 'Загружаем воронку…'
+              : funnelLoadState.status === 'error'
+                ? 'Воронка недоступна'
+                : 'Сохранить изменения'}
           </button>
         </div>
         </motion.div>

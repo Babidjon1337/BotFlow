@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, CheckCircle2, Info, AlertTriangle, X } from 'lucide-react';
 
@@ -31,19 +31,32 @@ export const useAlert = () => {
 export const AlertProvider = ({ children }: { children: ReactNode }) => {
   const [alertConfig, setAlertConfig] = useState<AlertOptions | null>(null);
   const [isConfirm, setIsConfirm] = useState(false);
+  const titleId = useId();
+  const descriptionId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const safeActionRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+
+  const openAlert = (options: AlertOptions, confirm: boolean) => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    setIsConfirm(confirm);
+    setAlertConfig(options);
+    window.requestAnimationFrame(() => safeActionRef.current?.focus());
+  };
 
   const showAlert = (options: AlertOptions) => {
-    setIsConfirm(false);
-    setAlertConfig({ type: 'info', confirmText: 'ОК', ...options });
+    openAlert({ type: 'info', confirmText: 'ОК', ...options }, false);
   };
 
   const showConfirm = (options: AlertOptions) => {
-    setIsConfirm(true);
-    setAlertConfig({ type: 'warning', confirmText: 'Подтвердить', cancelText: 'Отмена', ...options });
+    openAlert({ type: 'warning', confirmText: 'Подтвердить', cancelText: 'Отмена', ...options }, true);
   };
 
   const closeAlert = () => {
     setAlertConfig(null);
+    window.requestAnimationFrame(() => previousFocusRef.current?.focus());
   };
 
   const handleConfirm = () => {
@@ -54,6 +67,30 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
   const handleCancel = () => {
     if (alertConfig?.onCancel) alertConfig.onCancel();
     closeAlert();
+  };
+
+  const handleDialogKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      handleCancel();
+      return;
+    }
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+
+    const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ));
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   };
 
   const getIcon = (type: AlertType) => {
@@ -80,6 +117,12 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
               onClick={handleCancel}
             />
             <motion.div
+              ref={dialogRef}
+              role={isConfirm ? 'alertdialog' : 'dialog'}
+              aria-modal="true"
+              aria-labelledby={titleId}
+              aria-describedby={descriptionId}
+              onKeyDown={handleDialogKeyDown}
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -87,7 +130,9 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
               className="relative w-full max-w-sm bg-[var(--color-surface)] rounded-2xl shadow-2xl overflow-hidden border border-[var(--color-border)] p-6"
             >
               <button 
+                type="button"
                 onClick={handleCancel}
+                aria-label="Закрыть"
                 className="absolute top-4 right-4 text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] transition-colors"
               >
                 <X size={20} />
@@ -97,16 +142,18 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
                 <div className="mb-4 p-3 rounded-full bg-[var(--color-surface-2)]">
                   {getIcon(alertConfig.type || 'info')}
                 </div>
-                <h3 className="text-lg font-bold text-[var(--color-foreground)] mb-2">
+                <h3 id={titleId} className="text-lg font-bold text-[var(--color-foreground)] mb-2">
                   {alertConfig.title}
                 </h3>
-                <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed mb-6">
+                <p id={descriptionId} className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed mb-6">
                   {alertConfig.message}
                 </p>
 
                 <div className="flex w-full gap-3">
                   {isConfirm && (
                     <button
+                      ref={safeActionRef}
+                      type="button"
                       onClick={handleCancel}
                       className="flex-1 py-2.5 rounded-xl font-medium text-[14px] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-border)] transition-colors"
                     >
@@ -114,6 +161,8 @@ export const AlertProvider = ({ children }: { children: ReactNode }) => {
                     </button>
                   )}
                   <button
+                    ref={isConfirm ? undefined : safeActionRef}
+                    type="button"
                     onClick={handleConfirm}
                     className={`flex-1 py-2.5 rounded-xl font-bold text-[14px] text-white shadow-sm transition-all hover:opacity-90 active:scale-95 ${
                       alertConfig.type === 'danger' 

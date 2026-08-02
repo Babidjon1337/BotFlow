@@ -17,6 +17,7 @@ import {
 import { EmptyBotState } from "../EmptyBotState";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
+import { useBotSelectionGuard } from "../../hooks/useBotSelectionGuard";
 import { getBotAvatarColors } from "../../utils";
 
 export const BotManagement = () => {
@@ -30,6 +31,7 @@ export const BotManagement = () => {
   } = useAppState();
   const { bots, subscriptionStatus } = appState;
   const { toggleBot, isToggling } = useBotToggle();
+  const { requestBotSelection } = useBotSelectionGuard();
   const hasBots = bots.length > 0;
   const isPro = subscriptionStatus === "active" || isAdmin;
 
@@ -66,16 +68,18 @@ export const BotManagement = () => {
   const onEditBot = (botId: string) => {
     const bot = bots.find((b) => b.id === botId);
     if (bot) {
-      setAppState((prev) => ({ ...prev, activeBot: bot }));
-      setActiveTab("build");
+      requestBotSelection(bot, {
+        onSelected: () => setActiveTab("build"),
+      });
     }
   };
 
   const onEditBotSettings = (botId: string) => {
     const bot = bots.find((b) => b.id === botId);
     if (bot) {
-      setAppState((prev) => ({ ...prev, activeBot: bot }));
-      setSheet("bot_settings");
+      requestBotSelection(bot, {
+        onSelected: () => setSheet("bot_settings"),
+      });
     }
   };
 
@@ -90,6 +94,7 @@ export const BotManagement = () => {
           ...prev,
           bots: botsAfterDeletion,
           activeBot: prev.activeBot?.id === botId ? botsAfterDeletion[0] ?? null : prev.activeBot,
+          isDirty: prev.activeBot?.id === botId ? false : prev.isDirty,
         };
       });
     } catch (error) {

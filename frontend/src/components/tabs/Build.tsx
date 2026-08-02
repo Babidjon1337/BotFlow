@@ -504,6 +504,8 @@ export const Build = () => {
     handleCreateBotClick: onCreateBot,
     setToastMessage,
     setAppState,
+    getFunnelRevision,
+    getFunnelWorkspaceGeneration,
   } = useAppState();
 
   const onOpenSettings = () => setSheet("bot_settings");
@@ -540,12 +542,18 @@ export const Build = () => {
 
   const handleMediaUpload = async (nodeId: string, file: File) => {
     if (!appState.activeBot) return;
+    const uploadBotId = appState.activeBot.id;
+    const workspaceGeneration = getFunnelWorkspaceGeneration();
     if (file.size > 20 * 1024 * 1024) {
       throw new Error("Размер файла не должен превышать 20 МБ.");
     }
     try {
       const { apiService } = await import("../../services/api");
-      const media = await apiService.uploadBotMedia(appState.activeBot.id, nodeId, file);
+      const media = await apiService.uploadBotMedia(uploadBotId, nodeId, file);
+      if (getFunnelWorkspaceGeneration() !== workspaceGeneration) {
+        setToastMessage("Файл загружен для исходного бота. Откройте его воронку, чтобы увидеть результат.");
+        return;
+      }
       updateBlock(nodeId, "media", true);
       updateBlock(nodeId, "mediaFileId", media.fileId);
       updateBlock(nodeId, "mediaAssetId", media.id);
@@ -573,6 +581,7 @@ export const Build = () => {
   const handleSave = async () => {
     if (!appState.activeBot) return;
     const activeBotId = appState.activeBot.id;
+    const revisionAtSave = getFunnelRevision();
     setIsSaving(true);
     try {
       const { apiService } = await import("../../services/api");
@@ -580,7 +589,9 @@ export const Build = () => {
       setIsSaving(false);
       setAppState((prev) => ({
         ...prev,
-        isDirty: false,
+        isDirty: prev.activeBot?.id === activeBotId && getFunnelRevision() === revisionAtSave
+          ? false
+          : prev.isDirty,
         bots: prev.bots.map(bot => bot.id === activeBotId ? {
           ...bot,
           funnelComplete: savedFunnel.funnelComplete,

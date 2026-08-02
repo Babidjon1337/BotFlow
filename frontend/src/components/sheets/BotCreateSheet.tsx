@@ -9,6 +9,7 @@ interface BotCreateSheetProps {
   onClose: () => void;
   onCreate: (botData: BotCreateData) => Promise<void>;
   onError?: (message: string) => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 type BotCreateData = {
@@ -39,7 +40,7 @@ const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
   prodamus: "Секретный токен выдается технической поддержкой Продамуса при интеграции."
 };
 
-export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetProps) => {
+export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: BotCreateSheetProps) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [isCreating, setIsCreating] = useState(false);
   const vh = useViewportHeight();
@@ -70,6 +71,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetPro
     if (!backButton) return;
     backButton.show();
     const handler = () => {
+      if (isCreating) return;
       if (step > 1) setStep(previousStep);
       else onClose();
     };
@@ -78,7 +80,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetPro
       backButton.offClick(handler);
       backButton.hide();
     };
-  }, [step, onClose]);
+  }, [isCreating, step, onClose]);
 
 
 
@@ -95,6 +97,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetPro
     }
 
     setIsCreating(true);
+    onBusyChange?.(true);
     try {
       await onCreate({
         displayName: name.trim(),
@@ -109,6 +112,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetPro
       onError?.(error instanceof Error ? error.message : 'Ошибка при создании бота');
     } finally {
       setIsCreating(false);
+      onBusyChange?.(false);
     }
   };
 
@@ -119,7 +123,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetPro
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={onClose}
+        onClick={isCreating ? undefined : onClose}
         className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100]"
       />
       
@@ -155,6 +159,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError }: BotCreateSheetPro
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
               onClick={onClose}
+              disabled={isCreating}
               className="absolute right-4 top-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:top-1/2 lg:-translate-y-1/2 w-8 h-8 hidden lg:flex items-center justify-center rounded-full hover:bg-[var(--color-surface-2)] transition-colors text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
             >
               <X size={18} />

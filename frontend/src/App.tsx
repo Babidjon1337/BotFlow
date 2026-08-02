@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 
 import { Sidebar } from './components/Sidebar';
@@ -18,11 +18,13 @@ import { CheckoutSheet } from './components/sheets/CheckoutSheet';
 import { BotCreateSheet } from './components/sheets/BotCreateSheet';
 import { BotSwitcher } from './components/sheets/BotSwitcher';
 import { BillingRenew } from './components/sheets/BillingRenew';
+import { FunnelLoadStateView } from './components/FunnelLoadStateView';
 
 import { Toast } from './components/Toast';
 import { useAppState } from './providers/AppStateProvider';
 import { mapApiBot } from './services/botMapper';
 import { useBotToggle } from './hooks/useBotToggle';
+import { useBotSelectionGuard } from './hooks/useBotSelectionGuard';
 
 type TelegramWebApp = {
   ready?: () => void; expand?: () => void; enableClosingConfirmation?: () => void;
@@ -49,10 +51,19 @@ export default function App() {
     setSheet,
     handleCreateBotClick,
     authError,
+    funnelLoadState,
+    switchingBotId,
+    getFunnelWorkspaceGeneration,
   } = useAppState();
   const { toggleBot } = useBotToggle();
+  const { requestBotSelection } = useBotSelectionGuard();
   const activeBotId = appState.activeBot?.id;
   const needsMediaSync = appState.activeBot?.mediaSyncDone === false;
+  const funnelWorkspaceReady = !appState.activeBot || (
+    funnelLoadState.status === 'ready' &&
+    funnelLoadState.botId === appState.activeBot.id
+  );
+  const [isBotCreating, setIsBotCreating] = useState(false);
 
   useEffect(() => {
     const tg = getTelegramWebApp();
@@ -100,6 +111,8 @@ export default function App() {
     if (appState.activeSheet) {
       backButton.show();
       const handleBack = () => {
+        if (appState.activeSheet === 'bot_switcher' && switchingBotId) return;
+        if (appState.activeSheet === 'bot_create' && isBotCreating) return;
         setSheet(null);
       };
       backButton.onClick(handleBack);
@@ -118,7 +131,7 @@ export default function App() {
     } else {
       backButton.hide();
     }
-  }, [appState.activeSheet, setSheet, activeTab, setActiveTab]);
+  }, [appState.activeSheet, setSheet, activeTab, setActiveTab, switchingBotId, isBotCreating]);
 
   useEffect(() => {
 
@@ -266,10 +279,14 @@ export default function App() {
               <Home key="home" />
             )}
             {activeTab === 'build' && (
-              <Build key="build" />
+              funnelWorkspaceReady
+                ? <Build key="build" />
+                : <FunnelLoadStateView key="build-funnel-state" />
             )}
             {activeTab === 'flow' && (
-              <Flow key="flow" />
+              funnelWorkspaceReady
+                ? <Flow key="flow" />
+                : <FunnelLoadStateView key="flow-funnel-state" />
             )}
             {activeTab === 'profile' && (
               <Profile key="profile" />
@@ -328,9 +345,13 @@ export default function App() {
         {appState.activeSheet === 'bot_create' && (
           <BotCreateSheet
             key="bot_create"
-            onClose={() => setSheet(null)}
+            onClose={() => {
+              if (!isBotCreating) setSheet(null);
+            }}
+            onBusyChange={setIsBotCreating}
             onError={setToastMessage}
             onCreate={async (botData) => {
+              const sourceWorkspaceGeneration = getFunnelWorkspaceGeneration();
               const { apiService } = await import('./services/api');
               const createdBot = await apiService.createBot(botData);
               const newBot = {
@@ -350,14 +371,20 @@ export default function App() {
                 mediaSyncDone: false,
                 botUrl: createdBot.botUrl,
               };
+              const canActivateCreatedBot = getFunnelWorkspaceGeneration() === sourceWorkspaceGeneration;
               setAppState(prev => ({
                 ...prev,
-                activeBot: newBot,
+                activeBot: canActivateCreatedBot ? newBot : prev.activeBot,
                 bots: [...prev.bots, newBot],
+                isDirty: canActivateCreatedBot ? false : prev.isDirty,
               }));
               setSheet(null);
-              setActiveTab('build');
-              setToastMessage('Бот успешно создан! 🎉');
+              if (canActivateCreatedBot) {
+                setActiveTab('build');
+                setToastMessage('Бот успешно создан! 🎉');
+              } else {
+                setToastMessage('Бот создан и добавлен в список. Текущие изменения воронки сохранены.');
+              }
             }}
           />
         )}
@@ -367,12 +394,21 @@ export default function App() {
             bots={appState.bots}
             activeBotId={appState.activeBot?.id}
             subscriptionStatus={appState.subscriptionStatus}
+            switchingBotId={switchingBotId}
+            selectionDisabled={Boolean(
+              appState.activeBot &&
+              !funnelWorkspaceReady &&
+              funnelLoadState.status !== 'error'
+            )}
             onClose={() => setSheet(null)}
             onAddBot={handleCreateBotClick}
             onSelect={(id) => {
               const bot = appState.bots.find(b => String(b.id) === String(id));
-              if (bot) setAppState(prev => ({ ...prev, activeBot: bot }));
-              setSheet(null);
+              if (bot) {
+                requestBotSelection(bot, {
+                  onSelected: () => setSheet(null),
+                });
+              }
             }}
             onToggleStatus={async (id) => {
               const bot = appState.bots.find(item => item.id === id);

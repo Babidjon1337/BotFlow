@@ -17,6 +17,7 @@ export interface ApiBot {
   funnelComplete?: boolean;
   mediaSyncDone?: boolean;
   botUrl?: string;
+  token_changed?: boolean;
 }
 
 /** Converts the public API representation to the shape consumed by the UI. */

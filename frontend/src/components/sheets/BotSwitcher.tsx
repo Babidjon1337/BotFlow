@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Check, Plus, X, Lock } from 'lucide-react';
+import { Check, Plus, X, Lock, RefreshCw } from 'lucide-react';
 import type { BotConfig } from '../../types';
 import { useAppState } from '../../providers/AppStateProvider';
 
@@ -7,13 +7,15 @@ interface BotSwitcherProps {
   bots: BotConfig[];
   activeBotId: string | undefined;
   subscriptionStatus: 'none' | 'active' | 'expired';
+  switchingBotId?: string | null;
+  selectionDisabled?: boolean;
   onSelect: (id: string) => void;
   onAddBot: () => void;
   onClose: () => void;
   onToggleStatus?: (botId: string, newStatus: 'active' | 'inactive') => Promise<void>;
 }
 
-export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, onAddBot, onClose, onToggleStatus }: BotSwitcherProps) => {
+export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, switchingBotId, selectionDisabled = false, onSelect, onAddBot, onClose, onToggleStatus }: BotSwitcherProps) => {
   const { isAdmin } = useAppState();
   const isPro = subscriptionStatus === 'active' || isAdmin;
 
@@ -21,11 +23,15 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
     <>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
-        onTouchStart={onClose}
+        onClick={switchingBotId ? undefined : onClose}
+        onTouchStart={switchingBotId ? undefined : onClose}
         className="fixed inset-0 bg-transparent z-[100]"
       />
       <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Выбор бота"
+        aria-busy={Boolean(switchingBotId)}
         initial={{ opacity: 0, y: -8, scale: 0.97 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -8, scale: 0.97 }}
@@ -43,7 +49,7 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', marginBottom: '2px' }}>
           <span style={{ fontSize: '12px', color: 'var(--color-foreground-tertiary)', fontWeight: 500 }}>Ваши боты</span>
-          <button onClick={onClose} style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button type="button" onClick={onClose} disabled={Boolean(switchingBotId)} aria-label="Закрыть список ботов" style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'transparent', border: 'none', cursor: switchingBotId ? 'not-allowed' : 'pointer', opacity: switchingBotId ? 0.4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <X size={13} style={{ color: 'var(--color-foreground-tertiary)' }} />
           </button>
         </div>
@@ -53,15 +59,24 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
         {bots.map(bot => (
           <div
             key={bot.id}
-            onClick={() => onSelect(bot.id)}
             style={{
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: 'none',
+              padding: '2px 4px', borderRadius: 'var(--radius-xs)', border: 'none',
               background: bot.id === activeBotId ? 'var(--color-primary-soft)' : 'transparent',
-              cursor: 'pointer', transition: 'background 150ms ease',
+              transition: 'background 150ms ease',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              type="button"
+              onClick={() => onSelect(bot.id)}
+              disabled={Boolean(switchingBotId) || selectionDisabled}
+              aria-current={bot.id === activeBotId ? 'true' : undefined}
+              style={{
+                minWidth: 0, flex: 1, minHeight: '48px', display: 'flex', alignItems: 'center', gap: '10px',
+                padding: '8px', border: 'none', background: 'transparent', cursor: switchingBotId ? 'wait' : selectionDisabled ? 'not-allowed' : 'pointer',
+                opacity: selectionDisabled ? 0.6 : 1,
+              }}
+            >
               <div style={{
                 width: '32px', height: '32px', borderRadius: '8px', flexShrink: 0,
                 background: bot.id === activeBotId ? 'var(--color-primary)' : 'var(--color-surface-2)',
@@ -78,10 +93,16 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--color-foreground-tertiary)', marginTop: '1px' }}>{bot.username}</div>
               </div>
-            </div>
+              {switchingBotId === bot.id && (
+                <RefreshCw className="ml-auto animate-spin" size={16} aria-label="Загружаем воронку" />
+              )}
+            </button>
 
             {/* Status Toggle */}
             <button
+              type="button"
+              aria-label={`${bot.status === 'active' ? 'Выключить' : 'Включить'} бота ${bot.name}`}
+              disabled={Boolean(switchingBotId) || selectionDisabled}
               onClick={(e) => {
                 e.stopPropagation();
                 if (onToggleStatus) {
@@ -93,7 +114,8 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
                 padding: '4px 8px', borderRadius: '12px', border: 'none',
                 background: bot.status === 'active' ? 'var(--color-success-soft)' : 'var(--color-surface-2)',
                 color: bot.status === 'active' ? 'var(--color-success)' : 'var(--color-foreground-tertiary)',
-                fontSize: '11px', fontWeight: 600, cursor: 'pointer', flexShrink: 0,
+                fontSize: '11px', fontWeight: 600, cursor: switchingBotId || selectionDisabled ? 'not-allowed' : 'pointer', flexShrink: 0,
+                minHeight: '36px',
               }}
             >
               {bot.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'}
@@ -107,6 +129,7 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
         <div style={{ borderTop: '1px solid var(--color-border)', marginTop: '4px', paddingTop: '4px' }}>
           <button
             className="add-bot-btn hover:bg-[var(--color-surface-2)] active:bg-[var(--color-surface)]"
+            disabled={Boolean(switchingBotId) || selectionDisabled}
             onClick={() => { 
               onClose(); 
               onAddBot(); 
@@ -114,9 +137,10 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
               padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: 'none',
-              background: 'transparent', cursor: 'pointer', transition: 'background 150ms ease',
+              background: 'transparent', transition: 'background 150ms ease',
               color: (!isPro && bots.length >= 1) ? 'var(--color-foreground-tertiary)' : 'var(--color-foreground-secondary)',
-              opacity: (!isPro && bots.length >= 1) ? 0.6 : 1,
+              opacity: (!isPro && bots.length >= 1) || selectionDisabled ? 0.6 : 1,
+              cursor: switchingBotId || selectionDisabled ? 'not-allowed' : 'pointer',
             }}
           >
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1.5px dashed var(--color-border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -131,6 +155,11 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, onSelect, o
               )}
             </div>
           </button>
+          {(switchingBotId || selectionDisabled) && (
+            <p className="px-3 pb-2 pt-1 text-[11px] text-[var(--color-foreground-tertiary)]" role="status">
+              {switchingBotId ? 'Загружаем выбранную воронку…' : 'Дождитесь загрузки текущей воронки…'}
+            </p>
+          )}
         </div>
       </motion.div>
     </>

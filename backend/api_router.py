@@ -1,5 +1,4 @@
 import json
-import datetime
 import io
 from uuid import UUID
 
@@ -706,27 +705,41 @@ async def upload_bot_media(
         logger.warning("Не удалось синхронизировать медиа для бота %s: %s", bot_id, exc)
         raise HTTPException(status_code=502, detail="Telegram не смог обработать файл. Повторите попытку.") from exc
 
+    current_bot = await get_bot_by_id(bot.id)
+    if (
+        current_bot is None
+        or current_bot.bot_token_enc != bot.bot_token_enc
+        or current_bot.tg_bot_id != bot.tg_bot_id
+        or not current_bot.media_sync_done
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Токен или настройки бота изменились во время загрузки. Повторите загрузку файла.",
+        )
+
+    current_schema = dict(current_bot.funnel_schema or {})
+    current_nodes = list(current_schema.get("nodes") or [])
+    current_node = next((node for node in current_nodes if node.get("id") == node_id), None)
+    if current_node is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Воронка была изменена. Обновите страницу и повторите загрузку.",
+        )
+
     asset = await create_media_asset(
-        bot.id,
+        current_bot.id,
         node_id,
         media_type,
         telegram_file_id,
         mime_type=content_type,
         file_name=file.filename,
     )
-    updated = False
-    for node in nodes:
-        if node.get("id") == node_id:
-            node["mediaFileId"] = telegram_file_id
-            node["mediaAssetId"] = str(asset.id)
-            node["mediaType"] = media_type
-            node["media"] = True
-            updated = True
-            break
-    if not updated:  # Defensive guard for malformed schemas changed concurrently.
-        raise HTTPException(status_code=409, detail="Воронка была изменена. Обновите страницу и повторите загрузку.")
-    schema["nodes"] = nodes
-    await update_bot_funnel(bot.id, schema, bot.funnel_complete)
+    current_node["mediaFileId"] = telegram_file_id
+    current_node["mediaAssetId"] = str(asset.id)
+    current_node["mediaType"] = media_type
+    current_node["media"] = True
+    current_schema["nodes"] = current_nodes
+    await update_bot_funnel(current_bot.id, current_schema, current_bot.funnel_complete)
     return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
 
 
@@ -861,14 +874,7 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
             {"name": "Дожим 1", "value": sum(1 for l in leads if l.current_step_id == "push1")},
             {"name": "Оплата", "value": sales},
         ],
-        "chart_data": [
-            {"name": (datetime.datetime.now() - datetime.timedelta(days=6)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
-            {"name": (datetime.datetime.now() - datetime.timedelta(days=5)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
-            {"name": (datetime.datetime.now() - datetime.timedelta(days=4)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
-            {"name": (datetime.datetime.now() - datetime.timedelta(days=3)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
-            {"name": (datetime.datetime.now() - datetime.timedelta(days=2)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
-            {"name": (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%d.%m"), "Просмотры": 0, "Продажи": 0},
-            {"name": (datetime.datetime.now()).strftime("%d.%m"), "Просмотры": views, "Продажи": sales},
-        ],
+        # Keep the response shape compatible without inventing a daily history.
+        "chart_data": [],
         "events": [],
     }
