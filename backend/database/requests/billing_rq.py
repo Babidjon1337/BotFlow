@@ -10,6 +10,33 @@ from sqlalchemy.orm import joinedload
 from database.models import SaasPayment, User, async_session
 
 
+class SaasPaymentInvariantError(ValueError):
+    """A verified provider payment does not match its immutable local order."""
+
+
+def _validate_and_bind_provider_payment(
+    payment: SaasPayment,
+    *,
+    provider_payment_id: str,
+    amount: Decimal,
+    currency: str,
+    user_id: int,
+    product: str,
+) -> None:
+    if (
+        Decimal(payment.amount) != amount
+        or payment.currency != currency
+        or payment.user_id != user_id
+        or payment.product != product
+    ):
+        raise SaasPaymentInvariantError(
+            "Provider payment does not match the local order"
+        )
+    if payment.yookassa_payment_id not in {None, provider_payment_id}:
+        raise SaasPaymentInvariantError("Provider payment ID conflicts with the local order")
+    payment.yookassa_payment_id = provider_payment_id
+
+
 async def create_saas_payment(
     user_id: int, product: str, amount: int, attempt: int = 0
 ) -> SaasPayment:
@@ -29,10 +56,17 @@ async def create_saas_payment(
 
 async def set_saas_payment_provider_id(payment_id: uuid.UUID, provider_payment_id: str) -> None:
     async with async_session() as session:
-        payment = await session.get(SaasPayment, payment_id)
-        if payment:
-            payment.yookassa_payment_id = provider_payment_id
-            await session.commit()
+        payment = await session.scalar(
+            select(SaasPayment)
+            .where(SaasPayment.id == payment_id)
+            .with_for_update(of=SaasPayment)
+        )
+        if not payment:
+            return
+        if payment.yookassa_payment_id not in {None, provider_payment_id}:
+            raise SaasPaymentInvariantError("Provider payment ID conflicts with the local order")
+        payment.yookassa_payment_id = provider_payment_id
+        await session.commit()
 
 
 async def get_saas_payment_by_provider_id(provider_payment_id: str) -> SaasPayment | None:
@@ -45,23 +79,43 @@ async def get_saas_payment_by_provider_id(provider_payment_id: str) -> SaasPayme
 
 
 async def apply_successful_saas_payment(
-    provider_payment_id: str, payment_method_enc: bytes | None = None
+    local_payment_id: uuid.UUID,
+    *,
+    provider_payment_id: str,
+    amount: Decimal,
+    currency: str,
+    user_id: int,
+    product: str,
+    payment_method_enc: bytes | None = None,
 ) -> tuple[bool, User | None]:
     """Apply an already verified YooKassa payment exactly once."""
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         payment = await session.scalar(
             select(SaasPayment)
-            .options(joinedload(SaasPayment.user))
-            .where(SaasPayment.yookassa_payment_id == provider_payment_id)
-            .with_for_update()
+            .where(SaasPayment.id == local_payment_id)
+            .with_for_update(of=SaasPayment)
         )
         if not payment:
-            return False, None
+            raise SaasPaymentInvariantError("Local payment does not exist")
+        _validate_and_bind_provider_payment(
+            payment,
+            provider_payment_id=provider_payment_id,
+            amount=amount,
+            currency=currency,
+            user_id=user_id,
+            product=product,
+        )
+        user = await session.scalar(
+            select(User)
+            .where(User.id == payment.user_id)
+            .with_for_update(of=User)
+        )
+        if not user:
+            raise SaasPaymentInvariantError("Payment user does not exist")
         if payment.status == "succeeded":
-            return False, payment.user
+            return False, user
 
-        user = payment.user
         payment.status = "succeeded"
         payment.paid_at = now
         if payment.product == "license":
@@ -80,20 +134,43 @@ async def apply_successful_saas_payment(
         return True, user
 
 
-async def mark_saas_payment_failed(provider_payment_id: str) -> User | None:
+async def mark_saas_payment_failed(
+    local_payment_id: uuid.UUID,
+    *,
+    provider_payment_id: str,
+    amount: Decimal,
+    currency: str,
+    user_id: int,
+    product: str,
+) -> User | None:
     """Record a failed PRO renewal and schedule at most three daily attempts."""
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         payment = await session.scalar(
             select(SaasPayment)
-            .options(joinedload(SaasPayment.user))
-            .where(SaasPayment.yookassa_payment_id == provider_payment_id)
-            .with_for_update()
+            .where(SaasPayment.id == local_payment_id)
+            .with_for_update(of=SaasPayment)
         )
-        if not payment or payment.status == "succeeded":
+        if not payment:
+            raise SaasPaymentInvariantError("Local payment does not exist")
+        _validate_and_bind_provider_payment(
+            payment,
+            provider_payment_id=provider_payment_id,
+            amount=amount,
+            currency=currency,
+            user_id=user_id,
+            product=product,
+        )
+        if payment.status == "succeeded":
             return None
         payment.status = "failed"
-        user = payment.user
+        user = await session.scalar(
+            select(User)
+            .where(User.id == payment.user_id)
+            .with_for_update(of=User)
+        )
+        if not user:
+            raise SaasPaymentInvariantError("Payment user does not exist")
         if payment.product == "pro_renewal":
             user.subscription_retry_count = max(user.subscription_retry_count, payment.attempt)
             if payment.attempt >= 3:
@@ -108,25 +185,23 @@ async def mark_saas_payment_failed(provider_payment_id: str) -> User | None:
 
 
 async def mark_saas_payment_failed_by_id(payment_id: uuid.UUID) -> User | None:
-    async with async_session() as session:
-        payment = await session.get(SaasPayment, payment_id)
-        if not payment:
-            return None
-        provider_payment_id = payment.yookassa_payment_id
-    if provider_payment_id:
-        return await mark_saas_payment_failed(provider_payment_id)
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         payment = await session.scalar(
             select(SaasPayment)
-            .options(joinedload(SaasPayment.user))
             .where(SaasPayment.id == payment_id)
-            .with_for_update()
+            .with_for_update(of=SaasPayment)
         )
         if not payment or payment.status == "succeeded":
             return None
         payment.status = "failed"
-        user = payment.user
+        user = await session.scalar(
+            select(User)
+            .where(User.id == payment.user_id)
+            .with_for_update(of=User)
+        )
+        if not user:
+            return None
         if payment.product == "pro_renewal":
             user.subscription_retry_count = max(user.subscription_retry_count, payment.attempt)
             if payment.attempt >= 3:

@@ -25,7 +25,11 @@ from services.payment_webhook import (
     PaymentWebhookError,
     verify_payment_notification,
 )
-from services.saas_billing import BillingError, verify_billing_notification
+from services.saas_billing import (
+    BillingError,
+    BillingProviderUnavailable,
+    verify_billing_notification,
+)
 from services.billing_notifications import notify_billing_user
 from database.requests.client_payment_rq import mark_client_payment_succeeded
 from loggers import logger
@@ -277,6 +281,11 @@ async def saas_yookassa_webhook(request: Request):
     try:
         payload = await request.json()
         was_applied, user = await verify_billing_notification(payload)
+    except BillingProviderUnavailable as exc:
+        logger.warning("Верификация SaaS-платежа временно недоступна: %s", exc)
+        raise HTTPException(
+            status_code=503, detail="Payment verification unavailable"
+        ) from exc
     except BillingError as exc:
         logger.warning("Отклонён SaaS webhook YooKassa: %s", exc)
         raise HTTPException(
