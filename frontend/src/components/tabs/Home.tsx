@@ -23,6 +23,7 @@ import {
   Copy,
   LineChart,
   Play,
+  CalendarDays,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
 
@@ -765,10 +766,7 @@ export const Home = () => {
       </div>
 
       {/* Bot Revenue Dashboard Header */}
-      <div
-        className="card-saas flex flex-col w-full"
-        style={{ padding: "24px" }}
-      >
+      <div className="card-saas flex w-full flex-col p-5 sm:p-6">
         {statsState.status === "loading" || statsState.status === "idle" ? (
           <div className="animate-pulse" aria-label="Загрузка статистики">
             <div className="h-3 w-36 rounded bg-[var(--color-surface-3)] mb-4" />
@@ -793,34 +791,31 @@ export const Home = () => {
             </button>
           </div>
         ) : stats ? (
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="flex flex-col gap-4 sm:gap-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-[13px] font-semibold text-[var(--color-foreground-secondary)]">Выручка</span>
+                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--color-surface-2)] px-2 py-1 text-[11px] font-medium text-[var(--color-foreground-secondary)]" title="Период будет доступен после подключения истории аналитики">
+                  <CalendarDays size={12} aria-hidden="true" /> За всё время
+                </span>
+              </div>
+              <div
+                className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 ${appState.activeBot?.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)]"}`}
+              >
+                {appState.activeBot?.status === "active" && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)] animate-pulse" />
+                )}
+                {appState.activeBot?.status === "active" ? "Бот работает" : "Черновик"}
+              </div>
+            </div>
             <div>
-            <div className="mb-3 text-[13px] font-semibold text-[var(--color-foreground-secondary)]">
-              Выручка за всё время
+              <div className="text-[32px] font-extrabold leading-none tracking-tight text-[var(--color-foreground)] sm:text-[36px]">
+                {formatCurrency(stats.revenue)}
+              </div>
+              <div className="mt-2 text-[12px] font-medium text-[var(--color-foreground-tertiary)]">
+                {statsState.fetchedAt ? `Обновлено в ${formatUpdatedAt(statsState.fetchedAt)}` : ""}
+              </div>
             </div>
-            <div
-              className="text-[32px] md:text-[40px] font-extrabold text-[var(--color-foreground)] tracking-tight leading-none flex items-end gap-3"
-              style={{ marginBottom: "8px" }}
-            >
-              {formatCurrency(stats.revenue)}
-            </div>
-            <div className="text-[13px] text-[var(--color-foreground-tertiary)] font-medium">
-              {statsState.fetchedAt ? `Обновлено в ${formatUpdatedAt(statsState.fetchedAt)}` : ""}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div
-              className={`px-3 py-1.5 rounded-full text-[12px] font-bold flex items-center gap-2 ${appState.activeBot?.status === "active" ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)]"}`}
-            >
-              {appState.activeBot?.status === "active" && (
-                <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)] animate-pulse" />
-              )}
-              {appState.activeBot?.status === "active"
-                ? "Бот работает"
-                : "Черновик"}
-            </div>
-          </div>
           </div>
         ) : null}
 
@@ -909,7 +904,7 @@ export const Home = () => {
               {stat.value}
             </div>
             <div
-              className="text-center text-[10px] font-medium leading-tight text-[var(--color-foreground-secondary)] sm:text-[12px]"
+              className="text-center text-[11px] font-medium leading-tight text-[var(--color-foreground-secondary)] sm:text-[12px]"
             >
               {stat.label}
             </div>
@@ -926,10 +921,10 @@ export const Home = () => {
             </div>
             <LineChart size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
           </div>
-          <div className="mt-4 flex min-h-40 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 text-center">
-            <LineChart size={22} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
-            <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">История по дням пока не собирается</p>
-            <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Мы не показываем приблизительные значения. Здесь появится динамика после подключения истории аналитики.</p>
+          <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
+            <LineChart size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+            <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">История по дням появится здесь</p>
+            <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Сначала нужно накопить историю аналитики. До этого показываем только подтверждённые итоги.</p>
           </div>
         </section>
       )}
@@ -943,8 +938,8 @@ export const Home = () => {
             </div>
             <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
           </div>
-          <div className="mt-4 flex min-h-36 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 text-center">
-            <GitMerge size={22} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+          <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
+            <GitMerge size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
             <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">Детальная воронка пока недоступна</p>
             <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Переходы между этапами ещё не сохраняются в истории, поэтому мы не подменяем их текущим положением клиентов.</p>
             <button type="button" onClick={() => setActiveTab("flow")} className="mt-3 text-[13px] font-semibold text-[var(--color-primary)] hover:underline">Открыть воронку</button>
@@ -952,7 +947,7 @@ export const Home = () => {
         </section>
       )}
 
-      {/* CRM Section: Clients & Applications */}
+      {/* Latest leads and their payment status */}
       <div className="p-5 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2.5">
@@ -960,7 +955,7 @@ export const Home = () => {
               <Users size={18} />
             </div>
             <span className="text-[17px] font-bold text-[var(--color-foreground)] tracking-tight">
-              Клиенты
+              Последние клиенты
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -974,6 +969,8 @@ export const Home = () => {
             </span>
           </div>
         </div>
+
+        <p className="-mt-2 mb-4 text-[12px] text-[var(--color-foreground-secondary)]">Новые лиды и состояние их оплаты.</p>
 
         {leadsState.status === "error" && leadsState.data && (
           <div className="mb-4 p-3 rounded-xl bg-[var(--color-warning-soft)] text-[13px] text-[var(--color-foreground-secondary)] flex flex-col sm:flex-row sm:items-center justify-between gap-2" role="status">
@@ -1033,7 +1030,7 @@ export const Home = () => {
                           {client.name}
                         </span>
                         <span className="text-[12px] text-[var(--color-foreground-tertiary)] shrink-0">
-                          {client.time}
+                          {client.time ? `Пришёл ${client.time}` : ""}
                         </span>
                       </div>
                       <div className="text-[12px] text-[var(--color-foreground-secondary)] truncate flex items-center gap-1.5 mt-0.5">
