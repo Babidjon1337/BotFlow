@@ -23,7 +23,9 @@ from database.requests.bot_rq import (
     set_media_sync_done,
 )
 from database.requests.user_rq import get_lead, get_leads_by_bot_id, delete_leads_by_bot_id
+from database.requests.client_payment_rq import get_client_payment_stats
 from database.requests.billing_rq import cancel_subscription_auto_renew
+from database.requests.connected_chat_rq import list_connected_chats
 from schemas.api_schemas import (
     BotCreateApiRequest,
     BotUpdateApiRequest,
@@ -32,6 +34,7 @@ from schemas.api_schemas import (
     BillingCheckoutResponse,
     NotificationSettingsRequest,
     ManualInvoiceRequest,
+    ChatDeliveryVerifyRequest,
     FunnelApiResponse,
     FunnelUpdateApiRequest,
     LeadApiResponse,
@@ -40,8 +43,13 @@ from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active
 from services.funnel_readiness import evaluate_funnel_readiness
 from services.payment_link import validate_payment_credentials
+from services.chat_access import ChatAccessError, verify_chat_delivery
 
 api_router = APIRouter()
+
+# Telegram does not send chat_member updates by default. They are required to
+# recognise that the buyer joined through their one-use paid invite.
+CLIENT_BOT_ALLOWED_UPDATES = ["message", "callback_query", "channel_post", "chat_member"]
 
 
 def _validate_installments(provider: str | None, enabled: bool) -> None:
@@ -52,14 +60,32 @@ def _validate_installments(provider: str | None, enabled: bool) -> None:
         )
 
 
-def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
+async def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
     """Return the only publishability decision used by API endpoints."""
+    connected_chats = await list_connected_chats(bot.id)
     readiness = evaluate_funnel_readiness(
         bot.funnel_schema,
         has_payment_provider=bool(bot.payment_provider),
         has_payment_credentials=bool(bot.payment_creds_enc),
+        connected_chat_ids={chat.chat_id for chat in connected_chats},
     )
     return readiness.is_ready, list(readiness.reasons)
+
+
+def _merged_payment_credentials(bot, incoming: dict | None, provider_changed: bool) -> dict:
+    """Apply partial credential changes without ever returning secrets to the client."""
+    existing: dict = {}
+    if not provider_changed and getattr(bot, "payment_creds_enc", None):
+        try:
+            existing = json.loads(crypto.decrypt(bot.payment_creds_enc))
+        except Exception:
+            logger.warning("Не удалось прочитать сохранённые реквизиты бота %s", bot.id)
+    updates = {
+        str(key): value.strip() if isinstance(value, str) else value
+        for key, value in (incoming or {}).items()
+        if value is not None and (not isinstance(value, str) or value.strip())
+    }
+    return {**existing, **updates}
 
 
 def _subscription_status(user) -> str:
@@ -313,6 +339,7 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
             url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
             secret_token=SECRET_KEY,
             drop_pending_updates=True,
+            allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
         )
     except Exception as e:
         logger.warning(
@@ -353,14 +380,20 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
     if body.payment_provider is not None:
         update_data["payment_provider"] = body.payment_provider
     if body.payment_creds is not None:
+        provider_changed = bool(
+            body.payment_provider and body.payment_provider != bot.payment_provider
+        )
+        merged_credentials = _merged_payment_credentials(
+            bot, body.payment_creds, provider_changed
+        )
         is_valid, validation_message = await validate_payment_credentials(
             effective_provider,
-            body.payment_creds,
+            merged_credentials,
         )
         if not is_valid:
             raise HTTPException(status_code=400, detail=validation_message)
         update_data["payment_creds_enc"] = crypto.encrypt(
-            json.dumps(body.payment_creds)
+            json.dumps(merged_credentials)
         )
 
     if body.token:
@@ -382,6 +415,7 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
                 url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
                 secret_token=SECRET_KEY,
                 drop_pending_updates=True,
+                allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
             )
         except Exception as e:
             raise HTTPException(
@@ -441,7 +475,7 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
     )
 
     if new_status == "active":
-        is_ready, reasons = _readiness_for_bot(bot)
+        is_ready, reasons = await _readiness_for_bot(bot)
         if not is_ready:
             raise HTTPException(
                 status_code=422,
@@ -474,6 +508,7 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
                 url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
                 secret_token=SECRET_KEY,
                 drop_pending_updates=True,
+                allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
             )
         else:
             await temp_bot.delete_webhook()
@@ -520,8 +555,40 @@ async def get_bot_funnel_endpoint(bot_id: int, request: Request):
 async def get_bot_readiness(bot_id: int, request: Request):
     """Expose the same launch decision used by the activation endpoint."""
     bot = await get_owned_bot(bot_id, request)
-    is_ready, reasons = _readiness_for_bot(bot)
+    is_ready, reasons = await _readiness_for_bot(bot)
     return {"isReady": is_ready, "reasons": reasons}
+
+
+@api_router.post("/api/bots/{bot_id}/chat-delivery/verify")
+async def verify_chat_delivery_endpoint(
+    bot_id: int, request: Request, body: ChatDeliveryVerifyRequest
+):
+    bot = await get_owned_bot(bot_id, request)
+    connected_chats = await list_connected_chats(bot_id)
+    if str(body.chat_id).strip() not in {chat.chat_id for chat in connected_chats}:
+        raise HTTPException(
+            status_code=422,
+            detail="Выберите канал или группу из списка, подключённого через /connect.",
+        )
+    try:
+        chat = await verify_chat_delivery(
+            bot, body.chat_id, body.access_mode, request.app.state.session
+        )
+    except ChatAccessError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "ok", "chatTitle": chat.title or str(chat.id), "chatType": chat.type}
+
+
+@api_router.get("/api/bots/{bot_id}/connected-chats")
+async def get_connected_chats_endpoint(bot_id: int, request: Request):
+    await get_owned_bot(bot_id, request)
+    chats = await list_connected_chats(bot_id)
+    return {
+        "chats": [
+            {"id": str(chat.id), "chatId": chat.chat_id, "title": chat.title, "chatType": chat.chat_type}
+            for chat in chats
+        ]
+    }
 
 
 @api_router.put("/api/bots/{bot_id}/funnel")
@@ -531,10 +598,18 @@ async def save_bot_funnel_endpoint(
 ):
     bot = await get_owned_bot(bot_id, request)
     schema_to_save = body.as_schema().model_dump(by_alias=True)
+    logger.info(
+        "Сохранение воронки: bot_id=%s, nodes=%s, requested_complete=%s",
+        bot_id,
+        len(body.nodes),
+        body.funnel_complete,
+    )
+    connected_chats = await list_connected_chats(bot_id)
     readiness = evaluate_funnel_readiness(
         schema_to_save,
         has_payment_provider=bool(bot.payment_provider),
         has_payment_credentials=bool(bot.payment_creds_enc),
+        connected_chat_ids={chat.chat_id for chat in connected_chats},
     )
     # The old flag is accepted for API compatibility but is no longer trusted.
     saved_bot = await update_bot_funnel(bot_id, schema_to_save, readiness.is_ready)
@@ -550,6 +625,13 @@ async def save_bot_funnel_endpoint(
             logger.warning("Не удалось удалить webhook невалидной воронки %s: %s", bot_id, exc)
         await set_bot_status(bot_id, "draft")
         stopped = True
+    logger.info(
+        "Воронка сохранена: bot_id=%s, ready=%s, stopped=%s, reasons=%s",
+        bot_id,
+        readiness.is_ready,
+        stopped,
+        len(readiness.reasons),
+    )
     response = FunnelApiResponse(
         version=body.version,
         nodes=body.nodes,

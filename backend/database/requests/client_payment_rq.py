@@ -13,12 +13,13 @@ from database.models import ClientPayment, async_session
 
 async def get_client_payment_stats(bot_id: int) -> tuple[int, Decimal]:
     async with async_session() as session:
-        count, revenue = await session.execute(
+        result = await session.execute(
             select(
                 func.count(ClientPayment.id),
                 func.coalesce(func.sum(ClientPayment.amount), Decimal("0.00")),
             ).where(ClientPayment.bot_id == bot_id, ClientPayment.status == "succeeded")
         )
+        count, revenue = result.one()
         return int(count or 0), Decimal(revenue or 0)
 
 

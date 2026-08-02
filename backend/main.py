@@ -252,6 +252,7 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
                 telegram_id=verified_payment.telegram_id,
                 http_session=request.app.state.session,
                 tariff_snapshot=payment.tariff_snapshot,
+                client_payment=payment,
             )
 
         if normalized_provider == "robokassa":

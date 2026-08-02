@@ -14,6 +14,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -182,6 +183,44 @@ class ClientPayment(Base):
 
     bot: Mapped["BotConfig"] = relationship(back_populates="client_payments")
     lead: Mapped["Lead"] = relationship(back_populates="client_payments")
+
+
+class ChatAccessGrant(Base):
+    """A single paid, bot-created invite link for a private Telegram chat."""
+
+    __tablename__ = "chat_access_grants"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
+    client_payment_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("client_payments.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    chat_id: Mapped[str] = mapped_column(String(128), index=True)
+    invite_link: Mapped[str] = mapped_column(Text, unique=True)
+    access_mode: Mapped[str] = mapped_column(String(32), default="member")
+    status: Mapped[str] = mapped_column(String(20), default="issued", index=True)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    joined_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ConnectedChat(Base):
+    """A channel or group explicitly connected by the bot owner via /connect."""
+
+    __tablename__ = "connected_chats"
+    __table_args__ = (UniqueConstraint("bot_id", "chat_id", name="uq_connected_chats_bot_chat"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+    chat_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), default="Без названия")
+    chat_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class MediaAsset(Base):

@@ -15,6 +15,23 @@ from loggers import logger
 # Глобальный клиент для всех запросов
 http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=True)
 
+_YOOKASSA_DESCRIPTION_MAX_LENGTH = 128
+
+
+def _yookassa_description(description: str) -> str:
+    """Normalize provider-facing description without losing the user-facing offer."""
+    normalized = re.sub(r"\s+", " ", description).strip()
+    if not normalized:
+        return "Оплата доступа"
+    if len(normalized) <= _YOOKASSA_DESCRIPTION_MAX_LENGTH:
+        return normalized
+    logger.info(
+        "Описание платежа ЮKassa сокращено с %s до %s символов.",
+        len(normalized),
+        _YOOKASSA_DESCRIPTION_MAX_LENGTH,
+    )
+    return f"{normalized[:_YOOKASSA_DESCRIPTION_MAX_LENGTH - 1].rstrip()}…"
+
 
 def _yookassa_credentials(creds: dict) -> tuple[str | None, str | None]:
     return (
@@ -115,11 +132,20 @@ async def _create_yookassa_link(
         "Content-Type": "application/json",
     }
 
+    # YooKassa returns a generic "description" validation error for some
+    # otherwise valid Unicode offer texts. The full offer is displayed in
+    # Telegram; the provider receives a stable ASCII order reference.
+    if client_payment:
+        provider_description = f"Payment {client_payment.id}"
+        if len(_yookassa_description(description)) > 0 and len(description.strip()) > _YOOKASSA_DESCRIPTION_MAX_LENGTH:
+            logger.info("Для ЮKassa используется безопасный номер заказа вместо длинного описания.")
+    else:
+        provider_description = "Payment"
     payload = {
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
         "confirmation": {"type": "redirect", "return_url": "https://t.me/telegram"},
-        "description": description,
+        "description": provider_description,
         "metadata": {
             "telegram_id": str(telegram_id),
             "bot_id": str(bot_config.id),
@@ -129,7 +155,7 @@ async def _create_yookassa_link(
             "customer": {"email": f"client_{telegram_id}@telegram-bot.ru"},
             "items": [
                 {
-                    "description": description,
+                    "description": provider_description,
                     "quantity": "1.00",
                     "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
                     "vat_code": 1,
@@ -155,6 +181,13 @@ async def _create_yookassa_link(
             data = response.json()
             if client_payment:
                 await set_client_payment_provider_id(client_payment.id, str(data["id"]))
+            logger.info(
+                "Счёт ЮKassa создан: bot_id=%s, order_id=%s, provider_payment_id=%s, amount=%s",
+                bot_config.id,
+                client_payment.id if client_payment else None,
+                data["id"],
+                amount,
+            )
             return data["confirmation"]["confirmation_url"]
         logger.error(f"Ошибка API ЮKassa: {response.text}")
     except Exception as e:
@@ -284,6 +317,7 @@ async def send_success_message(
     telegram_id: int,
     http_session: Any,
     tariff_snapshot: dict[str, Any] | None = None,
+    client_payment: ClientPayment | None = None,
 ):
     """
     Вспомогательная функция: достает настройки бота и отправляет node_success или delivery ноду V2.
@@ -310,8 +344,44 @@ async def send_success_message(
                     tariff = tariff_snapshot
                     action_type = tariff.get("action_type") or tariff.get("actionType", "text")
                     action_data = tariff.get("action_data") or tariff.get("actionData", "")
+                    if action_type == "group" and client_payment:
+                        from services.chat_access import (
+                            ChatAccessError,
+                            chat_delivery_success_text,
+                            issue_paid_chat_invite,
+                        )
+
+                        try:
+                            invite_link = await issue_paid_chat_invite(
+                                bot_config=bot_config,
+                                payment=client_payment,
+                                tariff=tariff,
+                                http_session=http_session,
+                            )
+                            node_success = {
+                                "content": chat_delivery_success_text(tariff, invite_link)
+                            }
+                        except ChatAccessError as exc:
+                            logger.error(
+                                "Не удалось выдать доступ в чат: bot_id=%s, payment_id=%s, error=%s",
+                                bot_config.id,
+                                client_payment.id,
+                                exc,
+                            )
+                            node_success = {
+                                "content": "⚠️ <b>Оплата получена.</b>\n\nМы не смогли автоматически выдать доступ в закрытый чат. Владелец уже уведомлён."
+                            }
+                            try:
+                                from services.billing_notifications import notify_billing_user
+
+                                await notify_billing_user(
+                                    bot_config.owner.telegram_id,
+                                    "⚠️ Оплата получена, но не удалось создать инвайт в закрытый чат. Проверьте права бота в чате и настройки тарифа.",
+                                )
+                            except Exception as notification_error:
+                                logger.warning("Не удалось уведомить владельца о выдаче чата: %s", notification_error)
                     node_success = {
-                        "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text", "group"] else "✅ <b>Оплата успешно получена!</b>",
+                        "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if not node_success and action_type in ["link", "text", "group"] else (node_success or {"content": "✅ <b>Оплата успешно получена!</b>"})["content"],
                         "media_file_id": action_data if action_type == "file" else None,
                         "media_type": "photo" if action_type == "file" else None,
                     }

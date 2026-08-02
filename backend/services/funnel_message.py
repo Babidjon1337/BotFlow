@@ -1,6 +1,89 @@
+from html import escape
+from html.parser import HTMLParser
+
 from aiogram import Bot
 from keyboard.user_kb import *
 from loggers import logger
+
+
+class _TelegramHtmlFormatter(HTMLParser):
+    """Convert the browser editor's HTML into Telegram's supported HTML subset."""
+
+    _formatting_tags = {
+        "b": "b",
+        "strong": "b",
+        "i": "i",
+        "em": "i",
+        "u": "u",
+        "ins": "u",
+        "s": "s",
+        "strike": "s",
+        "del": "s",
+        "code": "code",
+        "pre": "pre",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.open_tags: list[tuple[str, str]] = []
+
+    def _newline(self) -> None:
+        if self.parts and not self.parts[-1].endswith("\n"):
+            self.parts.append("\n")
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = tag.lower()
+        if tag in {"p", "div"}:
+            self._newline()
+            return
+        if tag == "br":
+            self._newline()
+            return
+        formatted_tag = self._formatting_tags.get(tag)
+        if formatted_tag:
+            self.parts.append(f"<{formatted_tag}>")
+            self.open_tags.append((tag, formatted_tag))
+            return
+        if tag == "a":
+            href = next((value for name, value in attrs if name.lower() == "href"), None)
+            if href and href.strip().lower().startswith(("https://", "http://", "tg://")):
+                self.parts.append(f'<a href="{escape(href.strip(), quote=True)}">')
+                self.open_tags.append((tag, "a"))
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in {"p", "div"}:
+            self._newline()
+            return
+
+        for index in range(len(self.open_tags) - 1, -1, -1):
+            source_tag, formatted_tag = self.open_tags[index]
+            if source_tag == tag:
+                for _, pending_tag in reversed(self.open_tags[index:]):
+                    self.parts.append(f"</{pending_tag}>")
+                del self.open_tags[index:]
+                return
+
+    def handle_data(self, data: str) -> None:
+        self.parts.append(escape(data, quote=False))
+
+    def render(self) -> str:
+        for _, formatted_tag in reversed(self.open_tags):
+            self.parts.append(f"</{formatted_tag}>")
+        self.open_tags.clear()
+        return "".join(self.parts).strip()
+
+
+def to_telegram_html(value: object) -> str:
+    """Keep editor formatting while removing tags unsupported by Telegram."""
+    if not isinstance(value, str) or not value:
+        return ""
+
+    formatter = _TelegramHtmlFormatter()
+    formatter.feed(value)
+    formatter.close()
+    return formatter.render()
 
 
 async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=None) -> None:
@@ -30,6 +113,8 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
         button_text = getattr(node, "button_text", None)
         if not button_text and hasattr(node, "button") and node.button:
             button_text = getattr(node.button, "text", None)
+
+    text = to_telegram_html(text)
 
     if reply_markup is None and button_text:
         reply_markup = user_payment_button(button_text)

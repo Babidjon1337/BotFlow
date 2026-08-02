@@ -11,6 +11,7 @@ export interface ApiBot {
   hasPaymentCredentials?: boolean;
   tokenPreview?: string;
   paymentCredentialsPreview?: Record<string, string>;
+  paymentWebhookUrl?: string;
   offerUrl?: string;
   offerInstallments?: boolean;
   funnelComplete?: boolean;
@@ -31,6 +32,7 @@ export function mapApiBot(bot: ApiBot): BotConfig {
     hasPaymentCredentials: bot.hasPaymentCredentials === true,
     tokenPreview: bot.tokenPreview,
     paymentCredentialsPreview: bot.paymentCredentialsPreview,
+    paymentWebhookUrl: bot.paymentWebhookUrl,
     offerUrl: bot.offerUrl,
     offerInstallments: bot.offerInstallments === true,
     funnelComplete: bot.funnelComplete === true,

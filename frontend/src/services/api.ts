@@ -48,19 +48,52 @@ async function fetchApi<T>(
     ...options,
     headers,
   });
+  const responseBody = await response.text();
+  const contentType = response.headers.get("content-type") || "";
+  const isJson = contentType.includes("application/json");
+
+  const getErrorDetail = (): string | null => {
+    if (!isJson || !responseBody) return null;
+
+    try {
+      const payload: unknown = JSON.parse(responseBody);
+      if (payload && typeof payload === "object" && "detail" in payload) {
+        const detail = (payload as { detail?: unknown }).detail;
+        return typeof detail === "string" ? detail : null;
+      }
+    } catch {
+      // The response is marked as JSON but is malformed. A useful generic
+      // error is shown below instead of leaking the raw response.
+    }
+
+    return null;
+  };
 
   if (!response.ok) {
-    let errorDetail = `Error ${response.status}: ${response.statusText}`;
-    try {
-      const errJson = await response.json();
-      if (errJson.detail) errorDetail = errJson.detail;
-    } catch {
-      // ignore
-    }
-    throw new Error(errorDetail);
+    throw new Error(
+      getErrorDetail() || `Ошибка сервера (${response.status}). Повторите попытку.`
+    );
   }
 
-  return response.json();
+  if (!isJson) {
+    console.error("API returned a non-JSON response", {
+      endpoint,
+      status: response.status,
+      contentType,
+    });
+    throw new Error(
+      "Сервер вернул неожиданный ответ вместо данных. Обновите Mini App и повторите сохранение."
+    );
+  }
+
+  try {
+    return JSON.parse(responseBody) as T;
+  } catch {
+    console.error("API returned malformed JSON", { endpoint, status: response.status });
+    throw new Error(
+      "Сервер вернул некорректные данные. Обновите Mini App и повторите попытку."
+    );
+  }
 }
 
 export const apiService = {
@@ -156,6 +189,23 @@ export const apiService = {
   async getBotReadiness(botId: string | number) {
     return fetchApi<{ isReady: boolean; reasons: string[] }>(
       `/api/bots/${botId}/readiness`
+    );
+  },
+
+  async verifyChatDelivery(
+    botId: string | number,
+    chatId: string,
+    accessMode: "member" | "read_only"
+  ) {
+    return fetchApi<{ status: string; chatTitle: string; chatType: string }>(
+      `/api/bots/${botId}/chat-delivery/verify`,
+      { method: "POST", body: JSON.stringify({ chatId, accessMode }) }
+    );
+  },
+
+  async getConnectedChats(botId: string | number) {
+    return fetchApi<{ chats: Array<{ id: string; chatId: string; title: string; chatType: "channel" | "group" | "supergroup" }> }>(
+      `/api/bots/${botId}/connected-chats`
     );
   },
 

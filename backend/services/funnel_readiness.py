@@ -7,6 +7,8 @@ that decides whether an incomplete funnel can receive real traffic.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import unescape
+import re
 from typing import Any, Iterable
 
 from services.manager_link import build_manager_deep_link
@@ -14,6 +16,11 @@ from services.manager_link import build_manager_deep_link
 
 REQUIRED_MESSAGE_NODE_IDS = ("start", "push1", "push2")
 PAYMENT_NODE_ID = "payment"
+MAX_MESSAGE_CHARACTERS = 4096
+MAX_MEDIA_CAPTION_CHARACTERS = 1024
+MAX_TARIFF_NAME_CHARACTERS = 128
+MAX_TARIFF_DESCRIPTION_CHARACTERS = 3000
+INVOICE_PRICE_RESERVE_CHARACTERS = 48
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,11 @@ def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _visible_length(value: Any) -> int:
+    """Approximate Telegram's character count after parsing editor HTML."""
+    return len(unescape(re.sub(r"<[^>]*>", "", _text(value))).replace("\u00a0", " ").strip())
+
+
 def _node_value(node: dict[str, Any], snake_case: str, camel_case: str) -> Any:
     return node.get(camel_case, node.get(snake_case))
 
@@ -48,6 +60,7 @@ def evaluate_funnel_readiness(
     *,
     has_payment_provider: bool,
     has_payment_credentials: bool,
+    connected_chat_ids: set[str] | None = None,
 ) -> FunnelReadiness:
     """Validate all conditions required to make a bot public.
 
@@ -68,6 +81,20 @@ def evaluate_funnel_readiness(
             continue
         if not _text(node.get("content")):
             reasons.append(f"Заполните текст блока «{title}».")
+        else:
+            has_media = bool(
+                node.get("mediaFileId")
+                or node.get("media_file_id")
+                or node.get("media")
+            )
+            max_length = (
+                MAX_MEDIA_CAPTION_CHARACTERS if has_media else MAX_MESSAGE_CHARACTERS
+            )
+            if _visible_length(node.get("content")) > max_length:
+                kind = "подпись с медиа" if has_media else "сообщение"
+                reasons.append(
+                    f"Сократите {kind} блока «{title}» до {max_length} символов."
+                )
         if not _text(_node_value(node, "button_text", "buttonText")):
             reasons.append(f"Заполните кнопку блока «{title}».")
 
@@ -77,19 +104,25 @@ def evaluate_funnel_readiness(
         return FunnelReadiness(tuple(reasons))
 
     mode = _node_value(payment, "payment_mode", "paymentMode") or "auto"
+    selection_text = _node_value(payment, "tariff_selection_text", "tariffSelectionText")
     tariffs = payment.get("tariffs")
     if not isinstance(tariffs, list) or not tariffs:
         reasons.append("Добавьте хотя бы один тариф.")
     else:
-        if len(tariffs) > 1 and not _text(
-            _node_value(payment, "tariff_selection_text", "tariffSelectionText")
-        ):
-            reasons.append("Добавьте текст выбора тарифов.")
+        if len(tariffs) > 1:
+            if not _text(selection_text):
+                reasons.append("Добавьте текст выбора тарифов.")
+            elif _visible_length(selection_text) > MAX_MESSAGE_CHARACTERS:
+                reasons.append(
+                    f"Сократите текст выбора тарифов до {MAX_MESSAGE_CHARACTERS} символов."
+                )
         for index, raw_tariff in enumerate(tariffs, start=1):
             tariff = _as_dict(raw_tariff)
             label = f"тариф {index}"
             if not _text(tariff.get("name")):
                 reasons.append(f"Укажите название: {label}.")
+            elif _visible_length(tariff.get("name")) > MAX_TARIFF_NAME_CHARACTERS:
+                reasons.append(f"Сократите название: {label} до {MAX_TARIFF_NAME_CHARACTERS} символов.")
             try:
                 price_is_valid = float(tariff.get("price", 0)) > 0
             except (TypeError, ValueError):
@@ -98,10 +131,35 @@ def evaluate_funnel_readiness(
                 reasons.append(f"Укажите цену больше нуля: {label}.")
             if not _text(tariff.get("description")):
                 reasons.append(f"Добавьте описание: {label}.")
+            elif _visible_length(tariff.get("description")) > MAX_TARIFF_DESCRIPTION_CHARACTERS:
+                reasons.append(
+                    f"Сократите описание: {label} до {MAX_TARIFF_DESCRIPTION_CHARACTERS} символов."
+                )
+            invoice_length = (
+                _visible_length(payment.get("content"))
+                + (_visible_length(payment.get("content")) and 2 or 0)
+                + _visible_length(tariff.get("name"))
+                + 2
+                + _visible_length(tariff.get("description"))
+                + INVOICE_PRICE_RESERVE_CHARACTERS
+            )
+            if invoice_length > MAX_MESSAGE_CHARACTERS:
+                reasons.append(
+                    f"Сократите текст счёта или описание: {label} не помещается в сообщение Telegram."
+                )
             has_delivery = tariff.get("hasDelivery", tariff.get("has_delivery", True))
             action_data = _text(tariff.get("actionData", tariff.get("action_data", "")))
             if mode in {"auto", "hybrid"} and has_delivery is not False and not action_data:
                 reasons.append(f"Настройте выдачу после оплаты: {label}.")
+            action_type = tariff.get("actionType", tariff.get("action_type", "link"))
+            if action_type == "group":
+                if action_data and connected_chat_ids is not None and action_data not in connected_chat_ids:
+                    reasons.append(
+                        f"Выберите подключённый канал или группу для выдачи: {label}."
+                    )
+                access_mode = tariff.get("chatAccessMode", tariff.get("chat_access_mode", "member"))
+                if access_mode not in {"member", "read_only"}:
+                    reasons.append(f"Выберите профиль доступа к чату: {label}.")
 
     if mode not in {"auto", "application", "hybrid"}:
         reasons.append("Выберите корректный режим продажи.")

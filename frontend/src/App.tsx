@@ -238,12 +238,12 @@ export default function App() {
 
 
       <main
-        className="flex-1 flex flex-col relative lg:ml-[240px] overflow-hidden h-full"
+        className="flex-1 min-h-0 flex flex-col relative lg:ml-[240px] overflow-hidden h-full"
       >
         <Header activeTab={activeTab} appState={appState} setSheet={setSheet} onCreateBot={handleCreateBotClick} />
 
         {/* Content Area with its own scroll */}
-        <div className={`flex-1 flex flex-col relative ${activeTab === 'flow' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <div className={`flex-1 min-h-0 flex flex-col relative ${activeTab === 'flow' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           
           {/* Mobile Navigation Spacer */}
           <style>{`
@@ -259,7 +259,7 @@ export default function App() {
 
           <div 
             className={`flex-1 flex flex-col ${activeTab === 'flow' ? 'flow-padding' : activeTab === 'subscription' ? 'px-3 lg:px-4 py-4 lg:py-8 mobile-padding' : 'px-4 pt-3 pb-4 lg:p-8 mobile-padding'}`} 
-            style={{ maxWidth: activeTab === 'flow' ? '100%' : '900px', margin: '0 auto', width: '100%' }}
+            style={{ maxWidth: activeTab === 'flow' ? '100%' : activeTab === 'build' ? '1240px' : '900px', margin: '0 auto', width: '100%' }}
           >
           <AnimatePresence mode="wait">
             {activeTab === 'home' && (

@@ -6,6 +6,9 @@ export interface Tariff {
   hasDelivery?: boolean;
   actionType: 'link' | 'group' | 'text' | 'file';
   actionData: string;
+  chatAccessMode?: 'member' | 'read_only';
+  inviteExpiresHours?: number;
+  chatType?: 'channel' | 'group' | 'supergroup';
 }
 
 export interface FunnelNode {
@@ -48,6 +51,7 @@ export interface BotConfig {
   paymentKeys?: Record<string, string>;
   tokenPreview?: string;
   paymentCredentialsPreview?: Record<string, string>;
+  paymentWebhookUrl?: string;
   offerUrl?: string;
   offerInstallments?: boolean;
   funnelComplete: boolean;

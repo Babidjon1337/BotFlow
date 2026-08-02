@@ -43,7 +43,7 @@ def user_funnel_action_keyboard(
     return user_payment_button(primary_text)
 
 
-def user_tariff_keyboard(tariffs):
+def user_tariff_keyboard(tariffs, *, include_back: bool = False):
     """Build tariff choices for a V2 payment node."""
     rows = []
     for tariff in tariffs:
@@ -54,6 +54,8 @@ def user_tariff_keyboard(tariffs):
             continue
         label = f"{title} · {price:,.0f} ₽".replace(",", " ")
         rows.append([InlineKeyboardButton(text=label[:64], callback_data=f"payment_tariff:{tariff_id}")])
+    if include_back:
+        rows.append([InlineKeyboardButton(text="← Назад", callback_data="payment_tariffs_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

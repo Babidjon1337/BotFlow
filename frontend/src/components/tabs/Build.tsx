@@ -209,7 +209,7 @@ export const RichTextEditor = ({
   return (
     <div className={`flex flex-col border rounded-xl overflow-hidden bg-[var(--color-surface)] transition-all shadow-2xs ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)] focus-within:border-[var(--color-primary)]"}`}>
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-1 p-1.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
+      <div className="order-2 flex items-center justify-between gap-1 p-1.5 bg-[var(--color-surface-2)] border-b border-[var(--color-border)]">
         <div className="flex items-center gap-0.5">
           <button
             type="button"
@@ -261,7 +261,7 @@ export const RichTextEditor = ({
         </div>
 
         {/* Media Toggle Button */}
-        {onUploadMedia && (
+        {onUploadMedia && !hasMedia && (
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
@@ -294,7 +294,7 @@ export const RichTextEditor = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 flex flex-col gap-2 overflow-hidden"
+            className="order-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 flex flex-col gap-2 overflow-hidden"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--color-foreground)]">
@@ -309,17 +309,25 @@ export const RichTextEditor = ({
                 Удалить медиа
               </button>
             </div>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border border-dashed border-[var(--color-border-strong)] rounded-xl p-3.5 bg-[var(--color-surface)] flex flex-col items-center justify-center text-center gap-1 cursor-pointer hover:border-[var(--color-primary)] transition-colors"
-            >
-              <ImageIcon size={20} className="text-[var(--color-foreground-tertiary)]" />
-              <div className="text-[12px] font-semibold text-[var(--color-foreground)]">
-                {isUploading ? "Загружаем и синхронизируем с Telegram…" : mediaFileId ? "Файл синхронизирован с Telegram" : "Нажмите для загрузки или перетащите фото/видео"}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2 text-[12px]">
+                <ImageIcon size={16} className="shrink-0 text-[var(--color-primary)]" />
+                <span className="truncate font-semibold text-[var(--color-foreground)]">
+                  {isUploading
+                    ? "Загружаем и синхронизируем с Telegram…"
+                    : mediaFileId
+                      ? "Файл синхронизирован с Telegram"
+                      : "Подготавливаем файл…"}
+                </span>
               </div>
-              <div className="text-[11px] text-[var(--color-foreground-tertiary)]">
-                Фото, видео или документ до 20 МБ. Лимит подписи с медиа — 1024 символа.
-              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="shrink-0 text-[12px] font-semibold text-[var(--color-primary)] hover:underline disabled:opacity-60"
+              >
+                Заменить
+              </button>
             </div>
             {mediaType === "document" ? (
               <div className="flex items-center gap-2 text-[12px] text-[var(--color-foreground-secondary)]">
@@ -338,7 +346,7 @@ export const RichTextEditor = ({
         contentEditable
         onInput={handleInput}
         onBlur={handleInput}
-        className="p-3 min-h-[96px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor"
+        className="order-3 p-3 min-h-[96px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor"
         style={{
           color: "var(--color-foreground)",
           wordBreak: "break-word",
@@ -351,7 +359,7 @@ export const RichTextEditor = ({
       />
 
       {/* Telegram Character Counter & Validator Footer */}
-      <div className={`flex items-center justify-between px-3 py-1.5 border-t border-[var(--color-border)] text-[11px] transition-colors ${isOverLimit ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] font-bold" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)]"}`}>
+      <div className={`order-4 flex items-center justify-between px-3 py-1.5 border-t border-[var(--color-border)] text-[11px] transition-colors ${isOverLimit ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] font-bold" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)]"}`}>
         <div className="flex items-center gap-1">
           <span>{isOverLimit ? "⚠️ Превышен лимит Telegram!" : "Лимит символов Telegram:"}</span>
           <span className="opacity-80">({hasMedia ? "с медиа — макс. 1024" : "текстовое — макс. 4096"})</span>
@@ -509,7 +517,7 @@ export const Build = () => {
   const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const { showConfirm: showAlert } = useAlert();
+  const { showAlert } = useAlert();
   const { toggleBot, isToggling } = useBotToggle();
 
   const resetBotLeads = async () => {
@@ -1160,6 +1168,7 @@ export const Build = () => {
               <div onClick={() => setSelectedBlockId("payment")}>
                 <PaymentBlockEditor
                   node={getBlock("payment")}
+                  botId={appState.activeBot.id}
                   onChange={(field, value) =>
                     updateBlock("payment", field, value)
                   }

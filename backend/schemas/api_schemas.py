@@ -63,6 +63,13 @@ class ManualInvoiceRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ChatDeliveryVerifyRequest(BaseModel):
+    chat_id: str = Field(..., min_length=1, max_length=128, alias="chatId")
+    access_mode: str = Field(default="member", alias="accessMode")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class BotCreateApiRequest(BaseModel):
     token: str = Field(..., description="Токен бота от BotFather")
     display_name: str = Field(default="Мой бот", alias="displayName")
@@ -100,6 +107,7 @@ class BotApiResponse(BaseModel):
     has_payment_credentials: bool = Field(default=False, alias="hasPaymentCredentials")
     token_preview: Optional[str] = Field(None, alias="tokenPreview")
     payment_credentials_preview: Dict[str, str] = Field(default_factory=dict, alias="paymentCredentialsPreview")
+    payment_webhook_url: Optional[str] = Field(None, alias="paymentWebhookUrl")
     webhook_url: Optional[str] = Field(None, alias="webhookUrl")
     bot_url: Optional[str] = Field(None, alias="botUrl")
     created_at: Optional[str] = Field(None, alias="createdAt")
@@ -110,6 +118,11 @@ class BotApiResponse(BaseModel):
     def from_orm_bot(cls, bot, webhook_base_url: str = ""):
         bot_url = f"https://t.me/{bot.username}" if bot.username else None
         webhook_url = f"{webhook_base_url}/webhook/bots/{bot.id}" if webhook_base_url else None
+        payment_webhook_url = (
+            f"{webhook_base_url}/webhook/payments/{bot.payment_provider}/{bot.tg_bot_id}"
+            if webhook_base_url and bot.payment_provider and bot.tg_bot_id
+            else None
+        )
         created_str = bot.created_at.isoformat() if hasattr(bot, "created_at") and bot.created_at else None
         token_preview = None
         try:
@@ -133,6 +146,7 @@ class BotApiResponse(BaseModel):
             has_payment_credentials=bool(getattr(bot, "payment_creds_enc", None)),
             token_preview=token_preview,
             payment_credentials_preview=_payment_credentials_preview(getattr(bot, "payment_creds_enc", None)),
+            payment_webhook_url=payment_webhook_url,
             webhook_url=webhook_url,
             bot_url=bot_url,
             created_at=created_str,

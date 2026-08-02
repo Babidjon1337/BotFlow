@@ -66,6 +66,13 @@ class TariffSchema(BaseModel):
     has_delivery: bool = Field(default=True, alias="hasDelivery")
     action_type: Literal["link", "group", "text", "file"] = Field(default="link", alias="actionType")
     action_data: str = Field(default="", alias="actionData")
+    chat_access_mode: Literal["member", "read_only"] = Field(
+        default="member", alias="chatAccessMode"
+    )
+    invite_expires_hours: int = Field(default=24, ge=1, le=168, alias="inviteExpiresHours")
+    chat_type: Optional[Literal["channel", "group", "supergroup"]] = Field(
+        default=None, alias="chatType"
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

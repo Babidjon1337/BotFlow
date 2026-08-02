@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { KeyRound, X, Info } from 'lucide-react';
+import { KeyRound, X, Info, Copy } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider, AppState } from '../../types';
 import { useViewportHeight } from '../../hooks';
@@ -51,12 +51,16 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const activeBot = appState.activeBot;
   
   const [name, setName] = useState(activeBot?.name || '');
-  const [token, setToken] = useState(activeBot?.token || '');
+  const [token, setToken] = useState('');
+  const [tokenChanged, setTokenChanged] = useState(false);
   const [offerUrl, setOfferUrl] = useState(activeBot?.offerUrl || '');
   const [offerInstallments, setOfferInstallments] = useState(activeBot?.offerInstallments || false);
   const [provider, setProvider] = useState<PaymentProvider>((activeBot?.paymentProvider as PaymentProvider) || 'yookassa');
-  const [keys, setKeys] = useState<Record<string, string>>(activeBot?.paymentKeys || { shopId: '', secretKey: '' });
+  const initialProvider = (activeBot?.paymentProvider as PaymentProvider) || 'yookassa';
+  const [keys, setKeys] = useState<Record<string, string>>({});
   const [paymentCredsChanged, setPaymentCredsChanged] = useState(false);
+  const [changedCredentialFields, setChangedCredentialFields] = useState<Set<string>>(new Set());
+  const [providerChanged, setProviderChanged] = useState(false);
 
   const isPro = appState.subscriptionStatus === 'active' || isAdmin;
   // The server keeps this flag after a database reset, so clearing leads cannot
@@ -70,26 +74,40 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
 
   const handleSave = async () => {
     if (!activeBot) return;
+    const changedCredentials = Object.fromEntries(
+      Object.entries(keys).filter(([key, value]) => changedCredentialFields.has(key) && value.trim())
+    );
+    const requiredCredentialKeys = PAYMENT_PROVIDERS[provider].map((field) => field.key);
+    const needsAllCredentials = providerChanged || !activeBot.hasPaymentCredentials;
+    if (needsAllCredentials && requiredCredentialKeys.some((key) => !changedCredentials[key])) {
+      showAlert({
+        title: "Заполните реквизиты кассы",
+        message: "Для новой платёжной системы укажите все обязательные поля и повторите сохранение.",
+        type: "warning",
+        confirmText: "Понятно",
+      });
+      return;
+    }
     try {
       const { apiService } = await import('../../services/api');
       const updated = await apiService.updateBot(activeBot.id, {
         displayName: name,
-        token: token || undefined,
+        token: tokenChanged && token ? token : undefined,
         offerUrl,
         offerInstallments: provider === 'yookassa' && offerInstallments,
         paymentProvider: provider,
-        paymentCreds: paymentCredsChanged ? keys : undefined,
+        paymentCreds: paymentCredsChanged ? changedCredentials : undefined,
       });
       const savedFunnel = await apiService.saveFunnel(activeBot.id, blocks, false);
       setAppState(prev => {
         const nextBot = {
           ...activeBot,
           name: updated.displayName || name,
-          token: token || activeBot.token,
+          token: activeBot.token,
           offerUrl: updated.offerUrl ?? offerUrl,
           offerInstallments: updated.offerInstallments ?? (provider === 'yookassa' && offerInstallments),
           paymentProvider: updated.paymentProvider ?? provider,
-          paymentKeys: paymentCredsChanged ? keys : activeBot.paymentKeys,
+          paymentKeys: activeBot.paymentKeys,
           hasPaymentCredentials: updated.hasPaymentCredentials ?? activeBot.hasPaymentCredentials,
           username: updated.username || activeBot.username,
           mediaSyncDone: updated.mediaSyncDone ?? activeBot.mediaSyncDone,
@@ -178,12 +196,19 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             <div style={{ position: 'relative' }}>
               <KeyRound size={15} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-foreground-tertiary)' }} />
               <input
-                type="text"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                onFocus={handleFocus}
+                type="password"
+                value={tokenChanged ? token : (activeBot?.tokenPreview || '')}
+                onChange={(e) => { setTokenChanged(true); setToken(e.target.value); }}
+                onFocus={(e) => {
+                  if (!tokenChanged) {
+                    e.currentTarget.value = '';
+                    setTokenChanged(true);
+                    setToken('');
+                  }
+                  handleFocus(e);
+                }}
                 disabled={!canEditToken}
-                placeholder={activeBot?.tokenPreview || "Например: 1234567890:AAH_..."}
+                placeholder="Введите новый токен только для замены"
                 className="input"
                 style={{ paddingLeft: '40px', opacity: !canEditToken ? 0.6 : 1, cursor: !canEditToken ? 'not-allowed' : 'text', width: '100%' }}
               />
@@ -248,7 +273,14 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                 return (
                   <button
                     key={p}
-                    onClick={() => { setProvider(p); if (p !== 'yookassa') setOfferInstallments(false); setKeys({}); setPaymentCredsChanged(true); }}
+                    onClick={() => {
+                      setProvider(p);
+                      setProviderChanged(p !== initialProvider);
+                      if (p !== 'yookassa') setOfferInstallments(false);
+                      setKeys({});
+                      setChangedCredentialFields(new Set());
+                      setPaymentCredsChanged(p !== provider);
+                    }}
                     disabled={!canEditPayment}
                     className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all ${!canEditPayment ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:bg-[var(--color-surface-2)]'}`}
                     style={{
@@ -288,14 +320,24 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                     >
                       <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">{field.label}</label>
                       <input
-                        type="text"
-                        placeholder={activeBot?.paymentCredentialsPreview?.[field.key] || field.hint}
-                        value={keys[field.key] || ''}
+                        type="password"
+                        placeholder={field.hint}
+                        value={changedCredentialFields.has(field.key)
+                          ? (keys[field.key] || '')
+                          : (activeBot?.paymentCredentialsPreview?.[field.key] || '')}
                         onChange={(e) => {
                           setPaymentCredsChanged(true);
+                          setChangedCredentialFields((previous) => new Set(previous).add(field.key));
                           setKeys(prev => ({ ...prev, [field.key]: e.target.value }));
                         }}
-                        onFocus={handleFocus}
+                        onFocus={(e) => {
+                          if (!changedCredentialFields.has(field.key)) {
+                            e.currentTarget.value = '';
+                            setChangedCredentialFields((previous) => new Set(previous).add(field.key));
+                            setKeys((previous) => ({ ...previous, [field.key]: '' }));
+                          }
+                          handleFocus(e);
+                        }}
                         disabled={!canEditPayment}
                         className="input w-full"
                         style={{ opacity: !canEditPayment ? 0.6 : 1, cursor: !canEditPayment ? 'not-allowed' : 'text' }}
@@ -303,6 +345,29 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                     </motion.div>
                   ))}
                 </div>
+                {provider === 'yookassa' && activeBot?.paymentWebhookUrl && (
+                  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3.5">
+                    <p className="text-[13px] font-semibold text-[var(--color-foreground)]">Webhook об оплате ЮKassa</p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">
+                      В кабинете ЮKassa добавьте эту ссылку в HTTP-уведомления и включите событие успешной оплаты. По ней бот выдаёт доступ после подтверждения платежа.
+                    </p>
+                    <div className="mt-2 flex items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+                      <code className="min-w-0 flex-1 break-all text-[11px] text-[var(--color-foreground-secondary)]">{activeBot.paymentWebhookUrl}</code>
+                      <button
+                        type="button"
+                        aria-label="Скопировать ссылку webhook"
+                        title="Скопировать"
+                        onClick={async () => {
+                          await navigator.clipboard?.writeText(activeBot.paymentWebhookUrl!);
+                          setToastMessage('Ссылка webhook скопирована');
+                        }}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--color-primary)] hover:bg-[var(--color-primary-soft)]"
+                      >
+                        <Copy size={15} />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </AnimatePresence>
           </div>

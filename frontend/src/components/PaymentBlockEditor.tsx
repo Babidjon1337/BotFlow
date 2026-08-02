@@ -3,14 +3,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2 } from 'lucide-react';
 import { DeliverySelector } from './DeliverySelector';
 import { InfoTooltip } from './InfoTooltip';
+import { TariffDescriptionEditor } from './TariffDescriptionEditor';
 import type { FunnelNode, Tariff } from '../types';
 
 interface PaymentBlockEditorProps {
   node?: FunnelNode;
+  botId?: string;
   onChange: <K extends keyof FunnelNode>(field: K, value: FunnelNode[K]) => void;
 }
 
-export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, onChange }) => {
+const MAX_TARIFF_SELECTION_CHARACTERS = 4096;
+
+export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, botId, onChange }) => {
   const tariffs: Tariff[] = node?.tariffs || [];
 
   const updateTariffs = (newTariffs: Tariff[]) => onChange('tariffs', newTariffs);
@@ -52,32 +56,12 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
               text={`Показывается клиенту при нажатии кнопки покупки, чтобы он выбрал один из ${tariffs.length} тарифов.`}
             />
           </div>
-          <textarea
-            className="textarea w-full font-normal"
-            style={{
-              minHeight: '60px',
-              padding: '10px 14px',
-              borderRadius: '10px',
-              wordBreak: 'break-word',
-              overflowWrap: 'anywhere',
-              whiteSpace: 'pre-wrap',
-              resize: 'none',
-              overflow: 'hidden',
-            }}
+          <TariffDescriptionEditor
             value={node?.tariffSelectionText || ''}
             placeholder="Выберите подходящий тариф ниже:"
-            onChange={e => onChange('tariffSelectionText', e.target.value)}
-            onInput={(e) => {
-              e.currentTarget.style.height = 'auto';
-              e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-            }}
-            onFocus={(e) => {
-              if (window.innerWidth <= 768) {
-                setTimeout(() => {
-                  e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 300);
-              }
-            }}
+            helperText="Сообщение для клиента"
+            maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
+            onChange={value => onChange('tariffSelectionText', value)}
           />
         </div>
       )}
@@ -134,6 +118,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
                     className="input w-full font-medium"
                     style={{ height: '40px' }}
                     value={tariff.name}
+                    maxLength={128}
                     placeholder="VIP доступ"
                     onChange={e => updateTariff(tariff.id, 'name', e.target.value)}
                     onFocus={(e) => {
@@ -172,32 +157,9 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
                 <label className="text-label" style={{ display: 'block', marginBottom: '6px' }}>
                   Что входит в тариф (описание для клиента)
                 </label>
-                <textarea
-                  className="textarea w-full font-normal"
-                  style={{
-                    minHeight: '68px',
-                    padding: '10px 14px',
-                    borderRadius: '10px',
-                    wordBreak: 'break-word',
-                    overflowWrap: 'anywhere',
-                    whiteSpace: 'pre-wrap',
-                    resize: 'none',
-                    overflow: 'hidden',
-                  }}
+                <TariffDescriptionEditor
                   value={tariff.description}
-                  placeholder="Опишите, что входит в тариф..."
-                  onChange={e => updateTariff(tariff.id, 'description', e.target.value)}
-                  onInput={(e) => {
-                    e.currentTarget.style.height = 'auto';
-                    e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-                  }}
-                  onFocus={(e) => {
-                    if (window.innerWidth <= 768) {
-                      setTimeout(() => {
-                        e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      }, 300);
-                    }
-                  }}
+                  onChange={value => updateTariff(tariff.id, 'description', value)}
                 />
               </div>
 
@@ -243,6 +205,11 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, on
                           onChange={(type) => updateTariff(tariff.id, 'actionType', type === 'invite' ? 'group' : type)}
                           deliveryValue={tariff.actionData}
                           onDeliveryValueChange={(val) => updateTariff(tariff.id, 'actionData', val)}
+                          chatAccessMode={tariff.chatAccessMode}
+                          onChatAccessModeChange={(value) => updateTariff(tariff.id, 'chatAccessMode', value)}
+                          chatType={tariff.chatType}
+                          onChatTypeChange={(value) => updateTariff(tariff.id, 'chatType', value)}
+                          botId={botId}
                         />
                       </div>
                     </motion.div>
