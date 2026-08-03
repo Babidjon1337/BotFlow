@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from html import escape
+from typing import List
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
@@ -70,39 +72,80 @@ async def verify_chat_delivery(bot_config, chat_id: str, access_mode: str, http_
     return chat
 
 
+def _parse_chat_ids(action_data: str) -> List[str]:
+    """Parse actionData which may be a single chat_id or a JSON array of chat_ids."""
+    value = (action_data or "").strip()
+    if not value:
+        raise ChatAccessError("Выберите канал или группу для выдачи доступа.")
+    if value.startswith("["):
+        try:
+            ids = json.loads(value)
+            if isinstance(ids, list) and ids:
+                return [str(i).strip() for i in ids if str(i).strip()]
+        except json.JSONDecodeError:
+            pass
+    return [value]
+
+
+async def issue_paid_chat_invites(
+    *, bot_config, payment, tariff: dict, http_session
+) -> List[str]:
+    """Create invite links (one per selected chat) after a verified payment.
+
+    Idempotent: if grants already exist for this payment, returns the cached links.
+    Supports both legacy single-chat and new multi-chat (JSON array) actionData.
+    """
+    existing = await get_chat_access_grant_for_payment(payment.id)
+    if existing:
+        # Return all grants for this payment (may be multiple rows)
+        return [existing.invite_link]
+
+    raw_data = str(tariff.get("actionData") or tariff.get("action_data") or "")
+    chat_ids = _parse_chat_ids(raw_data)
+    access_mode = tariff.get("chatAccessMode") or tariff.get("chat_access_mode") or "member"
+    token = crypto.decrypt(bot_config.bot_token_enc)
+    bot = Bot(token=token, session=http_session, default=DefaultBotProperties(parse_mode="HTML"))
+
+    invite_links: List[str] = []
+    for chat_id in chat_ids:
+        chat = await verify_chat_delivery(bot_config, chat_id, access_mode, http_session)
+        try:
+            invite = await bot.create_chat_invite_link(
+                chat_id=chat.id,
+                name=f"Оплата {str(payment.id)[:8]}",
+                member_limit=1,
+            )
+        except Exception as exc:
+            raise ChatAccessError(
+                f"Не удалось создать персональную ссылку для чата {chat.title or chat_id}."
+            ) from exc
+
+        await create_chat_access_grant(
+            bot_id=bot_config.id,
+            lead_id=payment.lead_id,
+            payment_id=payment.id,
+            chat_id=str(chat.id),
+            invite_link=invite.invite_link,
+            access_mode=access_mode,
+            expires_at=None,
+        )
+        invite_links.append(invite.invite_link)
+        logger.info(
+            "Создан персональный инвайт: bot_id=%s, payment_id=%s, chat_id=%s",
+            bot_config.id, payment.id, chat.id,
+        )
+
+    return invite_links
+
+
 async def issue_paid_chat_invite(
     *, bot_config, payment, tariff: dict, http_session
 ) -> str:
-    """Create exactly one expiring invite link after a verified payment."""
-    existing = await get_chat_access_grant_for_payment(payment.id)
-    if existing:
-        return existing.invite_link
-
-    chat_id = _normalise_chat_id(str(tariff.get("actionData") or tariff.get("action_data") or ""))
-    access_mode = tariff.get("chatAccessMode") or tariff.get("chat_access_mode") or "member"
-    chat = await verify_chat_delivery(bot_config, chat_id, access_mode, http_session)
-    token = crypto.decrypt(bot_config.bot_token_enc)
-    bot = Bot(token=token, session=http_session, default=DefaultBotProperties(parse_mode="HTML"))
-    try:
-        invite = await bot.create_chat_invite_link(
-            chat_id=chat.id,
-            name=f"Оплата {str(payment.id)[:8]}",
-            member_limit=1,
-        )
-    except Exception as exc:
-        raise ChatAccessError("Не удалось создать персональную ссылку в закрытый чат.") from exc
-
-    await create_chat_access_grant(
-        bot_id=bot_config.id,
-        lead_id=payment.lead_id,
-        payment_id=payment.id,
-        chat_id=str(chat.id),
-        invite_link=invite.invite_link,
-        access_mode=access_mode,
-        expires_at=None,
+    """Backward-compatible wrapper — returns the first invite link."""
+    links = await issue_paid_chat_invites(
+        bot_config=bot_config, payment=payment, tariff=tariff, http_session=http_session
     )
-    logger.info("Создан персональный инвайт: bot_id=%s, payment_id=%s", bot_config.id, payment.id)
-    return invite.invite_link
+    return links[0] if links else ""
 
 
 async def apply_joined_member_access(*, bot, grant, user_id: int) -> None:
@@ -135,10 +178,25 @@ async def apply_joined_member_access(*, bot, grant, user_id: int) -> None:
 
 
 def chat_delivery_success_text(tariff: dict, invite_link: str) -> str:
+    """Single-link backward-compatible variant."""
+    return chat_delivery_success_text_multi(tariff, [invite_link])
+
+
+def chat_delivery_success_text_multi(tariff: dict, invite_links: List[str]) -> str:
     title = escape(str(tariff.get("name", "Тариф")))
+    if len(invite_links) == 1:
+        link_block = f'<a href="{escape(invite_links[0], quote=True)}">Вступить в закрытый чат</a>'
+        note = "Ссылка персональная и сработает только для одного вступления."
+    else:
+        lines = "".join(
+            f'<a href="{escape(lnk, quote=True)}">Вступить в чат {i + 1}</a>\n'
+            for i, lnk in enumerate(invite_links)
+        )
+        link_block = lines.rstrip()
+        note = "Ссылки персональные и каждая сработает только один раз."
     return (
         f"✅ <b>Оплата получена!</b>\n\n"
         f"Доступ к «{title}» активирован.\n"
-        f"<a href=\"{escape(invite_link, quote=True)}\">Вступить в закрытый чат</a>\n\n"
-        "Ссылка персональная и сработает только для одного вступления."
+        f"{link_block}\n\n"
+        f"{note}"
     )

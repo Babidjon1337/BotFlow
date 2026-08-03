@@ -370,19 +370,19 @@ async def send_success_message(
                     if has_delivery and action_type == "group" and client_payment:
                         from services.chat_access import (
                             ChatAccessError,
-                            chat_delivery_success_text,
-                            issue_paid_chat_invite,
+                            chat_delivery_success_text_multi,
+                            issue_paid_chat_invites,
                         )
 
                         try:
-                            invite_link = await issue_paid_chat_invite(
+                            invite_links = await issue_paid_chat_invites(
                                 bot_config=bot_config,
                                 payment=client_payment,
                                 tariff=tariff,
                                 http_session=http_session,
                             )
                             node_success = {
-                                "content": chat_delivery_success_text(tariff, invite_link)
+                                "content": chat_delivery_success_text_multi(tariff, invite_links)
                             }
                         except ChatAccessError as exc:
                             logger.error(
