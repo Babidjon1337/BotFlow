@@ -111,12 +111,12 @@ export const DeliverySelector = ({
   }, [loadConnectedChats, value]);
 
   // Toggle a chat in the selection
-  const toggleChat = (chat: ConnectedChat) => {
+  const toggleChat = (chat: ConnectedChat, e: React.MouseEvent) => {
+    e.stopPropagation();
     const isSelected = selectedIds.includes(chat.chatId);
     let newIds: string[];
     if (isSelected) {
       newIds = selectedIds.filter(id => id !== chat.chatId);
-      // Clear verify state for this chat
       setVerifyStates(prev => {
         const next = { ...prev };
         delete next[chat.chatId];
@@ -125,9 +125,9 @@ export const DeliverySelector = ({
     } else {
       newIds = [...selectedIds, chat.chatId];
     }
-    onDeliveryValueChange(newIds.length > 0 ? JSON.stringify(newIds) : '');
-
-    // Update chatType based on first verified or first selected chat
+    // Batch both updates together via the combined delivery change
+    const newDelivery = newIds.length > 0 ? JSON.stringify(newIds) : '';
+    onDeliveryValueChange(newDelivery);
     const firstVerifiedType = Object.entries(verifyStates).find(
       ([cid, s]) => newIds.includes(cid) && s.status === 'ok'
     )?.[1].resolvedType;
@@ -166,7 +166,8 @@ export const DeliverySelector = ({
   );
 
   return (
-    <div className="flex flex-col gap-3">
+    // stopPropagation so parent onClick wrappers (e.g. setSelectedBlockId) don't swallow our button clicks
+    <div className="flex flex-col gap-3" onClick={e => e.stopPropagation()}>
       <label className="text-label">Способ выдачи</label>
       <div className="grid grid-cols-3 gap-1 rounded-xl bg-[var(--color-surface-2)] p-1">
         {options.map(option => {
@@ -255,7 +256,7 @@ export const DeliverySelector = ({
                         type="button"
                         role="checkbox"
                         aria-checked={isChecked}
-                        onClick={() => toggleChat(chat)}
+                        onClick={(e) => toggleChat(chat, e)}
                         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
                           isChecked
                             ? 'border-[var(--color-primary)] bg-[var(--color-primary)]'
@@ -272,7 +273,7 @@ export const DeliverySelector = ({
                       {/* Title + type */}
                       <button
                         type="button"
-                        onClick={() => toggleChat(chat)}
+                        onClick={(e) => toggleChat(chat, e)}
                         className="min-w-0 flex-1 text-left"
                       >
                         <span className="block truncate text-[12px] font-semibold text-[var(--color-foreground)]">

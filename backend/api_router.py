@@ -22,7 +22,7 @@ from database.requests.bot_rq import (
     set_media_sync_done,
 )
 from database.requests.user_rq import get_lead, get_leads_by_bot_id, delete_leads_by_bot_id
-from database.requests.client_payment_rq import get_client_payment_stats
+from database.requests.client_payment_rq import get_client_payment_stats, get_chart_data
 from database.requests.billing_rq import cancel_subscription_auto_renew
 from database.requests.connected_chat_rq import list_connected_chats
 from schemas.api_schemas import (
@@ -171,7 +171,14 @@ async def auth_user(request: Request, body: dict = None):
     user = await create_user_if_not_exists(telegram_id=telegram_user.telegram_id)
     bots = await get_user_bots(owner_id=user.id)
 
-    bots_resp = [BotApiResponse.from_orm_bot(b, WEBHOOK_URL) for b in bots]
+    bots_resp = []
+    for b in bots:
+        resp = BotApiResponse.from_orm_bot(b, WEBHOOK_URL)
+        sales, revenue = await get_client_payment_stats(b.id)
+        resp.sales = sales
+        resp.revenue = float(revenue)
+        bots_resp.append(resp)
+
     return {
         "status": "ok",
         "user": _user_payload(user, telegram_user.telegram_id),
@@ -251,7 +258,15 @@ async def list_bots(request: Request):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     bots = await get_user_bots(owner_id=user.id)
-    bots_resp = [BotApiResponse.from_orm_bot(b, WEBHOOK_URL) for b in bots]
+    
+    bots_resp = []
+    for b in bots:
+        resp = BotApiResponse.from_orm_bot(b, WEBHOOK_URL)
+        sales, revenue = await get_client_payment_stats(b.id)
+        resp.sales = sales
+        resp.revenue = float(revenue)
+        bots_resp.append(resp)
+        
     return {"bots": [b.model_dump(by_alias=True) for b in bots_resp]}
 
 
@@ -888,3 +903,17 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
         "chart_data": [],
         "events": [],
     }
+
+
+@api_router.get("/api/bots/{bot_id}/stats/chart")
+async def get_bot_chart_endpoint(
+    bot_id: int,
+    request: Request,
+    period: str = "week",
+):
+    """Return daily sales + new-user counts for the chart widget."""
+    await get_owned_bot(bot_id, request)
+    if period not in ("week", "month"):
+        period = "week"
+    points = await get_chart_data(bot_id, period)
+    return {"points": points}

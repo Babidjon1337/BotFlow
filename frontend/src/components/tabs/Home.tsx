@@ -2,6 +2,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
+  BarChart as RechartsBarChart,
+  LineChart as RechartsLineChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import {
   Bot,
   CreditCard,
   BarChart2,
@@ -180,6 +192,9 @@ export const Home = () => {
 
   const [statsState, setStatsState] = useState<ResourceState<FunnelStats>>(emptyResource);
   const [statsRefreshKey, setStatsRefreshKey] = useState(0);
+  const [chartPeriod, setChartPeriod] = useState<'week' | 'month'>('week');
+  const [chartData, setChartData] = useState<Array<{ date: string; sales: number; users: number }>>([]);
+  const [isLoadingChart, setIsLoadingChart] = useState(false);
 
   useEffect(() => {
     const botId = appState.activeBot?.id;
@@ -226,6 +241,20 @@ export const Home = () => {
       });
     return () => { cancelled = true; };
   }, [appState.activeBot?.id, statsRefreshKey]);
+
+  // Load chart data (daily dynamics)
+  useEffect(() => {
+    const botId = appState.activeBot?.id;
+    if (!botId) return;
+    let cancelled = false;
+    setIsLoadingChart(true);
+    void import("../../services/api")
+      .then(({ apiService }) => apiService.getBotChartData(botId, chartPeriod))
+      .then((data) => { if (!cancelled) setChartData(data.points); })
+      .catch(() => { if (!cancelled) setChartData([]); })
+      .finally(() => { if (!cancelled) setIsLoadingChart(false); });
+    return () => { cancelled = true; };
+  }, [appState.activeBot?.id, chartPeriod]);
 
   useEffect(() => {
     if (!showAllClients) return;
@@ -914,18 +943,91 @@ export const Home = () => {
 
       {stats && (
         <section className="card-saas p-4 sm:p-5" aria-labelledby="timeline-chart-title">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-3 mb-4">
             <div>
               <h2 id="timeline-chart-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Динамика бизнеса</h2>
-              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Посетители, продажи и выручка по дням.</p>
+              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Продажи и новые пользователи по дням.</p>
             </div>
-            <LineChart size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+            {/* Period switcher */}
+            <div className="flex shrink-0 rounded-lg bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)]">
+              {(['week', 'month'] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setChartPeriod(p)}
+                  className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${
+                    chartPeriod === p
+                      ? 'bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm'
+                      : 'text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]'
+                  }`}
+                >
+                  {p === 'week' ? 'Неделя' : 'Месяц'}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
-            <LineChart size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
-            <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">История по дням появится здесь</p>
-            <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Сначала нужно накопить историю аналитики. До этого показываем только подтверждённые итоги.</p>
-          </div>
+
+          {isLoadingChart ? (
+            <div className="mt-3 flex min-h-40 items-center justify-center">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--color-primary)] border-t-transparent" />
+            </div>
+          ) : chartData.length > 0 && chartData.some((d) => d.sales > 0 || d.users > 0) ? (
+            <div className="h-56 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsLineChart data={chartData} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--color-foreground-secondary)', fontSize: 11 }}
+                    dy={8}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: 'var(--color-foreground-secondary)', fontSize: 11 }}
+                    allowDecimals={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'var(--color-surface)',
+                      borderRadius: '10px',
+                      border: '1px solid var(--color-border)',
+                      fontSize: '12px',
+                      color: 'var(--color-foreground)',
+                    }}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
+                    formatter={(value) => value === 'sales' ? 'Продажи' : 'Пользователи'}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="var(--color-primary)"
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: 'var(--color-primary)' }}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="users"
+                    stroke="var(--color-success)"
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: 'var(--color-success)' }}
+                    activeDot={{ r: 5 }}
+                  />
+                </RechartsLineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="mt-2 flex min-h-36 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
+              <LineChart size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+              <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">История по дням появится здесь</p>
+              <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Данные начнут накапливаться автоматически после первых событий.</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -938,12 +1040,56 @@ export const Home = () => {
             </div>
             <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
           </div>
-          <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
-            <GitMerge size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
-            <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">Детальная воронка пока недоступна</p>
-            <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Переходы между этапами ещё не сохраняются в истории, поэтому мы не подменяем их текущим положением клиентов.</p>
-            <button type="button" onClick={() => setActiveTab("flow")} className="mt-3 text-[13px] font-semibold text-[var(--color-primary)] hover:underline">Открыть воронку</button>
-          </div>
+          {stats.funnel_data && stats.funnel_data.length > 0 && stats.funnel_data.some((d: any) => d.value > 0) ? (
+            <div className="mt-4 h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <RechartsBarChart
+                  data={stats.funnel_data}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: 'var(--color-foreground-secondary)', fontSize: 12 }} 
+                    dy={10}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: 'var(--color-foreground-secondary)', fontSize: 12 }} 
+                  />
+                  <Tooltip 
+                    cursor={{ fill: 'var(--color-surface-2)' }}
+                    contentStyle={{ 
+                      backgroundColor: 'var(--color-surface)', 
+                      borderRadius: '12px',
+                      border: '1px solid var(--color-border)',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                      color: 'var(--color-foreground)',
+                      fontWeight: 600,
+                      fontSize: '13px'
+                    }}
+                    itemStyle={{ color: 'var(--color-primary)' }}
+                  />
+                  <Bar 
+                    dataKey="value" 
+                    fill="var(--color-primary)" 
+                    radius={[6, 6, 0, 0]} 
+                    maxBarSize={60}
+                  />
+                </RechartsBarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
+              <GitMerge size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+              <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">Детальная воронка пока недоступна</p>
+              <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Переходы между этапами ещё не сохраняются в истории, поэтому мы не подменяем их текущим положением клиентов.</p>
+              <button type="button" onClick={() => setActiveTab("flow")} className="mt-3 text-[13px] font-semibold text-[var(--color-primary)] hover:underline">Открыть воронку</button>
+            </div>
+          )}
         </section>
       )}
 

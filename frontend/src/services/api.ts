@@ -209,6 +209,12 @@ export const apiService = {
     );
   },
 
+  async getBotChartData(botId: string | number, period: 'week' | 'month') {
+    return fetchApi<{ points: Array<{ date: string; sales: number; users: number }> }>(
+      `/api/bots/${botId}/stats/chart?period=${period}`
+    );
+  },
+
   async saveFunnel(
     botId: string | number,
     nodes: FunnelNode[],

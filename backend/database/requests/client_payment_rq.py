@@ -27,6 +27,55 @@ async def get_client_payment_stats(bot_id: int) -> tuple[int, Decimal]:
         return int(count or 0), Decimal(revenue or 0)
 
 
+async def get_chart_data(
+    bot_id: int, period: str = "week"
+) -> list[dict]:
+    """Return daily sales and new-user counts for the last N days."""
+    days = 7 if period == "week" else 30
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+
+    async with async_session() as session:
+        # Daily sales counts
+        sales_result = await session.execute(
+            select(
+                func.date(ClientPayment.created_at).label("day"),
+                func.count(ClientPayment.id).label("cnt"),
+            )
+            .where(
+                ClientPayment.bot_id == bot_id,
+                ClientPayment.status == "succeeded",
+                ClientPayment.created_at >= cutoff,
+            )
+            .group_by(func.date(ClientPayment.created_at))
+            .order_by(func.date(ClientPayment.created_at))
+        )
+        sales_by_day: dict[str, int] = {
+            str(row.day): int(row.cnt) for row in sales_result
+        }
+
+        # Daily new leads counts
+        leads_result = await session.execute(
+            select(
+                func.date(Lead.created_at).label("day"),
+                func.count(Lead.id).label("cnt"),
+            )
+            .where(Lead.bot_id == bot_id, Lead.created_at >= cutoff)
+            .group_by(func.date(Lead.created_at))
+            .order_by(func.date(Lead.created_at))
+        )
+        users_by_day: dict[str, int] = {
+            str(row.day): int(row.cnt) for row in leads_result
+        }
+
+    points = []
+    for i in range(days):
+        day = (datetime.now(tz=timezone.utc) - timedelta(days=days - 1 - i)).date()
+        key = str(day)
+        label = f"{day.day:02d}.{day.month:02d}"
+        points.append({"date": label, "sales": sales_by_day.get(key, 0), "users": users_by_day.get(key, 0)})
+    return points
+
+
 async def create_client_payment(
     *,
     bot_id: int,

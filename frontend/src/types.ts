@@ -9,6 +9,7 @@ export interface Tariff {
   chatAccessMode?: 'member' | 'read_only';
   inviteExpiresHours?: number;
   chatType?: 'channel' | 'group' | 'supergroup';
+  installments?: boolean;
 }
 
 export interface FunnelNode {
@@ -45,6 +46,8 @@ export interface BotConfig {
   status: 'active' | 'inactive'; // active means receiving traffic
   usersCount: number;
   isTokenLocked: boolean;
+  sales?: number;
+  revenue?: number;
   token?: string;
   paymentProvider?: string;
   hasPaymentCredentials?: boolean;
