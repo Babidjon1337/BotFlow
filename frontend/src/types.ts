@@ -6,7 +6,7 @@ export interface Tariff {
   hasDelivery?: boolean;
   actionType: 'link' | 'group' | 'text' | 'file';
   actionData: string;
-  chatAccessMode?: 'member' | 'read_only';
+  chatAccessMode?: string;
   inviteExpiresHours?: number;
   chatType?: 'channel' | 'group' | 'supergroup';
   installments?: boolean;

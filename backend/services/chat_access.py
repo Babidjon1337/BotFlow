@@ -102,13 +102,25 @@ async def issue_paid_chat_invites(
 
     raw_data = str(tariff.get("actionData") or tariff.get("action_data") or "")
     chat_ids = _parse_chat_ids(raw_data)
-    access_mode = tariff.get("chatAccessMode") or tariff.get("chat_access_mode") or "member"
+    raw_access_mode = tariff.get("chatAccessMode") or tariff.get("chat_access_mode") or "member"
     token = crypto.decrypt(bot_config.bot_token_enc)
     bot = Bot(token=token, session=http_session, default=DefaultBotProperties(parse_mode="HTML"))
 
     invite_links: List[str] = []
     for chat_id in chat_ids:
-        chat = await verify_chat_delivery(bot_config, chat_id, access_mode, http_session)
+        chat_access_mode = "member"
+        if isinstance(raw_access_mode, str) and raw_access_mode.startswith("{"):
+            try:
+                modes = json.loads(raw_access_mode)
+                chat_access_mode = modes.get(chat_id, "member")
+            except Exception:
+                chat_access_mode = "member"
+        elif isinstance(raw_access_mode, dict):
+            chat_access_mode = raw_access_mode.get(chat_id, "member")
+        else:
+            chat_access_mode = str(raw_access_mode)
+            
+        chat = await verify_chat_delivery(bot_config, chat_id, chat_access_mode, http_session)
         try:
             invite = await bot.create_chat_invite_link(
                 chat_id=chat.id,
@@ -126,7 +138,7 @@ async def issue_paid_chat_invites(
             payment_id=payment.id,
             chat_id=str(chat.id),
             invite_link=invite.invite_link,
-            access_mode=access_mode,
+            access_mode=chat_access_mode,
             expires_at=None,
         )
         invite_links.append(invite.invite_link)

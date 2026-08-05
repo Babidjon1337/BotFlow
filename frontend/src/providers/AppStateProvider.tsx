@@ -77,9 +77,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
 
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    return (localStorage.getItem('bot_father_activeTab') as TabType) || 'home';
+  });
   const [blocks, setBlocks] = useState<FunnelNode[]>(INITIAL_BLOCKS);
-  const [selectedBlockId, setSelectedBlockId] = useState<string>('start');
+  const [selectedBlockId, setSelectedBlockId] = useState<string>(() => {
+    return localStorage.getItem('bot_father_selectedBlockId') || 'start';
+  });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [funnelLoadState, setFunnelLoadState] = useState<FunnelLoadState>({
@@ -106,10 +110,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       if (!cancelled) {
         const mappedBots = res.bots.map(mapApiBot);
         
+        const savedBotId = localStorage.getItem('bot_father_activeBotId');
+        const restoredBot = mappedBots.find(b => b.id === savedBotId) || (mappedBots.length > 0 ? mappedBots[0] : null);
+        
         setAppState(prev => ({
           ...prev,
           bots: mappedBots,
-          activeBot: mappedBots.length > 0 ? mappedBots[0] : null,
+          activeBot: restoredBot,
           subscriptionStatus: res.user.subscription_status,
           subscriptionUntil: res.user.subscription_until,
           slotsBought: res.user.slots_bought,
@@ -131,6 +138,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('bot_father_activeTab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem('bot_father_selectedBlockId', selectedBlockId);
+  }, [selectedBlockId]);
+
+  useEffect(() => {
+    if (appState.activeBot?.id) {
+      localStorage.setItem('bot_father_activeBotId', appState.activeBot.id);
+    }
+  }, [appState.activeBot?.id]);
 
   const fetchFunnelNodes = useCallback(async (botId: string) => {
     const { apiService } = await import('../services/api');

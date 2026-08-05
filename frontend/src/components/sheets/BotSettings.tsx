@@ -42,7 +42,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const [token, setToken] = useState('');
   const [tokenChanged, setTokenChanged] = useState(false);
   const [offerUrl, setOfferUrl] = useState(activeBot?.offerUrl || '');
-  const [offerInstallments, setOfferInstallments] = useState(activeBot?.offerInstallments || false);
   const [provider, setProvider] = useState<PaymentProvider>((activeBot?.paymentProvider as PaymentProvider) || 'yookassa');
   const initialProvider = (activeBot?.paymentProvider as PaymentProvider) || 'yookassa';
   const [keys, setKeys] = useState<Record<string, string>>({});
@@ -71,7 +70,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
     name !== (activeBot?.name || '') ||
     tokenChanged ||
     offerUrl !== (activeBot?.offerUrl || '') ||
-    offerInstallments !== (activeBot?.offerInstallments || false) ||
     provider !== initialProvider ||
     paymentCredsChanged;
 
@@ -137,7 +135,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         displayName: name,
         token: tokenChanged && token ? token : undefined,
         offerUrl,
-        offerInstallments: provider === 'yookassa' && offerInstallments,
         paymentProvider: provider,
         paymentCreds: paymentCredsChanged ? changedCredentials : undefined,
       });
@@ -161,7 +158,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           name: updated.displayName || name,
           token: activeBot.token,
           offerUrl: updated.offerUrl ?? offerUrl,
-          offerInstallments: updated.offerInstallments ?? (provider === 'yookassa' && offerInstallments),
           paymentProvider: updated.paymentProvider ?? provider,
           paymentKeys: activeBot.paymentKeys,
           hasPaymentCredentials: updated.hasPaymentCredentials ?? activeBot.hasPaymentCredentials,
@@ -228,7 +224,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           exit={{ y: '100%', opacity: 1 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           className="w-full h-full lg:h-auto lg:max-w-[540px] bg-[var(--color-surface)] lg:rounded-[24px] shadow-2xl pointer-events-auto flex flex-col border border-transparent lg:border-[var(--color-border)] overflow-hidden"
-          style={{ maxHeight: '100dvh' }}
+          style={{ maxHeight: vh ? `${vh}px` : '100dvh' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] p-5 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:pt-5 shrink-0">
@@ -241,7 +237,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             </button>
           </div>
 
-          <fieldset disabled={isSaving} aria-busy={isSaving || undefined} className="m-0 min-h-0 flex flex-1 flex-col gap-6 overflow-y-auto border-0 px-5 py-6 pb-[max(24px,calc(env(safe-area-inset-bottom,0px)+16px))] disabled:opacity-70">
+          <div className="flex-1 overflow-y-auto min-h-0">
+          <fieldset disabled={isSaving} aria-busy={isSaving || undefined} className="m-0 flex flex-col gap-6 border-0 px-5 py-6 pb-[max(24px,calc(env(safe-area-inset-bottom,0px)+16px))] disabled:opacity-70">
 
           <section aria-labelledby={`${formId}-telegram-title`} className="space-y-4">
             <div>
@@ -316,30 +313,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
               <h4 id={`${formId}-payment-title`} className="text-[14px] font-semibold text-[var(--color-foreground)]">Приём оплаты</h4>
               <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Реквизиты зашифрованы и проверяются сервером при сохранении.</p>
             </div>
-
-          {/* Installments Toggle */}
-          {provider === 'yookassa' && <div className="flex items-center justify-between rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-            <div className="pr-3">
-              <span id={`${formId}-installments-label`} className="text-[14px] font-medium text-[var(--color-foreground)] block">Предлагать рассрочку от банка</span>
-              <span className="text-[12px] text-[var(--color-foreground-secondary)] leading-tight block mt-0.5">ЮKassa «Плати частями»: от 1 000 до 50 000 ₽ при подключённой услуге.</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setOfferInstallments(!offerInstallments)}
-              role="switch"
-              aria-checked={offerInstallments}
-              aria-labelledby={`${formId}-installments-label`}
-              className={`w-12 h-7 rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 relative ${
-                offerInstallments ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'
-              }`}
-            >
-              <div
-                className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
-                  offerInstallments ? 'translate-x-5' : 'translate-x-0'
-                }`}
-              />
-            </button>
-          </div>}
 
           {/* Payment provider */}
           <div>
@@ -473,7 +446,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             </AnimatePresence>
           </div>
           </section>
-        </fieldset>
+          </fieldset>
+          </div>
 
         <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-surface)] px-5 pt-4 pb-[max(20px,calc(env(safe-area-inset-bottom,0px)+12px))]">
           {!isFunnelReady && (

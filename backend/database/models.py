@@ -213,7 +213,7 @@ class ChatAccessGrant(Base):
     bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
     lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
     client_payment_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("client_payments.id", ondelete="CASCADE"), unique=True, index=True
+        ForeignKey("client_payments.id", ondelete="CASCADE"), index=True
     )
     chat_id: Mapped[str] = mapped_column(String(128), index=True)
     invite_link: Mapped[str] = mapped_column(Text, unique=True)

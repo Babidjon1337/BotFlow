@@ -9,8 +9,14 @@ import {
   MailPlus,
   RefreshCw,
   ShieldCheck,
+  UserPlus,
+  ChevronDown,
+  Check,
+  Megaphone,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { DeliveryType } from '../types';
 
 interface ConnectedChat {
@@ -30,13 +36,13 @@ interface ChatVerifyState {
 
 interface DeliverySelectorProps {
   value: DeliveryType;
-  onChange: (type: DeliveryType) => void;
+  onChange: (type: DeliveryType, clearValue?: boolean) => void;
   deliveryValue: string;
   onDeliveryValueChange: (value: string) => void;
-  chatAccessMode?: 'member' | 'read_only';
-  onChatAccessModeChange: (value: 'member' | 'read_only') => void;
-  chatType?: 'channel' | 'group' | 'supergroup';
-  onChatTypeChange: (value: 'channel' | 'group' | 'supergroup' | undefined) => void;
+  chatAccessMode?: string;
+  onChatAccessModeChange: (mode: string) => void;
+  onChatTypeChange?: (chatType: 'channel' | 'group' | 'supergroup' | undefined) => void;
+  onBatchUpdate?: (deliveryValue: string, chatType: 'channel' | 'group' | 'supergroup' | undefined) => void;
   botId?: string;
 }
 
@@ -67,8 +73,8 @@ export const DeliverySelector = ({
   onDeliveryValueChange,
   chatAccessMode = 'member',
   onChatAccessModeChange,
-  chatType,
   onChatTypeChange,
+  onBatchUpdate,
   botId,
 }: DeliverySelectorProps) => {
   const [connectedChats, setConnectedChats] = useState<ConnectedChat[]>([]);
@@ -76,6 +82,7 @@ export const DeliverySelector = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   // Per-chat verification state
   const [verifyStates, setVerifyStates] = useState<Record<string, ChatVerifyState>>({});
+  const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
 
   // Parse selected chat IDs from deliveryValue
   const selectedIds = useMemo(() => parseSelectedIds(deliveryValue), [deliveryValue]);
@@ -84,7 +91,7 @@ export const DeliverySelector = ({
   useEffect(() => {
     if (value === 'invite' && (deliveryValue || '').trim() === LEGACY_TEST_ACCESS_URL) {
       onDeliveryValueChange('');
-      onChatTypeChange(undefined);
+      onChatTypeChange?.(undefined);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -95,7 +102,7 @@ export const DeliverySelector = ({
     try {
       const { apiService } = await import('../services/api');
       const result = await apiService.getConnectedChats(botId);
-      setConnectedChats(result.chats);
+      setConnectedChats(result.chats as ConnectedChat[]);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : 'Не удалось загрузить подключённые чаты.');
     } finally {
@@ -127,11 +134,17 @@ export const DeliverySelector = ({
     }
     // Batch both updates together via the combined delivery change
     const newDelivery = newIds.length > 0 ? JSON.stringify(newIds) : '';
-    onDeliveryValueChange(newDelivery);
     const firstVerifiedType = Object.entries(verifyStates).find(
       ([cid, s]) => newIds.includes(cid) && s.status === 'ok'
     )?.[1].resolvedType;
-    onChatTypeChange(firstVerifiedType ?? (newIds.length > 0 ? chat.chatType : undefined));
+    const nextChatType = firstVerifiedType ?? (newIds.length > 0 ? chat.chatType : undefined);
+    
+    if (onBatchUpdate) {
+      onBatchUpdate(newDelivery, nextChatType as any);
+    } else {
+      onDeliveryValueChange(newDelivery);
+      onChatTypeChange?.(nextChatType as any);
+    }
   };
 
   // Verify a single chat
@@ -148,7 +161,7 @@ export const DeliverySelector = ({
       }));
       // Set chatType from first verified selected chat
       const firstVerifiedType = resolvedType;
-      onChatTypeChange(firstVerifiedType);
+      onChatTypeChange?.(firstVerifiedType);
     } catch (error) {
       setVerifyStates(prev => ({
         ...prev,
@@ -160,10 +173,7 @@ export const DeliverySelector = ({
     }
   };
 
-  // Check if any selected chat is a supergroup (verified)
-  const hasSupergroupSelected = selectedIds.some(
-    id => verifyStates[id]?.resolvedType === 'supergroup'
-  );
+
 
   return (
     // stopPropagation so parent onClick wrappers (e.g. setSelectedBlockId) don't swallow our button clicks
@@ -177,7 +187,13 @@ export const DeliverySelector = ({
               key={option.id}
               type="button"
               aria-pressed={selected}
-              onClick={() => { onChange(option.id); }}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (value !== option.id) {
+                  onChange(option.id as DeliveryType, true);
+                }
+              }}
               className={`flex min-h-10 items-center justify-center gap-1 rounded-lg px-2 text-[11px] transition-colors sm:text-[12px] ${
                 selected
                   ? 'bg-[var(--color-surface)] font-semibold text-[var(--color-foreground)] shadow-sm ring-1 ring-[var(--color-primary)]'
@@ -227,152 +243,215 @@ export const DeliverySelector = ({
 
           {/* Chat list */}
           {isLoadingChats ? (
-            <p className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] p-3 text-[12px] text-[var(--color-foreground-secondary)]">
-              Загружаем подключённые чаты…
-            </p>
+            <div className="flex flex-col items-center justify-center p-6 rounded-xl border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)]">
+              <Loader2 size={24} className="animate-spin text-[var(--color-primary)] mb-2" />
+              <p className="text-[13px] text-[var(--color-foreground-secondary)]">Загружаем подключённые чаты…</p>
+            </div>
           ) : loadError ? (
-            <p className="flex items-center gap-1.5 rounded-lg border border-[var(--color-danger)] bg-[var(--color-danger-soft)] p-3 text-[12px] text-[var(--color-danger)]">
-              <LockKeyhole size={14} />
-              {loadError}
-            </p>
-          ) : connectedChats.length > 0 ? (
-            <div className="space-y-2">
-              {connectedChats.map(chat => {
-                const isChecked = selectedIds.includes(chat.chatId);
-                const vs = verifyStates[chat.chatId];
-                return (
-                  <div
-                    key={chat.id}
-                    className={`rounded-lg border transition-colors ${
-                      isChecked
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)]'
-                        : 'border-[var(--color-border)] bg-[var(--color-surface)]'
-                    }`}
-                  >
-                    {/* Chat row */}
-                    <div className="flex items-center gap-2 px-3 py-2">
-                      {/* Checkbox */}
-                      <button
-                        type="button"
-                        role="checkbox"
-                        aria-checked={isChecked}
-                        onClick={(e) => toggleChat(chat, e)}
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                          isChecked
-                            ? 'border-[var(--color-primary)] bg-[var(--color-primary)]'
-                            : 'border-[var(--color-border-strong)] bg-[var(--color-surface)]'
-                        }`}
-                      >
-                        {isChecked && (
-                          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                            <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </button>
-
-                      {/* Title + type */}
-                      <button
-                        type="button"
-                        onClick={(e) => toggleChat(chat, e)}
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <span className="block truncate text-[12px] font-semibold text-[var(--color-foreground)]">
-                          {chat.title}
-                        </span>
-                        <span className="text-[11px] text-[var(--color-foreground-secondary)]">
-                          {chat.chatType === 'channel' ? 'Канал' : chat.chatType === 'supergroup' ? 'Супергруппа' : 'Группа'}
-                        </span>
-                      </button>
-
-                      {/* Verify button / status */}
-                      {isChecked && (
-                        <>
-                          {!vs || vs.status === 'idle' ? (
-                            <button
-                              type="button"
-                              onClick={() => verifyChat(chat)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[var(--color-surface-2)] px-2 py-1 text-[11px] font-semibold text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] border border-[var(--color-border)]"
-                            >
-                              <ShieldCheck size={12} />
-                              Проверить
-                            </button>
-                          ) : vs.status === 'loading' ? (
-                            <Loader2 size={15} className="shrink-0 animate-spin text-[var(--color-primary)]" />
-                          ) : vs.status === 'ok' ? (
-                            <CheckCircle2 size={15} className="shrink-0 text-[var(--color-success)]" />
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => verifyChat(chat)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[var(--color-danger-soft)] px-2 py-1 text-[11px] font-semibold text-[var(--color-danger)] border border-[var(--color-danger)]"
-                            >
-                              <ShieldCheck size={12} />
-                              Повторить
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    {/* Inline status message */}
-                    {isChecked && vs && vs.status === 'ok' && (
-                      <p className="flex items-center gap-1.5 border-t border-[var(--color-border)] px-3 py-1.5 text-[11px] text-[var(--color-success)]">
-                        <CheckCircle2 size={12} />
-                        {vs.message}
-                      </p>
-                    )}
-                    {isChecked && vs && vs.status === 'error' && (
-                      <p className="flex items-center gap-1.5 border-t border-[var(--color-danger)] px-3 py-1.5 text-[11px] text-[var(--color-danger)]">
-                        <LockKeyhole size={12} />
-                        {vs.message}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="flex items-center gap-2.5 rounded-xl border border-[var(--color-danger)] bg-[var(--color-danger-soft)] p-4 text-[13px] text-[var(--color-danger)] shadow-sm">
+              <LockKeyhole size={18} className="shrink-0" />
+              <p>{loadError}</p>
             </div>
           ) : (
-            <p className="rounded-lg border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface)] p-3 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">
-              Добавьте бота администратором нужного канала или группы и дайте ему право приглашать
-              пользователей. Затем отправьте <code>/connect</code> в этот чат и нажмите «Обновить».
-            </p>
-          )}
+            <div className="space-y-3">
+              {connectedChats.length > 0 && (
+                <div className="space-y-2">
+                  {connectedChats.map(chat => {
+                    const isChecked = selectedIds.includes(chat.chatId);
+                    const vs = verifyStates[chat.chatId];
+                    return (
+                      <div
+                        key={chat.id}
+                        className={`rounded-xl border transition-all duration-200 ${
+                          isChecked
+                            ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-1 ring-[var(--color-primary)]/20'
+                            : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)]'
+                        }`}
+                      >
+                        {/* Chat row */}
+                        <div className="flex items-center gap-3 px-3.5 py-3">
+                          {/* Checkbox */}
+                          <button
+                            type="button"
+                            role="checkbox"
+                            aria-checked={isChecked}
+                            onClick={(e) => toggleChat(chat, e)}
+                            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-all duration-200 ${
+                              isChecked
+                                ? 'border-[var(--color-primary)] bg-[var(--color-primary)] shadow-[0_0_8px_rgba(var(--color-primary-rgb),0.3)]'
+                                : 'border-[var(--color-border-strong)] bg-[var(--color-surface)]'
+                            }`}
+                          >
+                            {isChecked && <Check size={14} className="text-white" />}
+                          </button>
+                          
+                          {/* Info */}
+                          <div
+                            className="flex min-w-0 flex-1 flex-col cursor-pointer justify-center"
+                            onClick={(e) => toggleChat(chat, e)}
+                          >
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              {chat.chatType === 'channel' ? (
+                                <Megaphone size={14} className="text-[var(--color-foreground-tertiary)]" />
+                              ) : (
+                                <Users size={14} className="text-[var(--color-foreground-tertiary)]" />
+                              )}
+                              <span className="truncate text-[13.5px] font-semibold text-[var(--color-foreground)] leading-tight">
+                                {chat.title}
+                              </span>
+                            </div>
+                            <span className="text-[11.5px] text-[var(--color-foreground-secondary)] leading-tight">
+                              {chat.chatType === 'channel' ? 'Канал' : 'Группа'}
+                            </span>
+                          </div>
 
-          {/* Supergroup access mode — show when any verified selected chat is supergroup */}
-          {hasSupergroupSelected && (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <label
-                className={`cursor-pointer rounded-lg border p-2.5 ${
-                  chatAccessMode === 'member'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)]'
-                    : 'border-[var(--color-border)] bg-[var(--color-surface)]'
-                }`}
-              >
-                <input
-                  className="sr-only"
-                  type="radio"
-                  checked={chatAccessMode === 'member'}
-                  onChange={() => onChatAccessModeChange('member')}
-                />
-                <span className="block text-[12px] font-semibold text-[var(--color-foreground)]">Участник</span>
-                <span className="mt-0.5 block text-[11px] text-[var(--color-foreground-secondary)]">Обычный доступ в группу</span>
-              </label>
-              <label
-                className={`cursor-pointer rounded-lg border p-2.5 ${
-                  chatAccessMode === 'read_only'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)]'
-                    : 'border-[var(--color-border)] bg-[var(--color-surface)]'
-                }`}
-              >
-                <input
-                  className="sr-only"
-                  type="radio"
-                  checked={chatAccessMode === 'read_only'}
-                  onChange={() => onChatAccessModeChange('read_only')}
-                />
-                <span className="block text-[12px] font-semibold text-[var(--color-foreground)]">Только чтение</span>
-                <span className="mt-0.5 block text-[11px] text-[var(--color-foreground-secondary)]">Бот ограничит сообщения после вступления</span>
-              </label>
+                          {/* Access Mode Toggle */}
+                          {isChecked && chat.chatType !== 'channel' && (() => {
+                            let currentMode = 'member';
+                            try {
+                              const modes = JSON.parse(chatAccessMode || '{}');
+                              currentMode = modes[chat.chatId] || 'member';
+                            } catch(err) { /* ignore */ }
+                            
+                            return (
+                              <div className="flex items-center rounded-full bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)] mr-2" onClick={e => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    try {
+                                      const modes = JSON.parse(chatAccessMode || '{}');
+                                      modes[chat.chatId] = 'member';
+                                      onChatAccessModeChange(JSON.stringify(modes));
+                                    } catch(err) {
+                                      onChatAccessModeChange(JSON.stringify({ [chat.chatId]: 'member' }));
+                                    }
+                                  }}
+                                  className={`px-3 py-1 text-[11.5px] font-semibold rounded-full transition-all duration-200 ${currentMode === 'member' ? 'bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm ring-1 ring-[var(--color-border-strong)]' : 'text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface)]'}`}
+                                >
+                                  Участник
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    try {
+                                      const modes = JSON.parse(chatAccessMode || '{}');
+                                      modes[chat.chatId] = 'read_only';
+                                      onChatAccessModeChange(JSON.stringify(modes));
+                                    } catch(err) {
+                                      onChatAccessModeChange(JSON.stringify({ [chat.chatId]: 'read_only' }));
+                                    }
+                                  }}
+                                  className={`px-3 py-1 text-[11.5px] font-semibold rounded-full transition-all duration-200 ${currentMode === 'read_only' ? 'bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm ring-1 ring-[var(--color-border-strong)]' : 'text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface)]'}`}
+                                >
+                                  Только чтение
+                                </button>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Verify button / status */}
+                          {isChecked && (
+                            <>
+                              {!vs || vs.status === 'idle' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => verifyChat(chat)}
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-surface-2)] px-2.5 py-1.5 text-[11.5px] font-semibold text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface-3)] border border-[var(--color-border)] transition-colors"
+                                >
+                                  <ShieldCheck size={14} />
+                                  Проверить
+                                </button>
+                              ) : vs.status === 'loading' ? (
+                                <Loader2 size={16} className="shrink-0 animate-spin text-[var(--color-primary)]" />
+                              ) : vs.status === 'ok' ? (
+                                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--color-success-soft)] text-[var(--color-success)]">
+                                  <CheckCircle2 size={16} />
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => verifyChat(chat)}
+                                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-[var(--color-danger-soft)] px-2.5 py-1.5 text-[11.5px] font-semibold text-[var(--color-danger)] border border-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white"
+                                >
+                                  <ShieldCheck size={14} />
+                                  Повторить
+                                </button>
+                              )}
+                            </>
+                          )}
+                          
+                        </div>
+
+                        {/* Inline status message */}
+                        {isChecked && vs && vs.status === 'ok' && (
+                          <div className="flex items-center gap-2 border-t border-[var(--color-border)] px-4 py-2.5 text-[12px] bg-[var(--color-success-soft)]/30 text-[var(--color-success)] rounded-b-xl">
+                            <CheckCircle2 size={14} className="shrink-0" />
+                            <span className="font-medium">{vs.message}</span>
+                          </div>
+                        )}
+                        {isChecked && vs && vs.status === 'error' && (
+                          <div className="flex items-start gap-2 border-t border-[var(--color-danger)] px-4 py-2.5 text-[12px] bg-[var(--color-danger-soft)]/50 text-[var(--color-danger)] rounded-b-xl">
+                            <LockKeyhole size={14} className="shrink-0 mt-0.5" />
+                            <span className="font-medium leading-tight">{vs.message}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* HOW TO CONNECT INSTRUCTIONS */}
+              <div className="mt-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setIsInstructionsOpen(!isInstructionsOpen)}
+                  className="w-full bg-[var(--color-surface-2)] px-4 py-3 border-b border-[var(--color-border)] flex items-center justify-between hover:bg-[var(--color-border-soft)] transition-colors"
+                >
+                  <h4 className="text-[13px] font-bold text-[var(--color-foreground)] flex items-center gap-2">
+                    <UserPlus size={16} className="text-[var(--color-primary)]" />
+                    Как подключить новый чат?
+                  </h4>
+                  <ChevronDown
+                    size={16}
+                    className="text-[var(--color-foreground-tertiary)] transition-transform duration-200"
+                    style={{ transform: isInstructionsOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  />
+                </button>
+                <AnimatePresence initial={false}>
+                  {isInstructionsOpen && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-4 space-y-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[12px] font-bold text-[var(--color-primary)]">1</div>
+                          <div>
+                            <p className="text-[13px] font-semibold text-[var(--color-foreground)] mb-0.5">Добавьте бота администратором</p>
+                            <p className="text-[12px] text-[var(--color-foreground-secondary)] leading-relaxed">
+                              Добавьте вашего бота в нужный канал или группу. В списке прав обязательно включите <strong>Пригласительные ссылки</strong> (Invite Users) и, если нужен режим чтения, <strong>Блокировку пользователей</strong> (Ban/Restrict).<br/>
+                              <span className="text-[var(--color-success)] mt-1 inline-block">Бот автоматически пришлёт вам уведомление об успехе.</span>
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary-soft)] text-[12px] font-bold text-[var(--color-primary)]">2</div>
+                          <div>
+                            <p className="text-[13px] font-semibold text-[var(--color-foreground)] mb-0.5">Обновите список</p>
+                            <p className="text-[12px] text-[var(--color-foreground-secondary)] leading-relaxed">
+                              Нажмите кнопку <button type="button" onClick={loadConnectedChats} className="text-[var(--color-primary)] hover:underline font-semibold">Обновить</button> в правом верхнем углу этого блока, и ваш чат появится в списке.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           )}
 

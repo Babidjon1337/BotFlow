@@ -103,6 +103,8 @@ class BotApiResponse(BaseModel):
     funnel_complete: bool = Field(default=False, alias="funnelComplete")
     media_sync_done: bool = Field(default=False, alias="mediaSyncDone")
     is_token_locked: bool = Field(default=False, alias="isTokenLocked")
+    sales: int = Field(default=0)
+    revenue: float = Field(default=0.0)
     payment_provider: Optional[str] = Field(None, alias="paymentProvider")
     has_payment_credentials: bool = Field(default=False, alias="hasPaymentCredentials")
     token_preview: Optional[str] = Field(None, alias="tokenPreview")

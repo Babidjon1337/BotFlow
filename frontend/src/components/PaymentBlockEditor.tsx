@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Plus, Trash2 } from 'lucide-react';
 import { DeliverySelector } from './DeliverySelector';
+import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
 import { TariffDescriptionEditor } from './TariffDescriptionEditor';
 import type { FunnelNode, Tariff } from '../types';
@@ -30,6 +31,7 @@ const Toggle = ({ checked, onToggle }: { checked: boolean; onToggle: () => void 
 );
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, botId, onChange }) => {
+  const { showConfirm } = useAlert();
   const tariffs: Tariff[] = node?.tariffs || [];
   // Track which tariffs are collapsed (by tariff id)
   const [collapsedTariffs, setCollapsedTariffs] = useState<Set<string>>(new Set());
@@ -59,6 +61,10 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
 
   const updateTariff = <K extends keyof Tariff>(id: string, field: K, value: Tariff[K]) => {
     updateTariffs(tariffs.map((t) => (t.id === id ? { ...t, [field]: value } : t)));
+  };
+
+  const updateTariffFields = (id: string, updates: Partial<Tariff>) => {
+    updateTariffs(tariffs.map((t) => (t.id === id ? { ...t, ...updates } : t)));
   };
 
   const toggleCollapse = (id: string) => {
@@ -140,7 +146,16 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
                     {tariffs.length > 1 && (
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); removeTariff(tariff.id); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          showConfirm({
+                            title: 'Удалить тариф?',
+                            message: `Вы уверены, что хотите удалить тариф "${tariff.name || 'Без названия'}"? Это действие нельзя отменить.`,
+                            confirmText: 'Удалить',
+                            cancelText: 'Отмена',
+                            onConfirm: () => removeTariff(tariff.id)
+                          });
+                        }}
                         className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[var(--color-danger)] bg-[var(--color-danger-soft)] rounded-lg hover:opacity-80 transition-opacity"
                         title="Удалить тариф"
                       >
@@ -216,20 +231,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
                           />
                         </div>
 
-                        {/* ── Installment toggle ── */}
-                        <div className="flex items-center justify-between gap-3 rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)] px-3.5 py-3">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-[13px] font-semibold text-[var(--color-foreground)]">Рассрочка</span>
-                            <InfoTooltip
-                              title="Рассрочка / частичная оплата"
-                              text="Позволяет клиенту оплатить тариф в рассрочку через ЮKassa (при поддержке банком). Включите, если хотите предложить клиенту выбор способа оплаты."
-                            />
-                          </div>
-                          <Toggle
-                            checked={!!(tariff as any).installments}
-                            onToggle={() => updateTariff(tariff.id, 'installments' as keyof Tariff, !((tariff as any).installments) as any)}
-                          />
-                        </div>
+
 
                         {/* ── Delivery block ── */}
                         <div className="rounded-xl bg-[var(--color-surface-2)] border border-[var(--color-border)] overflow-hidden">
@@ -262,13 +264,20 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
                                 <div className="p-3.5">
                                   <DeliverySelector
                                     value={tariff.actionType === 'group' ? 'invite' : tariff.actionType === 'text' ? 'link' : tariff.actionType}
-                                    onChange={(type) => updateTariff(tariff.id, 'actionType', type === 'invite' ? 'group' : type)}
+                                    onChange={(type, clearValue) => {
+                                      const newType = type === 'invite' ? 'group' : type;
+                                      if (clearValue) {
+                                        updateTariffFields(tariff.id, { actionType: newType, actionData: '' });
+                                      } else {
+                                        updateTariff(tariff.id, 'actionType', newType);
+                                      }
+                                    }}
                                     deliveryValue={tariff.actionData}
                                     onDeliveryValueChange={(val) => updateTariff(tariff.id, 'actionData', val)}
                                     chatAccessMode={tariff.chatAccessMode}
                                     onChatAccessModeChange={(value) => updateTariff(tariff.id, 'chatAccessMode', value)}
-                                    chatType={tariff.chatType}
-                                    onChatTypeChange={(value) => updateTariff(tariff.id, 'chatType', value)}
+
+                                    onBatchUpdate={(actionData, chatType) => updateTariffFields(tariff.id, { actionData, chatType })}
                                     botId={botId}
                                   />
                                 </div>

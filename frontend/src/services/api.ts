@@ -195,7 +195,7 @@ export const apiService = {
   async verifyChatDelivery(
     botId: string | number,
     chatId: string,
-    accessMode: "member" | "read_only"
+    accessMode: string
   ) {
     return fetchApi<{ status: string; chatTitle: string; chatType: string }>(
       `/api/bots/${botId}/chat-delivery/verify`,
@@ -204,8 +204,15 @@ export const apiService = {
   },
 
   async getConnectedChats(botId: string | number) {
-    return fetchApi<{ chats: Array<{ id: string; chatId: string; title: string; chatType: "channel" | "group" | "supergroup" }> }>(
+    return fetchApi<{ chats: Array<{ id: string; chatId: string; title: string; chatType: string }> }>(
       `/api/bots/${botId}/connected-chats`
+    );
+  },
+
+  async deleteConnectedChat(botId: string | number, chatId: string) {
+    return fetchApi<{ status: string }>(
+      `/api/bots/${botId}/connected-chats/${chatId}`,
+      { method: "DELETE" }
     );
   },
 

@@ -1400,11 +1400,10 @@ export const Build = () => {
                       <ShieldAlert size={24} />
                     </div>
                     <div className="text-[15px] font-bold text-[var(--color-foreground)] mb-1">
-                      Воронка не настроена
+                      Завершите настройку
                     </div>
                     <p className="text-[12px] text-[var(--color-foreground-secondary)] leading-relaxed max-w-[230px] mb-4">
-                      Завершите заполнение всех шагов, кнопок и тарифов слева,
-                      чтобы протестировать работу бота.
+                      Осталось заполнить несколько полей слева (цены, тексты и т.д.), чтобы воронка заработала.
                     </p>
                     <div className="flex flex-col gap-2 text-left w-full max-w-[210px] bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)] text-[11px]">
                       <div className="flex items-center gap-2">

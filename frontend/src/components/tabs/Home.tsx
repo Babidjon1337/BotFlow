@@ -2,9 +2,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
-  BarChart as RechartsBarChart,
   LineChart as RechartsLineChart,
-  Bar,
   Line,
   XAxis,
   YAxis,
@@ -975,7 +973,17 @@ export const Home = () => {
             <div className="h-56 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <RechartsLineChart data={chartData} margin={{ top: 4, right: 8, left: -24, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
+                  <defs>
+                    <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--color-success)" stopOpacity={0.8}/>
+                      <stop offset="100%" stopColor="var(--color-success)" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="usersGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--color-primary)" stopOpacity={0.8}/>
+                      <stop offset="100%" stopColor="var(--color-primary)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="var(--color-border)" />
                   <XAxis
                     dataKey="date"
                     axisLine={false}
@@ -1000,22 +1008,22 @@ export const Home = () => {
                   />
                   <Legend
                     wrapperStyle={{ fontSize: '12px', paddingTop: '8px' }}
-                    formatter={(value) => value === 'sales' ? 'Продажи' : 'Пользователи'}
+                    formatter={(value) => value === 'sales' ? 'Оплата' : 'Пользователи'}
                   />
                   <Line
                     type="monotone"
                     dataKey="sales"
-                    stroke="var(--color-primary)"
+                    stroke="var(--color-success)"
                     strokeWidth={2}
-                    dot={{ r: 3, fill: 'var(--color-primary)' }}
+                    dot={{ r: 3, fill: 'var(--color-success)' }}
                     activeDot={{ r: 5 }}
                   />
                   <Line
                     type="monotone"
                     dataKey="users"
-                    stroke="var(--color-success)"
+                    stroke="var(--color-primary)"
                     strokeWidth={2}
-                    dot={{ r: 3, fill: 'var(--color-success)' }}
+                    dot={{ r: 3, fill: 'var(--color-primary)' }}
                     activeDot={{ r: 5 }}
                   />
                 </RechartsLineChart>
@@ -1041,46 +1049,51 @@ export const Home = () => {
             <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
           </div>
           {stats.funnel_data && stats.funnel_data.length > 0 && stats.funnel_data.some((d: any) => d.value > 0) ? (
-            <div className="mt-4 h-64 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <RechartsBarChart
-                  data={stats.funnel_data}
-                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" />
-                  <XAxis 
-                    dataKey="name" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: 'var(--color-foreground-secondary)', fontSize: 12 }} 
-                    dy={10}
-                  />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fill: 'var(--color-foreground-secondary)', fontSize: 12 }} 
-                  />
-                  <Tooltip 
-                    cursor={{ fill: 'var(--color-surface-2)' }}
-                    contentStyle={{ 
-                      backgroundColor: 'var(--color-surface)', 
-                      borderRadius: '12px',
-                      border: '1px solid var(--color-border)',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                      color: 'var(--color-foreground)',
-                      fontWeight: 600,
-                      fontSize: '13px'
-                    }}
-                    itemStyle={{ color: 'var(--color-primary)' }}
-                  />
-                  <Bar 
-                    dataKey="value" 
-                    fill="var(--color-primary)" 
-                    radius={[6, 6, 0, 0]} 
-                    maxBarSize={60}
-                  />
-                </RechartsBarChart>
-              </ResponsiveContainer>
+            <div className="mt-5 flex flex-col gap-2.5">
+              {stats.funnel_data.map((step: any, idx: number) => {
+                const maxFunnelValue = Math.max(...stats.funnel_data.map((d: any) => d.value), 1);
+                const percentage = Math.max((step.value / maxFunnelValue) * 100, 2); // min 2% for visibility
+                const prevValue = idx > 0 ? stats.funnel_data[idx - 1].value : null;
+                const conversionFromPrev = prevValue ? Math.round((step.value / prevValue) * 100) : (idx === 0 ? 100 : 0);
+                
+                return (
+                  <div key={step.name} className="group relative flex flex-col gap-3 rounded-[14px] bg-[var(--color-surface)] p-4 border border-[var(--color-border)] shadow-sm hover:border-[var(--color-border-strong)] transition-all">
+                    <div className="relative z-10 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-surface-2)] shadow-xs text-[12px] font-bold text-[var(--color-foreground-tertiary)] group-hover:text-[var(--color-primary)] transition-colors">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <span className="block text-[14px] font-semibold text-[var(--color-foreground)]">{step.name}</span>
+                          {idx > 0 && (
+                            <span className="block text-[11px] font-medium text-[var(--color-foreground-secondary)] mt-0.5">
+                              Конверсия: <span className={conversionFromPrev > 50 ? 'text-[var(--color-success)] font-medium' : 'text-[var(--color-foreground)] font-medium'}>{conversionFromPrev}%</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-col items-end text-right">
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[20px] font-bold tracking-tight text-[var(--color-foreground)] tabular-nums">
+                            {step.value}
+                          </span>
+                          <span className="text-[12px] font-medium text-[var(--color-foreground-secondary)]">
+                            {step.value === 1 ? 'чел' : 'чел'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+                      <div 
+                        className="absolute bottom-0 left-0 top-0 rounded-full bg-[var(--color-primary)] transition-all duration-1000 ease-out"
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">

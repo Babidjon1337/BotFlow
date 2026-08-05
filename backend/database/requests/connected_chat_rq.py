@@ -27,3 +27,15 @@ async def list_connected_chats(bot_id: int) -> list[ConnectedChat]:
             select(ConnectedChat).where(ConnectedChat.bot_id == bot_id).order_by(ConnectedChat.connected_at.desc())
         )
         return list(result)
+
+
+async def delete_connected_chat(bot_id: int, chat_id: str) -> bool:
+    async with async_session() as session:
+        chat = await session.scalar(
+            select(ConnectedChat).where(ConnectedChat.bot_id == bot_id, ConnectedChat.chat_id == chat_id)
+        )
+        if chat:
+            await session.delete(chat)
+            await session.commit()
+            return True
+        return False

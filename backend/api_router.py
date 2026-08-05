@@ -24,7 +24,7 @@ from database.requests.bot_rq import (
 from database.requests.user_rq import get_lead, get_leads_by_bot_id, delete_leads_by_bot_id
 from database.requests.client_payment_rq import get_client_payment_stats, get_chart_data
 from database.requests.billing_rq import cancel_subscription_auto_renew
-from database.requests.connected_chat_rq import list_connected_chats
+from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
 from schemas.api_schemas import (
     BotCreateApiRequest,
     BotUpdateApiRequest,
@@ -48,7 +48,13 @@ api_router = APIRouter()
 
 # Telegram does not send chat_member updates by default. They are required to
 # recognise that the buyer joined through their one-use paid invite.
-CLIENT_BOT_ALLOWED_UPDATES = ["message", "callback_query", "channel_post", "chat_member"]
+CLIENT_BOT_ALLOWED_UPDATES = [
+    "message",
+    "callback_query",
+    "channel_post",
+    "chat_member",
+    "my_chat_member",
+]
 
 
 def _validate_installments(provider: str | None, enabled: bool) -> None:
@@ -527,6 +533,10 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
         from aiogram import Bot
 
         temp_bot = Bot(token=token, session=request.app.state.session)
+        
+        # We always keep the webhook active so we can track my_chat_member
+        # (when user adds bot to channel/group) even if bot is draft.
+        # User bot handlers will naturally ignore regular messages if status == draft.
         if new_status == "active":
             await temp_bot.set_webhook(
                 url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
@@ -534,8 +544,7 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
                 drop_pending_updates=True,
                 allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
             )
-        else:
-            await temp_bot.delete_webhook()
+        # Note: we intentionally do NOT call delete_webhook() here when new_status is draft.
     except Exception as exc:
         logger.warning("Ошибка переключения webhook для бота %s: %s", bot_id, exc)
         operation = "запуск" if new_status == "active" else "остановку"
@@ -605,14 +614,48 @@ async def verify_chat_delivery_endpoint(
 
 @api_router.get("/api/bots/{bot_id}/connected-chats")
 async def get_connected_chats_endpoint(bot_id: int, request: Request):
-    await get_owned_bot(bot_id, request)
+    bot_config = await get_owned_bot(bot_id, request)
     chats = await list_connected_chats(bot_id)
+
+    # Live verification
+    from aiogram import Bot
+    from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
+    from services.security import crypto
+    
+    token = crypto.decrypt(bot_config.bot_token_enc)
+    telegram_bot = Bot(token=token, session=request.app.state.session)
+    
+    verified_chats = []
+    for chat in chats:
+        try:
+            member = await telegram_bot.get_chat_member(chat.chat_id, telegram_bot.id)
+            if member.status in ("left", "kicked"):
+                await delete_connected_chat(bot_id, chat.chat_id)
+            else:
+                verified_chats.append(chat)
+        except (TelegramForbiddenError, TelegramBadRequest) as e:
+            # Bot was kicked, or chat no longer exists/is inaccessible
+            logger.warning("Auto-removing connected chat %s for bot %s due to Telegram error: %s", chat.chat_id, bot_id, e)
+            await delete_connected_chat(bot_id, chat.chat_id)
+        except Exception:
+            # For network timeouts or other errors, assume it's still connected
+            verified_chats.append(chat)
+
     return {
         "chats": [
             {"id": str(chat.id), "chatId": chat.chat_id, "title": chat.title, "chatType": chat.chat_type}
-            for chat in chats
+            for chat in verified_chats
         ]
     }
+
+
+@api_router.delete("/api/bots/{bot_id}/connected-chats/{chat_id}")
+async def delete_connected_chat_endpoint(bot_id: int, chat_id: str, request: Request):
+    await get_owned_bot(bot_id, request)
+    success = await delete_connected_chat(bot_id, chat_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Чат не найден")
+    return {"status": "ok"}
 
 
 @api_router.put("/api/bots/{bot_id}/funnel")

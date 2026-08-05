@@ -23,42 +23,61 @@ from services.manager_link import build_manager_deep_link
 from database.requests.client_payment_rq import create_client_payment
 from database.requests.client_payment_rq import get_client_payment, list_invoice_batch
 from database.requests.chat_access_rq import activate_chat_access_grant
-from database.requests.connected_chat_rq import upsert_connected_chat
+from database.requests.connected_chat_rq import (
+    upsert_connected_chat,
+    delete_connected_chat,
+)
 from services.chat_access import apply_joined_member_access
 
 user_bot_router = Router()
 user_bot_router.message.filter(F.bot.id != MAIN_BOT_TG_ID)
 
 
-@user_bot_router.message(Command("connect"))
-async def connect_group_to_mini_app(message: Message):
-    """Connect an owner-selected group without asking them to manually find its ID."""
-    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
-        return
-    bot_config = await get_bot_by_tg_id(message.bot.id)
-    if not bot_config or message.from_user.id != bot_config.owner.telegram_id:
-        return
-    await upsert_connected_chat(
-        bot_id=bot_config.id,
-        chat_id=str(message.chat.id),
-        title=message.chat.title or "Без названия",
-        chat_type=message.chat.type,
-    )
-    await message.answer("✅ Чат подключён. Вернитесь в Mini App и обновите список.")
+@user_bot_router.my_chat_member()
+async def on_my_chat_member_update(event: ChatMemberUpdated):
+    """Track when the bot is added or removed from a group/channel."""
+    # Check if the bot was kicked or left
+    if event.new_chat_member.status in ("kicked", "left"):
+        bot_config = await get_bot_by_tg_id(event.bot.id)
+        if bot_config:
+            await delete_connected_chat(bot_config.id, str(event.chat.id))
+    elif event.new_chat_member.status in ("member", "administrator", "creator"):
+        bot_config = await get_bot_by_tg_id(event.bot.id)
+        if bot_config:
+            if event.from_user.id != bot_config.owner.telegram_id:
+                logger.warning(
+                    f"Чужой пользователь {event.from_user.id} попытался добавить бота {bot_config.id} в чат {event.chat.id}. Бот покидает чат."
+                )
+                try:
+                    await event.bot.leave_chat(event.chat.id)
+                except Exception:
+                    pass
+                return
+
+            await upsert_connected_chat(
+                bot_id=bot_config.id,
+                chat_id=str(event.chat.id),
+                title=event.chat.title or "Без названия",
+                chat_type=event.chat.type,
+            )
+            
+            if event.old_chat_member.status not in ("member", "administrator", "creator"):
+                try:
+                    chat_type_ru = "Канал" if event.chat.type == "channel" else "Группа"
+                    from aiogram import Bot
+                    from aiogram.client.default import DefaultBotProperties
+                    from config import MAIN_BOT_TOKEN
+                    
+                    main_bot = Bot(token=MAIN_BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+                    await main_bot.send_message(
+                        bot_config.owner.telegram_id,
+                        f"✅ {chat_type_ru} <b>{event.chat.title or 'Без названия'}</b> успешно подключён(а) к вашему боту!\n\nСинхронизация завершена. Вернитесь в Mini App, чтобы настроить выдачу доступа."
+                    )
+                    await main_bot.session.close()
+                except Exception as e:
+                    logger.warning("Не удалось отправить уведомление о подключении чата: %s", e)
 
 
-@user_bot_router.channel_post(Command("connect"))
-async def connect_channel_to_mini_app(message: Message):
-    bot_config = await get_bot_by_tg_id(message.bot.id)
-    if not bot_config:
-        return
-    await upsert_connected_chat(
-        bot_id=bot_config.id,
-        chat_id=str(message.chat.id),
-        title=message.chat.title or "Без названия",
-        chat_type="channel",
-    )
-    await message.answer("✅ Канал подключён. Вернитесь в Mini App и обновите список.")
 
 
 @user_bot_router.chat_member()
@@ -78,8 +97,13 @@ async def apply_paid_chat_access(event: ChatMemberUpdated):
     )
     if not grant:
         return
-    await apply_joined_member_access(bot=event.bot, grant=grant, user_id=event.new_chat_member.user.id)
-    logger.info("Покупатель %s вошёл в закрытый чат по выданной ссылке", event.new_chat_member.user.id)
+    await apply_joined_member_access(
+        bot=event.bot, grant=grant, user_id=event.new_chat_member.user.id
+    )
+    logger.info(
+        "Покупатель %s вошёл в закрытый чат по выданной ссылке",
+        event.new_chat_member.user.id,
+    )
 
 
 def _get_node_text(node) -> str:
@@ -363,11 +387,16 @@ async def process_application_button(callback: CallbackQuery):
     )
 
 
-async def _send_tariff_invoice(callback: CallbackQuery, bot_config, funnel, tariff):
-    """Create a YooKassa link and replace the loading message with an invoice."""
-    loading_message = await callback.message.answer(
-        text="⏳ <b>Формируем счёт на оплату…</b>\n<i>Пожалуйста, подождите несколько секунд.</i>"
-    )
+async def _send_tariff_invoice(
+    callback: CallbackQuery, bot_config, funnel, tariff, edit_message: bool = True
+):
+    """Create a YooKassa link and replace the message with an invoice."""
+    try:
+        await callback.answer(
+            text="⏳ Формируем счёт на оплату… Пожалуйста, подождите.", show_alert=False
+        )
+    except Exception:
+        pass
     node_checkout = _get_payment_node(funnel)
     tariff_name = str(getattr(tariff, "name", "Доступ") or "Доступ").strip()
     tariff_description = getattr(tariff, "description", "") or ""
@@ -410,11 +439,14 @@ async def _send_tariff_invoice(callback: CallbackQuery, bot_config, funnel, tari
         description=f"{tariff_name}: {tariff_description}".strip(": "),
         lead_telegram_id=callback.from_user.id,
         client_payment=client_payment,
+        installments=tariff_snapshot.get("installments", False),
     )
     if not payment_url:
-        await loading_message.edit_text(
-            "Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку."
-        )
+        error_text = "Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку."
+        if edit_message:
+            await callback.message.edit_text(error_text)
+        else:
+            await callback.message.answer(error_text)
         try:
             from services.billing_notifications import notify_billing_user
 
@@ -429,10 +461,18 @@ async def _send_tariff_invoice(callback: CallbackQuery, bot_config, funnel, tari
     rows = [[InlineKeyboardButton(text=button_text, url=payment_url, style="success")]]
     if len(getattr(node_checkout, "tariffs", []) or []) > 1:
         rows.append(
-            [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
+            [
+                InlineKeyboardButton(
+                    text="← Назад к тарифам", callback_data="payment_tariffs_back"
+                )
+            ]
         )
     pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
-    await loading_message.edit_text(text=message_text, reply_markup=pay_keyboard)
+
+    if edit_message:
+        await callback.message.edit_text(text=message_text, reply_markup=pay_keyboard)
+    else:
+        await callback.message.answer(text=message_text, reply_markup=pay_keyboard)
 
 
 @user_bot_router.callback_query(F.data == "payment")
@@ -481,15 +521,18 @@ async def process_payment_button(callback: CallbackQuery):
             selection_text, reply_markup=user_tariff_keyboard(tariffs)
         )
         return
-    await _send_tariff_invoice(callback, bot_config, funnel, tariffs[0])
+    await _send_tariff_invoice(
+        callback, bot_config, funnel, tariffs[0], edit_message=False
+    )
 
 
 @user_bot_router.callback_query(F.data.startswith("payment_tariff:"))
 async def process_tariff_choice(callback: CallbackQuery):
-    try:
-        await callback.answer()
-    except TelegramBadRequest:
-        return
+    # We skip callback.answer() here because it is answered in _send_tariff_invoice with the alert
+    # try:
+    #     await callback.answer()
+    # except TelegramBadRequest:
+    #     pass
 
     bot_config = await get_bot_by_tg_id(callback.bot.id)
     funnel = await get_funnel_by_bot_id(callback.bot.id)

@@ -153,12 +153,26 @@ def evaluate_funnel_readiness(
                 reasons.append(f"Настройте выдачу после оплаты: {label}.")
             action_type = tariff.get("actionType", tariff.get("action_type", "link"))
             if action_type == "group":
-                if action_data and connected_chat_ids is not None and action_data not in connected_chat_ids:
-                    reasons.append(
-                        f"Выберите подключённый канал или группу для выдачи: {label}."
-                    )
+                if action_data and connected_chat_ids is not None:
+                    # action_data can be a JSON array of strings or a single string
+                    try:
+                        import json
+                        chat_ids = json.loads(action_data) if action_data.startswith("[") else [action_data]
+                        if not isinstance(chat_ids, list):
+                            chat_ids = [str(chat_ids)]
+                    except Exception:
+                        chat_ids = [action_data]
+                        
+                    if any(str(cid) not in connected_chat_ids for cid in chat_ids):
+                        reasons.append(
+                            f"Выберите подключённый канал или группу для выдачи: {label}."
+                        )
                 access_mode = tariff.get("chatAccessMode", tariff.get("chat_access_mode", "member"))
-                if access_mode not in {"member", "read_only"}:
+                if isinstance(access_mode, str) and access_mode.startswith("{"):
+                    pass # It's a per-chat dict, valid
+                elif isinstance(access_mode, dict):
+                    pass
+                elif access_mode not in {"member", "read_only"}:
                     reasons.append(f"Выберите профиль доступа к чату: {label}.")
 
     if mode not in {"auto", "application", "hybrid"}:
