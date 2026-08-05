@@ -112,6 +112,9 @@ class BotConfig(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    def __repr__(self):
+        return f"<BotConfig(id={self.id}, tg_bot_id={self.tg_bot_id}, status={self.status}, bot_token_enc='***', payment_creds_enc='***')>"
+
     # Связи
     owner: Mapped["User"] = relationship(back_populates="bots")
     leads: Mapped[list["Lead"]] = relationship(

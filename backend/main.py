@@ -10,6 +10,9 @@ from aiogram.types import Update
 
 from contextlib import asynccontextmanager
 import uvicorn
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from handlers.main_bot import main_bot_router
 from handlers.user_bot import user_bot_router
@@ -104,6 +107,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from limiter import limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 app.include_router(api_router)
 
 
@@ -164,6 +172,7 @@ async def save_funnel(bot_id: int, funnel: FunnelSchema, request: Request):
 # ЭНДПОИНТ 1: Обработка вебхуков Главного Бота
 # =====================================================================
 @app.post("/webhook/main")
+@limiter.exempt
 async def main_bot_webhook(request: Request):
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_KEY:
         logger.warning("Попытка несанкционированного доступа к вебхуку главного бота")
@@ -179,6 +188,7 @@ async def main_bot_webhook(request: Request):
 # ЭНДПОИНТ 2: Универсальный вебхук для клиентских ботов
 # =====================================================================
 @app.post("/webhook/bots/{bot_db_id}")
+@limiter.exempt
 async def client_bots_webhook(bot_db_id: int, request: Request):
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_KEY:
         raise HTTPException(status_code=403, detail="Invalid secret token")
@@ -211,6 +221,7 @@ async def client_bots_webhook(bot_db_id: int, request: Request):
 # ЭНДПОИНТ 3: Универсальный вебхук оплат
 # =====================================================================
 @app.post("/webhook/payments/{provider}/{tg_bot_id}")
+@limiter.exempt
 async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Request):
     try:
         normalized_provider = provider.casefold()
@@ -288,6 +299,7 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
 
 
 @app.post("/webhook/billing/yookassa")
+@limiter.exempt
 async def saas_yookassa_webhook(request: Request):
     """Apply Bot Father purchases only after YooKassa server verification."""
     try:
