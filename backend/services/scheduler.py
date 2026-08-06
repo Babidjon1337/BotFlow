@@ -1,5 +1,6 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram.client.session.aiohttp import AiohttpSession
+import os
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram import Bot
@@ -26,7 +27,8 @@ from database.requests.client_payment_rq import get_due_client_payment_delivery_
 from services.payment_fulfillment import process_client_payment_fulfillment
 
 scheduler = AsyncIOScheduler()
-shared_scheduler_session = AiohttpSession()
+tg_proxy = os.getenv("TG_PROXY")
+shared_scheduler_session = AiohttpSession(proxy=tg_proxy) if tg_proxy else AiohttpSession()
 
 
 async def check_reminders_job():

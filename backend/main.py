@@ -4,6 +4,7 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+import os
 from aiogram.client.default import DefaultBotProperties
 from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.types import Update
@@ -66,7 +67,8 @@ async def lifespan(app: FastAPI):
     await init_models()
     start_scheduler()
 
-    session = AiohttpSession()
+    tg_proxy = os.getenv("TG_PROXY")
+    session = AiohttpSession(proxy=tg_proxy) if tg_proxy else AiohttpSession()
     main_bot = Bot(
         token=MAIN_BOT_TOKEN,
         session=session,
