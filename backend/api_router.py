@@ -682,14 +682,6 @@ async def save_bot_funnel_endpoint(
     saved_bot = await update_bot_funnel(bot_id, schema_to_save, readiness.is_ready)
     stopped = False
     if saved_bot and saved_bot.status == "active" and not readiness.is_ready:
-        try:
-            token = crypto.decrypt(bot.bot_token_enc)
-            from aiogram import Bot
-
-            telegram_bot = Bot(token=token, session=request.app.state.session)
-            await telegram_bot.delete_webhook()
-        except Exception as exc:
-            logger.warning("Не удалось удалить webhook невалидной воронки %s: %s", bot_id, exc)
         await set_bot_status(bot_id, "draft")
         stopped = True
     logger.info(

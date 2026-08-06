@@ -6,6 +6,8 @@ export interface ApiBot {
   username?: string | null;
   status?: string;
   usersCount?: number;
+  sales?: number;
+  revenue?: number;
   isTokenLocked?: boolean;
   paymentProvider?: string;
   hasPaymentCredentials?: boolean;
@@ -28,6 +30,8 @@ export function mapApiBot(bot: ApiBot): BotConfig {
     username: bot.username || "@unknown",
     status: bot.status === "active" ? "active" : "inactive",
     usersCount: bot.usersCount || 0,
+    sales: bot.sales || 0,
+    revenue: bot.revenue || 0,
     isTokenLocked: bot.isTokenLocked === true,
     paymentProvider: bot.paymentProvider,
     hasPaymentCredentials: bot.hasPaymentCredentials === true,

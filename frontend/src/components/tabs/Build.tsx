@@ -21,6 +21,8 @@ import {
   RefreshCw,
   Bot,
   FileText,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 import { EmptyBotState } from "../EmptyBotState";
 import { FunnelCard } from "../FunnelCard";
@@ -82,12 +84,14 @@ const ButtonInput = ({
         placeholder={placeholder}
         className={`input w-full ${isOverLimit ? "border-[var(--color-danger)]" : isOverRecommended ? "border-[var(--color-warning)]" : ""}`}
       />
-      <p className="text-[11px] text-[var(--color-foreground-tertiary)] leading-tight">
-        {isOverLimit
-          ? "❌ Ошибка: Telegram не допускает кнопки длиннее 64 символов!"
-          : isOverRecommended
-          ? "⚠️ Рекомендуем до 30 символов, иначе надпись может не поместиться на экране телефона."
-          : "Надпись на кнопке в Telegram"}
+      <p className="text-[11px] text-[var(--color-foreground-tertiary)] leading-tight flex items-start gap-1">
+        {isOverLimit ? (
+          <><XCircle size={11} className="shrink-0 mt-0.5 text-[var(--color-danger)]" /><span className="text-[var(--color-danger)] font-semibold">Telegram не допускает кнопки длиннее 64 символов</span></>
+        ) : isOverRecommended ? (
+          <><AlertTriangle size={11} className="shrink-0 mt-0.5 text-[var(--color-warning)]" /><span className="text-[var(--color-warning)]">Рекомендуем до 30 символов, иначе надпись может не поместиться на экране телефона</span></>
+        ) : (
+          <span>Надпись на кнопке в Telegram</span>
+        )}
       </p>
     </div>
   );
@@ -97,10 +101,12 @@ const SyncedMediaPreview = ({
   botId,
   assetId,
   mediaType,
+  compact = false,
 }: {
   botId: string;
   assetId: string;
   mediaType: "photo" | "video";
+  compact?: boolean;
 }) => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState(false);
@@ -126,6 +132,17 @@ const SyncedMediaPreview = ({
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [assetId, botId]);
+
+  if (compact) {
+    if (previewError || !previewUrl) {
+      return <div className="w-full h-full bg-[var(--color-surface-2)] flex items-center justify-center"><ImageIcon size={16} className="text-[var(--color-foreground-tertiary)]" /></div>;
+    }
+    return mediaType === "video" ? (
+      <video src={previewUrl} className="w-full h-full object-cover" muted />
+    ) : (
+      <img src={previewUrl} alt="Медиа" className="w-full h-full object-cover" />
+    );
+  }
 
   if (previewError) {
     return <p className="text-[11px] text-[var(--color-danger)]">Не удалось загрузить предпросмотр. Файл остаётся привязан к сообщению.</p>;
@@ -168,6 +185,7 @@ export const RichTextEditor = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorId = useId();
   const [isUploading, setIsUploading] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
     if (
@@ -214,75 +232,6 @@ export const RichTextEditor = ({
 
   return (
     <div className={`flex flex-col overflow-hidden rounded-[var(--radius-sm)] border bg-[var(--color-surface)] shadow-2xs transition-colors ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)] focus-within:border-[var(--color-primary)]"}`}>
-      {/* Toolbar */}
-      <div className="order-2 flex items-center justify-between gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5">
-        <div className="flex items-center gap-0.5" role="toolbar" aria-label="Форматирование текста">
-          <button
-            type="button"
-            onMouseDown={keepEditorSelection}
-            onClick={() => execCmd("bold")}
-            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
-            title="Жирный"
-            aria-label="Жирный"
-          >
-            <Bold size={13} />
-          </button>
-          <button
-            type="button"
-            onMouseDown={keepEditorSelection}
-            onClick={() => execCmd("italic")}
-            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
-            title="Курсив"
-            aria-label="Курсив"
-          >
-            <Italic size={13} />
-          </button>
-          <button
-            type="button"
-            onMouseDown={keepEditorSelection}
-            onClick={() => execCmd("strikeThrough")}
-            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
-            title="Зачёркнутый"
-            aria-label="Зачёркнутый"
-          >
-            <Strikethrough size={13} />
-          </button>
-          {/* Divider */}
-          <div className="w-px h-4 bg-[var(--color-border)] mx-1 shrink-0" />
-          <button
-            type="button"
-            onMouseDown={keepEditorSelection}
-            onClick={() => {
-              const url = prompt("Введите URL:");
-              if (url) execCmd("createLink", url);
-            }}
-            className="flex size-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)] focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--color-primary)]"
-            title="Добавить ссылку"
-            aria-label="Добавить ссылку"
-          >
-            <Link2 size={13} />
-          </button>
-        </div>
-
-        {/* Media Toggle Button */}
-        {onUploadMedia && !hasMedia && (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[12px] font-semibold transition-all ${
-              hasMedia
-                ? "bg-[var(--color-primary)] text-white shadow-xs"
-                : "bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)] border border-[var(--color-border)] hover:border-[var(--color-primary)]"
-            }`}
-            title="Прикрепить фото или видео к сообщению в Telegram"
-            aria-label="Добавить фото, видео или документ"
-          >
-            <ImageIcon size={13} />
-            <span>{isUploading ? "Загружаем…" : hasMedia ? "Заменить фото/видео" : "Добавить фото/видео"}</span>
-          </button>
-        )}
-      </div>
 
       <input
         ref={fileInputRef}
@@ -292,55 +241,58 @@ export const RichTextEditor = ({
         onChange={handleFileChange}
       />
 
-      {/* Media Uploader Preview Area */}
+      {/* Compact Media Asset Card (replaces large preview) */}
       <AnimatePresence>
         {hasMedia && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="order-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 flex flex-col gap-2 overflow-hidden"
+            className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 overflow-hidden"
           >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[12px] font-bold text-[var(--color-foreground)]">
-                <ImageIcon size={14} className="text-[var(--color-primary)]" />
-                <span>Прикрепленный медиафайл</span>
+            <div className="flex items-center gap-3">
+              {/* 72px thumbnail — click to open full preview */}
+              {mediaType === "document" ? (
+                <div className="w-[72px] h-[72px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
+                  <FileText size={24} className="text-[var(--color-primary)]" />
+                </div>
+              ) : botId && mediaAssetId && mediaType ? (
+                <div className="w-[72px] h-[72px] rounded-lg overflow-hidden shrink-0 border border-[var(--color-border)] shadow-sm">
+                  <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} compact />
+                </div>
+              ) : (
+                <div className="w-[72px] h-[72px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
+                  <ImageIcon size={24} className="text-[var(--color-foreground-tertiary)]" />
+                </div>
+              )}
+              {/* Status */}
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-[var(--color-foreground)] truncate">
+                  {isUploading ? "Загружаем…" : mediaType === "document" ? "Документ" : mediaType === "video" ? "Видео" : "Фото"}
+                </p>
+                <p className="text-[11px] text-[var(--color-foreground-tertiary)]">
+                  {isUploading ? "Синхронизируем с Telegram…" : mediaFileId ? "Синхронизировано с Telegram" : "Подготавливаем…"}
+                </p>
               </div>
-              <button
-                type="button"
-                onClick={onRemoveMedia}
-                className="text-[11px] font-semibold text-[var(--color-danger)] hover:underline"
-              >
-                Удалить медиа
-              </button>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
-              <div className="flex min-w-0 items-center gap-2 text-[12px]">
-                <ImageIcon size={16} className="shrink-0 text-[var(--color-primary)]" />
-                <span className="truncate font-semibold text-[var(--color-foreground)]">
-                  {isUploading
-                    ? "Загружаем и синхронизируем с Telegram…"
-                    : mediaFileId
-                      ? "Файл синхронизирован с Telegram"
-                      : "Подготавливаем файл…"}
-                </span>
-              </div>
+              {/* Actions */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="shrink-0 text-[12px] font-semibold text-[var(--color-primary)] hover:underline disabled:opacity-60"
+                className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--color-primary)] hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0 shadow-sm"
               >
                 Заменить
               </button>
+              <button
+                type="button"
+                onClick={onRemoveMedia}
+                className="p-2 rounded-lg text-[var(--color-danger)] bg-[var(--color-danger-soft)] hover:bg-[var(--color-danger)] hover:text-white active:scale-95 transition-all shrink-0 shadow-sm"
+                title="Удалить медиафайл"
+                aria-label="Удалить медиафайл"
+              >
+                <X size={16} />
+              </button>
             </div>
-            {mediaType === "document" ? (
-              <div className="flex items-center gap-2 text-[12px] text-[var(--color-foreground-secondary)]">
-                <FileText size={16} /> Документ синхронизирован с Telegram
-              </div>
-            ) : botId && mediaAssetId && mediaType ? (
-              <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} />
-            ) : null}
           </motion.div>
         )}
       </AnimatePresence>
@@ -354,8 +306,9 @@ export const RichTextEditor = ({
         aria-multiline="true"
         aria-label={placeholder || "Текст сообщения"}
         onInput={handleInput}
-        onBlur={handleInput}
-        className="order-3 p-3 min-h-[96px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor"
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => { handleInput(); setIsFocused(false); }}
+        className="p-3 min-h-[88px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor"
         style={{
           color: "var(--color-foreground)",
           wordBreak: "break-word",
@@ -367,16 +320,67 @@ export const RichTextEditor = ({
         data-placeholder={placeholder}
       />
 
-      {/* Telegram Character Counter & Validator Footer */}
-      <div className={`order-4 flex items-center justify-between px-3 py-1.5 border-t border-[var(--color-border)] text-[11px] transition-colors ${isOverLimit ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] font-bold" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)]"}`}>
-        <div className="flex items-center gap-1">
-          <span>{isOverLimit ? "⚠️ Превышен лимит Telegram!" : "Лимит символов Telegram:"}</span>
-          <span className="opacity-80">({hasMedia ? "с медиа — макс. 1024" : "текстовое — макс. 4096"})</span>
+      {/* Toolbar — visible only when focused */}
+      <AnimatePresence>
+        {isFocused && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 36 }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.15 }}
+            className="flex items-center justify-between gap-1 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 overflow-hidden shrink-0"
+          >
+            <div className="flex items-center gap-0.5" role="toolbar" aria-label="Форматирование текста">
+              <button type="button" onMouseDown={keepEditorSelection} onClick={() => execCmd("bold")}
+                className="flex size-8 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+                title="Жирный" aria-label="Жирный">
+                <Bold size={13} />
+              </button>
+              <button type="button" onMouseDown={keepEditorSelection} onClick={() => execCmd("italic")}
+                className="flex size-8 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+                title="Курсив" aria-label="Курсив">
+                <Italic size={13} />
+              </button>
+              <button type="button" onMouseDown={keepEditorSelection} onClick={() => execCmd("strikeThrough")}
+                className="flex size-8 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+                title="Зачёркнутый" aria-label="Зачёркнутый">
+                <Strikethrough size={13} />
+              </button>
+              <div className="w-px h-3.5 bg-[var(--color-border)] mx-0.5 shrink-0" />
+              <button type="button" onMouseDown={keepEditorSelection}
+                onClick={() => { const url = prompt("Введите URL:"); if (url) execCmd("createLink", url); }}
+                className="flex size-8 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+                title="Добавить ссылку" aria-label="Добавить ссылку">
+                <Link2 size={13} />
+              </button>
+            </div>
+            {/* Media upload button in toolbar */}
+            {onUploadMedia && !hasMedia && (
+              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-bold text-[var(--color-primary)] bg-[var(--color-primary-soft)] hover:bg-[var(--color-primary)] hover:text-white transition-all shadow-sm"
+                title="Прикрепить фото или видео" aria-label="Добавить медиафайл">
+                <ImageIcon size={14} />
+                <span>{isUploading ? "Загружаем…" : "Медиа"}</span>
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Char counter — shown only when approaching limit (>80%) */}
+      {(isOverLimit || charCount > maxChars * 0.8) && (
+        <div className={`flex items-center justify-between px-3 py-1 border-t border-[var(--color-border)] text-[11px] transition-colors ${
+          isOverLimit ? "bg-[var(--color-danger-soft)] text-[var(--color-danger)] font-bold" : "bg-[var(--color-surface-2)] text-[var(--color-warning)]"
+        }`}>
+          <div className="flex items-center gap-1">
+            {isOverLimit
+              ? <><AlertTriangle size={11} className="shrink-0" /><span className="font-semibold">Превышен лимит Telegram</span></>
+              : <span className="text-[var(--color-warning)]">Приближается лимит Telegram</span>
+            }
+          </div>
+          <span className="font-semibold tabular-nums">{charCount} / {maxChars}</span>
         </div>
-        <div className={isOverLimit ? "font-extrabold text-[12px]" : "font-semibold"}>
-          {charCount} / {maxChars}
-        </div>
-      </div>
+      )}
     </div>
   );
 };
@@ -386,14 +390,18 @@ const MessageBubble = ({
   text,
   button,
   button2,
-  media,
+  mediaAssetId,
+  mediaType,
+  botId,
   theme,
   onButtonClick,
 }: {
   text?: string;
   button?: string;
   button2?: string;
-  media?: boolean;
+  mediaAssetId?: string | null;
+  mediaType?: "photo" | "video" | "document" | null;
+  botId?: string;
   theme: "light" | "dark";
   onButtonClick?: (btnIndex: 1 | 2) => void;
 }) => (
@@ -409,7 +417,7 @@ const MessageBubble = ({
       style={{
         background: theme === "dark" ? "#27272a" : "#ffffff",
         color: "var(--color-foreground)",
-        padding: media ? "4px" : "10px 14px",
+        padding: mediaAssetId ? "4px" : "10px 14px",
         borderRadius: "16px",
         borderBottomLeftRadius: "4px",
         fontSize: "14px",
@@ -420,36 +428,25 @@ const MessageBubble = ({
             : "0 1px 2px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.03)",
       }}
     >
-      {media && (
-        <div
-          style={{
-            background: "var(--color-surface-2)",
-            borderRadius: "12px",
-            height: "140px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: text ? "8px" : "0",
-            color: "var(--color-foreground-tertiary)",
-          }}
-        >
-          <ImageIcon size={24} style={{ marginBottom: "8px" }} />
-          <span
-            style={{ fontSize: "11px", textAlign: "center", padding: "0 10px" }}
-          >
-            Тут находится ваше фото или видео
-          </span>
+      {mediaAssetId && botId && (mediaType === "photo" || mediaType === "video") && (
+        <div style={{ marginBottom: text ? "8px" : "0", overflow: "hidden", borderRadius: "12px" }}>
+          <SyncedMediaPreview
+            botId={botId}
+            assetId={mediaAssetId}
+            mediaType={mediaType}
+            compact={false}
+          />
         </div>
       )}
       {text && (
         <div
           style={{
-            padding: media ? "0 8px 8px 8px" : "0",
+            padding: mediaAssetId ? "0 8px 8px 8px" : "0",
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}
-          dangerouslySetInnerHTML={{ __html: text.replace(/<[^>]*>?/gm, "") }}
+          className="tg-message-text"
+          dangerouslySetInnerHTML={{ __html: text }}
         />
       )}
     </div>
@@ -506,12 +503,14 @@ export const Build = () => {
   const {
     appState,
     blocks,
+    selectedBlockId,
     setSelectedBlockId,
     updateBlock,
     theme,
     setSheet,
     handleCreateBotClick: onCreateBot,
     setToastMessage,
+    setToastType,
     setAppState,
     getFunnelRevision,
     getFunnelWorkspaceGeneration,
@@ -528,6 +527,19 @@ export const Build = () => {
   const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const { showAlert } = useAlert();
+
+  // Auto-sync emulator: when selectedBlockId changes, switch preview screen
+  useEffect(() => {
+    const blockToScreen: Record<string, "start" | "push1" | "push2" | "tariffs"> = {
+      start: "start",
+      push1: "push1",
+      push2: "push2",
+      payment: "tariffs",
+    };
+    if (selectedBlockId && blockToScreen[selectedBlockId]) {
+      setPreviewScreen(blockToScreen[selectedBlockId]);
+    }
+  }, [selectedBlockId]);
   const { toggleBot, isToggling } = useBotToggle();
 
   const handleMediaUpload = async (nodeId: string, file: File) => {
@@ -541,6 +553,7 @@ export const Build = () => {
       const { apiService } = await import("../../services/api");
       const media = await apiService.uploadBotMedia(uploadBotId, nodeId, file);
       if (getFunnelWorkspaceGeneration() !== workspaceGeneration) {
+        setToastType("success");
         setToastMessage("Файл загружен для исходного бота. Откройте его воронку, чтобы увидеть результат.");
         return;
       }
@@ -548,6 +561,7 @@ export const Build = () => {
       updateBlock(nodeId, "mediaFileId", media.fileId);
       updateBlock(nodeId, "mediaAssetId", media.id);
       updateBlock(nodeId, "mediaType", media.mediaType);
+      setToastType("success");
       setToastMessage("Файл синхронизирован с Telegram");
     } catch (error) {
       showAlert({
@@ -595,11 +609,16 @@ export const Build = () => {
           }
           : prev.activeBot,
       }));
-      setToastMessage(savedFunnel.stopped
-        ? "Воронка сохранена: бот остановлен до завершения настройки"
-        : savedFunnel.funnelComplete
-          ? "Воронка сохранена"
+      
+      if (savedFunnel.stopped) {
+        setToastType("error");
+        setToastMessage("Бот принудительно остановлен! Воронка больше не заполнена.");
+      } else {
+        setToastType("success");
+        setToastMessage(savedFunnel.funnelComplete
+          ? "Воронка успешно сохранена"
           : `Воронка сохранена: ${savedFunnel.readinessReasons[0] || 'завершите настройку перед запуском'}`);
+      }
     } catch (error) {
       setIsSaving(false);
       showAlert({
@@ -615,24 +634,26 @@ export const Build = () => {
   const paymentBlock = getBlock("payment");
   const paymentMode = paymentBlock?.paymentMode || "auto";
 
+  const checkHasContent = (content?: any) => {
+    if (!content || typeof content !== 'string') return false;
+    const plainText = content.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ").trim();
+    return plainText.length > 0;
+  };
+
   const isStartComplete = !!(
-    getBlock("start")
-      ?.content?.replace(/<[^>]*>/g, "")
-      .trim() &&
+    checkHasContent(getBlock("start")?.content) &&
     getBlock("start")?.buttonText?.trim() &&
     (paymentMode === "hybrid" ? !!getBlock("start")?.buttonText2?.trim() : true)
   );
+  
   const isPush1Complete = !!(
-    getBlock("push1")
-      ?.content?.replace(/<[^>]*>/g, "")
-      .trim() &&
+    checkHasContent(getBlock("push1")?.content) &&
     getBlock("push1")?.buttonText?.trim() &&
     (paymentMode === "hybrid" ? !!getBlock("push1")?.buttonText2?.trim() : true)
   );
+
   const isPush2Complete = !!(
-    getBlock("push2")
-      ?.content?.replace(/<[^>]*>/g, "")
-      .trim() &&
+    checkHasContent(getBlock("push2")?.content) &&
     getBlock("push2")?.buttonText?.trim() &&
     (paymentMode === "hybrid" ? !!getBlock("push2")?.buttonText2?.trim() : true)
   );
@@ -696,7 +717,11 @@ export const Build = () => {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column" }}>
+    <div className="relative flex flex-col min-h-screen overflow-x-hidden">
+      {/* Background glow for phone and blocks */}
+      <div className="fixed top-[10%] left-[20%] w-[50vw] h-[50vw] max-w-[800px] max-h-[800px] bg-[var(--color-primary)]/10 rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-screen opacity-70" />
+      <div className="fixed bottom-[10%] right-[10%] w-[40vw] h-[40vw] max-w-[600px] max-h-[600px] bg-[#a855f7]/15 rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-screen opacity-70" />
+
       <style>{`
         .action-bar-fixed {
           bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);
@@ -896,157 +921,23 @@ export const Build = () => {
             data-tour="tour-funnel-steps"
             style={{ display: "flex", flexDirection: "column", gap: "8px" }}
           >
-            <section
+            <div
               aria-live="polite"
-              className={`rounded-[var(--radius-lg)] border p-4 ${
+              className={`inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-colors ${
                 isAllBlocksComplete
-                  ? "border-[var(--color-success-soft)] bg-[var(--color-success-soft)]"
-                  : "border-[var(--color-border)] bg-[var(--color-surface)]"
+                  ? "border-[var(--color-success-soft)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                  : "border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
               }`}
             >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  {isAllBlocksComplete ? (
-                    <CheckCircle2 size={18} className="shrink-0 text-[var(--color-success)]" />
-                  ) : (
-                    <ShieldAlert size={18} className="shrink-0 text-[var(--color-warning)]" />
-                  )}
-                  <h3 className="text-[14px] font-semibold text-[var(--color-foreground)]">
-                    Готовность воронки
-                  </h3>
-                </div>
-                <span className="text-[13px] font-semibold text-[var(--color-foreground-secondary)]">
-                  {completedStepsCount} из {funnelSteps.length} шагов
-                </span>
-              </div>
-
-              {isAllBlocksComplete ? (
-                <p className="mt-2 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
-                  Все обязательные шаги заполнены. Воронку можно сохранить и запустить.
-                </p>
-              ) : (
-                <div className="mt-2 space-y-1.5">
-                  <p className="text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
-                    Заполните: {incompleteSteps.map((step) => step.label).join(", ")}.
-                  </p>
-                  {appState.activeBot.status === "active" && (
-                    <p className="text-[12px] leading-relaxed text-[var(--color-warning)]">
-                      Если сохранить неполную воронку, бот остановится до завершения настройки.
-                    </p>
-                  )}
-                </div>
-              )}
-            </section>
-
-            {/* Global Mode Switcher */}
-            <div className="p-4 rounded-[20px] bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm mb-2 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <h4 className="text-[15px] font-bold text-[var(--color-foreground)]">
-                    Режим работы воронки
-                  </h4>
-                  <InfoTooltip
-                    side="right"
-                    title="Логика работы воронки"
-                    text={
-                      <>
-                        <strong>Автопродажа:</strong> Клиент выбирает тариф в боте и оплачивает онлайн. Доступ выдается автоматически.<br />
-                        <strong>По заявкам:</strong> Кнопка ведет в ЛС к администратору с готовым текстом. Выставляете счет вручную.<br />
-                        <strong>Гибрид:</strong> В сообщениях показываются сразу две кнопки — для онлайн-оплаты и для связи с менеджером.
-                      </>
-                    }
-                  />
-                </div>
-              </div>
-              <p className="text-[12px] text-[var(--color-foreground-secondary)] mt-1">
-                Определяет глобальное действие при нажатии целевых кнопок клиентом
-              </p>
-              <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1" role="radiogroup" aria-label="Режим работы воронки">
-                <button
-                  type="button"
-                  onClick={() => updateBlock("payment", "paymentMode", "auto")}
-                  role="radio"
-                  aria-checked={paymentMode === "auto"}
-                  className={`flex-1 py-2 px-2 text-[12px] md:text-[13px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${paymentMode === "auto" ? "bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-success)] inline-block shrink-0" />
-                  <span>Автопродажа</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateBlock("payment", "paymentMode", "application")}
-                  role="radio"
-                  aria-checked={paymentMode === "application"}
-                  className={`flex-1 py-2 px-2 text-[12px] md:text-[13px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${paymentMode === "application" ? "bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#3b82f6] inline-block shrink-0" />
-                  <span>По заявкам</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => updateBlock("payment", "paymentMode", "hybrid")}
-                  role="radio"
-                  aria-checked={paymentMode === "hybrid"}
-                  className={`flex-1 py-2 px-2 text-[12px] md:text-[13px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${paymentMode === "hybrid" ? "bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
-                >
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#a855f7] inline-block shrink-0" />
-                  <span>Гибрид</span>
-                </button>
-              </div>
-
-              <p className="rounded-[var(--radius-sm)] bg-[var(--color-surface-2)] px-3 py-2 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">
-                {modeOutcome}
-              </p>
-
-              <AnimatePresence>
-                {(paymentMode === "application" || paymentMode === "hybrid") && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="pt-2 border-t border-[var(--color-border)] mt-1"
-                  >
-                    <div className="flex items-center mb-1.5">
-                      <label htmlFor="manager-url" className="text-[13px] font-semibold text-[var(--color-foreground)]">
-                        Ссылка на Telegram менеджера
-                      </label>
-                      <InfoTooltip
-                        title="Куда перейдёт клиент"
-                        text="Укажите публичный @username или ссылку вида https://t.me/username. Клиент перейдёт в личный чат, а текст ниже Telegram подставит в поле ввода."
-                      />
-                    </div>
-                    <input
-                      id="manager-url"
-                      type="text"
-                      className="input w-full text-[13px] h-9 bg-[var(--color-surface-2)] border-[var(--color-border)] focus:border-[var(--color-primary)] font-medium"
-                      value={paymentBlock?.managerUrl || ""}
-                      placeholder="@manager или https://t.me/manager"
-                      onChange={(e) => updateBlock("payment", "managerUrl", e.target.value)}
-                      onFocus={(e) => {
-                        if (window.innerWidth <= 768) { setTimeout(() => { e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300); }
-                      }}
-                    />
-                    <label htmlFor="manager-text" className="text-[13px] font-semibold text-[var(--color-foreground)] block mt-3 mb-1.5">
-                      Текст для связи
-                    </label>
-                    <input
-                      id="manager-text"
-                      type="text"
-                      className="input w-full text-[13px] h-9 bg-[var(--color-surface-2)] border-[var(--color-border)] focus:border-[var(--color-primary)] font-medium"
-                      value={paymentBlock?.managerText || ""}
-                      placeholder="Хочу узнать подробнее / записаться..."
-                      onChange={(e) => updateBlock("payment", "managerText", e.target.value)}
-                      onFocus={(e) => {
-                        if (window.innerWidth <= 768) { setTimeout(() => { e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300); }
-                      }}
-                    />
-                    <div className="text-[11px] text-[var(--color-foreground-tertiary)] mt-1">
-                      Telegram подставит этот текст в поле ввода клиента. Сообщение отправится менеджеру только после нажатия «Отправить» самим клиентом.
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <span className="w-2 h-2 rounded-full bg-current shrink-0" aria-hidden="true" />
+              <span>
+                {isAllBlocksComplete
+                  ? `${completedStepsCount} / ${funnelSteps.length} — готово к запуску`
+                  : `${completedStepsCount} / ${funnelSteps.length} · Не заполнено: ${incompleteSteps.map((s) => s.label).join(", ")}`}
+              </span>
             </div>
+
+
 
             <FunnelCard
               stepId="start"
@@ -1113,29 +1004,15 @@ export const Build = () => {
               title="Шаг 2 · Дожим 1"
               isComplete={isPush1Complete}
             >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                }}
-              >
-                <TimerPresets
-                  value={getBlock("push1")?.delay || "1ч"}
-                  onChange={(val) => updateBlock("push1", "delay", val)}
-                  presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 <div onClick={() => setSelectedBlockId("push1")}>
-                  <label
-                    className="text-label"
-                    style={{ display: "block", marginBottom: "8px" }}
-                  >
+                  <label className="text-label" style={{ display: "block", marginBottom: "8px" }}>
                     Текст дожима
                   </label>
                   <RichTextEditor
                     value={getBlock("push1")?.content || ""}
                     onChange={(v) => updateBlock("push1", "content", v)}
-                    placeholder="Напоминание пользователю..."
+                    placeholder="Напомните о себе. Добавьте причину принять решение сейчас."
                     hasMedia={!!getBlock("push1")?.media}
                     botId={appState.activeBot.id}
                     mediaFileId={getBlock("push1")?.mediaFileId}
@@ -1150,16 +1027,24 @@ export const Build = () => {
                     label={paymentMode === "hybrid" ? "Кнопка 1 (Покупка)" : "Текст кнопки"}
                     value={getBlock("push1")?.buttonText || ""}
                     onChange={(v) => updateBlock("push1", "buttonText", v)}
-                    placeholder={paymentMode === "hybrid" ? "💰 Купить сейчас" : "➡️ Перейти"}
+                    placeholder={paymentMode === "hybrid" ? "Купить сейчас" : "Перейти"}
                   />
                   {paymentMode === "hybrid" && (
                     <ButtonInput
                       label="Кнопка 2 (Консультация)"
                       value={getBlock("push1")?.buttonText2 || ""}
                       onChange={(v) => updateBlock("push1", "buttonText2", v)}
-                      placeholder="📞 Записаться"
+                      placeholder="Записаться на консультацию"
                     />
                   )}
+                </div>
+                {/* Delay selector — at bottom, secondary control */}
+                <div className="-mx-5 -mb-6 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-b-[var(--radius-lg)]">
+                  <TimerPresets
+                    value={getBlock("push1")?.delay || "1ч"}
+                    onChange={(val) => updateBlock("push1", "delay", val)}
+                    presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
+                  />
                 </div>
               </div>
             </FunnelCard>
@@ -1177,29 +1062,15 @@ export const Build = () => {
               title="Шаг 3 · Дожим 2"
               isComplete={isPush2Complete}
             >
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "16px",
-                }}
-              >
-                <TimerPresets
-                  value={getBlock("push2")?.delay || "24ч"}
-                  onChange={(val) => updateBlock("push2", "delay", val)}
-                  presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
-                />
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                 <div onClick={() => setSelectedBlockId("push2")}>
-                  <label
-                    className="text-label"
-                    style={{ display: "block", marginBottom: "8px" }}
-                  >
+                  <label className="text-label" style={{ display: "block", marginBottom: "8px" }}>
                     Текст дожима
                   </label>
                   <RichTextEditor
                     value={getBlock("push2")?.content || ""}
                     onChange={(v) => updateBlock("push2", "content", v)}
-                    placeholder="Последний шанс..."
+                    placeholder="Последний дожим — покажите упущенную выгоду или срочность предложения."
                     hasMedia={!!getBlock("push2")?.media}
                     botId={appState.activeBot.id}
                     mediaFileId={getBlock("push2")?.mediaFileId}
@@ -1214,16 +1085,24 @@ export const Build = () => {
                     label={paymentMode === "hybrid" ? "Кнопка 1 (Покупка)" : "Текст кнопки"}
                     value={getBlock("push2")?.buttonText || ""}
                     onChange={(v) => updateBlock("push2", "buttonText", v)}
-                    placeholder={paymentMode === "hybrid" ? "💰 Купить сейчас" : "🎁 Забрать скидку"}
+                    placeholder={paymentMode === "hybrid" ? "Купить сейчас" : "Забрать скидку"}
                   />
                   {paymentMode === "hybrid" && (
                     <ButtonInput
                       label="Кнопка 2 (Консультация)"
                       value={getBlock("push2")?.buttonText2 || ""}
                       onChange={(v) => updateBlock("push2", "buttonText2", v)}
-                      placeholder="📞 Записаться"
+                      placeholder="Записаться на консультацию"
                     />
                   )}
+                </div>
+                {/* Delay selector — at bottom, secondary control */}
+                <div className="-mx-5 -mb-6 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-b-[var(--radius-lg)]">
+                  <TimerPresets
+                    value={getBlock("push2")?.delay || "24ч"}
+                    onChange={(val) => updateBlock("push2", "delay", val)}
+                    presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
+                  />
                 </div>
               </div>
             </FunnelCard>
@@ -1245,9 +1124,13 @@ export const Build = () => {
                 <PaymentBlockEditor
                   node={getBlock("payment")}
                   botId={appState.activeBot.id}
-                  onChange={(field, value) =>
-                    updateBlock("payment", field, value)
-                  }
+                  onChange={(field, value) => updateBlock("payment", field, value)}
+                  paymentMode={paymentMode as 'auto' | 'application' | 'hybrid'}
+                  onPaymentModeChange={(mode) => updateBlock("payment", "paymentMode", mode)}
+                  managerUrl={paymentBlock?.managerUrl || ""}
+                  managerText={paymentBlock?.managerText || ""}
+                  onManagerUrlChange={(v) => updateBlock("payment", "managerUrl", v)}
+                  onManagerTextChange={(v) => updateBlock("payment", "managerText", v)}
                 />
               </div>
             </FunnelCard>
@@ -1491,7 +1374,9 @@ export const Build = () => {
                                 ? getBlock("start")?.buttonText2
                                 : undefined
                             }
-                            media={getBlock("start")?.media}
+                            mediaAssetId={getBlock("start")?.mediaAssetId}
+                            mediaType={getBlock("start")?.mediaType}
+                            botId={appState.activeBot.id}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
                           />
@@ -1523,7 +1408,9 @@ export const Build = () => {
                                 ? getBlock("push1")?.buttonText2
                                 : undefined
                             }
-                            media={getBlock("push1")?.media}
+                            mediaAssetId={getBlock("push1")?.mediaAssetId}
+                            mediaType={getBlock("push1")?.mediaType}
+                            botId={appState.activeBot.id}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
                           />
@@ -1555,7 +1442,9 @@ export const Build = () => {
                                 ? getBlock("push2")?.buttonText2
                                 : undefined
                             }
-                            media={getBlock("push2")?.media}
+                            mediaAssetId={getBlock("push2")?.mediaAssetId}
+                            mediaType={getBlock("push2")?.mediaType}
+                            botId={appState.activeBot.id}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
                           />

@@ -1,9 +1,13 @@
 # Python
 backend/venv/
 backend/__pycache__/
+backend/**/__pycache__/
 backend/*.pyc
+backend/**/*.pyc
 backend/.env
-__pycache__
+__pycache__/
+*.pyc
+.pytest_cache/
 
 # Node.js
 frontend/node_modules/
@@ -11,20 +15,30 @@ frontend/dist/
 frontend/.env.local
 frontend/.env
 
-# Databases
+# Database data (docker volume)
+backend/database/data/
 database/data/
+
+# Uploads (user media files - not tracked in git)
+backend/uploads/
 
 # OS
 .DS_Store
 Thumbs.db
 
-GEMINI.md
-test*
+# Environment secrets (NEVER commit)
 .env
+.env.local
+
+# IDE
+.gemini/
+GEMINI.md
+.agents/
+
+# Dev artifacts
 gemini_image/
-FUNNEL_ARCHITECTURE.md
-funnel_redesign.md
-integration_plan.md
-PROJECT_AUDIT_AND_REFACTOR_PLAN.md
-PROJECT_AUDIT_QUESTIONS.md
-.agents
+md/
+test*
+frontend/.playwright-cli/
+frontend/*.png
+frontend/*.jpg

@@ -53,6 +53,8 @@ export default function App() {
     setActiveTab,
     toastMessage,
     setToastMessage,
+    toastType,
+    setToastType,
     theme,
     toggleTheme,
     setSheet,
@@ -431,7 +433,7 @@ export default function App() {
       </AnimatePresence>
 
       {toastMessage && (
-        <Toast message={toastMessage} onClose={() => setToastMessage(null)} />
+        <Toast message={toastMessage} type={toastType} onClose={() => { setToastMessage(null); setTimeout(() => setToastType('success'), 300); }} />
       )}
 
     </div>

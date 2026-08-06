@@ -17,6 +17,8 @@ interface AppContextType {
   setSelectedBlockId: React.Dispatch<React.SetStateAction<string>>;
   toastMessage: string | null;
   setToastMessage: React.Dispatch<React.SetStateAction<string | null>>;
+  toastType: 'success' | 'error';
+  setToastType: React.Dispatch<React.SetStateAction<'success' | 'error'>>;
   theme: 'light' | 'dark';
   setTheme: React.Dispatch<React.SetStateAction<'light' | 'dark'>>;
   setSheet: (sheet: SheetType | null, data?: AppState['sheetData']) => void;
@@ -85,6 +87,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return localStorage.getItem('bot_father_selectedBlockId') || 'start';
   });
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error'>('success');
   const [authError, setAuthError] = useState<string | null>(null);
   const [funnelLoadState, setFunnelLoadState] = useState<FunnelLoadState>({
     botId: null,
@@ -354,6 +357,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSelectedBlockId,
         toastMessage,
         setToastMessage,
+        toastType,
+        setToastType,
         theme,
         setTheme,
         setSheet,

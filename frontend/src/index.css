@@ -590,3 +590,11 @@ body {
     font-size: 20px;
   }
 }
+
+.tg-message-text b, .tg-message-text strong { font-weight: 700; }
+.tg-message-text i, .tg-message-text em { font-style: italic; }
+.tg-message-text u { text-decoration: underline; }
+.tg-message-text s, .tg-message-text strike { text-decoration: line-through; }
+.tg-message-text a { color: #3b82f6; text-decoration: underline; }
+.tg-message-text p { margin-bottom: 0.5em; }
+.tg-message-text p:last-child { margin-bottom: 0; }

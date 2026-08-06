@@ -1,0 +1,30 @@
+﻿# Systemd service for Bot Father backend
+# Place at: /etc/systemd/system/botfather.service
+# Then:
+#   systemctl daemon-reload
+#   systemctl enable botfather
+#   systemctl start botfather
+#
+# IMPORTANT: Change port 8001 if it conflicts with other services on your server
+
+[Unit]
+Description=Bot Father FastAPI Backend
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/botfather/backend
+EnvironmentFile=/opt/botfather/.env
+ExecStart=/opt/botfather/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits (adjust to your VPS size)
+# MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

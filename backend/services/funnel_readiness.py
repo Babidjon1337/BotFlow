@@ -79,7 +79,7 @@ def evaluate_funnel_readiness(
         if not node:
             reasons.append(f"Добавьте блок «{title}».")
             continue
-        if not _text(node.get("content")):
+        if _visible_length(node.get("content")) == 0:
             reasons.append(f"Заполните текст блока «{title}».")
         else:
             has_media = bool(

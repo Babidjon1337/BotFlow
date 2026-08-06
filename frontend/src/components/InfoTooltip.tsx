@@ -26,61 +26,45 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
     if (!ref.current) return;
     const rect = ref.current.getBoundingClientRect();
     const width = 250; // approximate popover width
+    const height = 100; // approximate height
+
+    const spaceTop = rect.top;
+    const spaceBottom = window.innerHeight - rect.bottom;
+    const spaceRight = window.innerWidth - rect.right;
+
     let actualSide: InfoTooltipProps['side'] = side;
-    const iconCenter = rect.left + rect.width / 2;
-    const arrowLeft = `${Math.max(16, Math.min(iconCenter - Math.max(16, Math.min(rect.left + rect.width / 2 - 125, window.innerWidth - 266)), 234))}px`;
 
-    if (side === 'right') {
-      if (rect.right + width > window.innerWidth && window.innerWidth < 768) {
-        actualSide = 'bottom';
-      } else {
-        setCoords({
-          left: rect.right + 10,
-          top: rect.top + rect.height / 2,
-          actualSide: 'right',
-          arrowLeft,
-        });
-        return;
-      }
-    }
-
-    if (side === 'left') {
-      if (rect.left - width < 0) {
-        actualSide = 'bottom';
-      } else {
-        setCoords({
-          left: rect.left - 10,
-          top: rect.top + rect.height / 2,
-          actualSide: 'left',
-          arrowLeft,
-        });
-        return;
-      }
-    }
-
-    if (actualSide === 'top' && rect.top < 120) {
+    // Smart positioning logic based on available space
+    if (window.innerWidth >= 768 && spaceRight > width + 20 && side !== 'left' && side !== 'bottom') {
+      actualSide = 'right'; // Prefer right on desktop if enough space
+    } else if (spaceTop > height + 20) {
+      actualSide = 'top';
+    } else if (spaceBottom > height + 20) {
       actualSide = 'bottom';
+    } else if (spaceRight > width + 20) {
+      actualSide = 'right';
+    } else {
+      actualSide = 'left';
     }
 
+    // Force top/bottom on small screens
+    if (window.innerWidth < 768 && (actualSide === 'left' || actualSide === 'right')) {
+      actualSide = spaceTop > height + 20 ? 'top' : 'bottom';
+    }
+
+    const iconCenter = rect.left + rect.width / 2;
     const clampedLeft = Math.max(16, Math.min(rect.left + rect.width / 2 - 125, window.innerWidth - 266));
+    const topBottomArrowLeft = `${Math.max(16, Math.min(iconCenter - clampedLeft, 234))}px`;
 
-    if (actualSide === 'bottom') {
-      setCoords({
-        left: clampedLeft,
-        top: rect.bottom + 10,
-        actualSide: 'bottom',
-        arrowLeft: `${Math.max(16, Math.min(iconCenter - clampedLeft, 234))}px`,
-      });
-      return;
+    if (actualSide === 'right') {
+      setCoords({ left: rect.right + 10, top: rect.top + rect.height / 2, actualSide: 'right', arrowLeft: '0' });
+    } else if (actualSide === 'left') {
+      setCoords({ left: rect.left - 10, top: rect.top + rect.height / 2, actualSide: 'left', arrowLeft: '100%' });
+    } else if (actualSide === 'bottom') {
+      setCoords({ left: clampedLeft, top: rect.bottom + 10, actualSide: 'bottom', arrowLeft: topBottomArrowLeft });
+    } else {
+      setCoords({ left: clampedLeft, top: rect.top - 10, actualSide: 'top', arrowLeft: topBottomArrowLeft });
     }
-
-    // Default 'top'
-    setCoords({
-      left: clampedLeft,
-      top: rect.top - 10,
-      actualSide: 'top',
-      arrowLeft: `${Math.max(16, Math.min(iconCenter - clampedLeft, 234))}px`,
-    });
   }, [side]);
 
   useEffect(() => {

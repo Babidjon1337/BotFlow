@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import { DeliverySelector } from './DeliverySelector';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
@@ -11,6 +11,12 @@ interface PaymentBlockEditorProps {
   node?: FunnelNode;
   botId?: string;
   onChange: <K extends keyof FunnelNode>(field: K, value: FunnelNode[K]) => void;
+  paymentMode: 'auto' | 'application' | 'hybrid';
+  onPaymentModeChange: (mode: 'auto' | 'application' | 'hybrid') => void;
+  managerUrl: string;
+  managerText: string;
+  onManagerUrlChange: (v: string) => void;
+  onManagerTextChange: (v: string) => void;
 }
 
 const MAX_TARIFF_SELECTION_CHARACTERS = 4096;
@@ -30,11 +36,16 @@ const Toggle = ({ checked, onToggle }: { checked: boolean; onToggle: () => void 
   </button>
 );
 
-export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, botId, onChange }) => {
+export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ 
+  node, botId, onChange, paymentMode, onPaymentModeChange, managerUrl, managerText, onManagerUrlChange, onManagerTextChange 
+}) => {
   const { showConfirm } = useAlert();
   const tariffs: Tariff[] = node?.tariffs || [];
   // Track which tariffs are collapsed (by tariff id)
-  const [collapsedTariffs, setCollapsedTariffs] = useState<Set<string>>(new Set());
+  const [collapsedTariffs, setCollapsedTariffs] = useState<Set<string>>(() => 
+    new Set(tariffs.filter(t => t.name || t.price).map(t => t.id))
+  );
+  const [activeTab, setActiveTab] = useState<'tariffs' | 'message'>('tariffs');
 
   const updateTariffs = (newTariffs: Tariff[]) => onChange('tariffs', newTariffs);
 
@@ -77,11 +88,114 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
 
   return (
     <div className="flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
-      {/* Tariff selection message — only when multiple tariffs */}
+      
+      {/* ─── Режим продажи ─── */}
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[13px] font-semibold text-[var(--color-foreground)]">
+            Режим продажи
+          </span>
+          <InfoTooltip
+            title="Логика работы воронки"
+            text={<>
+              <strong>Автопродажа:</strong> онлайн-оплата, доступ автоматически.<br />
+              <strong>По заявкам:</strong> кнопка → ЛС менеджера, счёт вручную.<br />
+              <strong>Гибрид:</strong> две кнопки — оплата и связь с менеджером.
+            </>}
+          />
+        </div>
+        <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1"
+             role="radiogroup" aria-label="Режим работы воронки">
+          {(['auto', 'application', 'hybrid'] as const).map((mode) => {
+            const labels = { auto: 'Автопродажа', application: 'По заявкам', hybrid: 'Гибрид' };
+            const colors = { auto: 'var(--color-success)', application: '#3b82f6', hybrid: '#a855f7' };
+            return (
+              <button key={mode} type="button"
+                onClick={() => onPaymentModeChange(mode)}
+                role="radio" aria-checked={paymentMode === mode}
+                className={`flex-1 py-2 px-2 text-[12px] font-bold rounded-lg transition-all
+                  flex items-center justify-center gap-1.5 ${
+                  paymentMode === mode
+                    ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]'
+                    : 'text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]'
+                }`}
+              >
+                <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
+                      style={{ background: colors[mode] }} />
+                <span>{labels[mode]}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <AnimatePresence>
+          {(paymentMode === 'application' || paymentMode === 'hybrid') && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }} className="pt-2 border-t border-[var(--color-border)]">
+              <label htmlFor="manager-url" className="text-[12px] font-semibold text-[var(--color-foreground-secondary)] block mb-1.5">
+                Ссылка на Telegram менеджера
+              </label>
+              <input id="manager-url" type="text"
+                className="input w-full text-[13px] h-9 mb-3"
+                value={managerUrl}
+                placeholder="@manager или https://t.me/manager"
+                onChange={(e) => onManagerUrlChange(e.target.value)} />
+              <label htmlFor="manager-text" className="text-[12px] font-semibold text-[var(--color-foreground-secondary)] block mb-1.5">
+                Текст для связи
+              </label>
+              <input id="manager-text" type="text"
+                className="input w-full text-[13px] h-9"
+                value={managerText}
+                placeholder="Хочу узнать подробнее / записаться..."
+                onChange={(e) => onManagerTextChange(e.target.value)} />
+              <p className="text-[11px] text-[var(--color-foreground-tertiary)] mt-1.5">
+                Telegram подставит этот текст в поле ввода клиента при нажатии кнопки.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <hr className="border-[var(--color-border)] my-1" />
+
+      {/* Tab bar — показывается только если тарифов > 1 */}
       {tariffs.length > 1 && (
-        <div className="flex flex-col gap-2 p-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xs">
+        <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1 border border-[var(--color-border)]">
+          {([
+            { id: 'tariffs' as const, label: 'Тарифы', badge: tariffs.length },
+            { id: 'message' as const, label: 'Сообщение выбора' },
+          ]).map(tab => (
+            <button key={tab.id} type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-1.5 rounded-lg text-[12px] font-semibold transition-all
+                flex items-center justify-center gap-1.5 ${
+                activeTab === tab.id
+                  ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]'
+                  : 'text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]'
+              }`}
+            >
+              <span>{tab.label}</span>
+              {'badge' in tab && (
+                <span className="px-1.5 py-0.5 text-[10px] rounded-full font-bold
+                                bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Таб: Сообщение (только если тарифов > 1 и активен этот таб) */}
+      {tariffs.length > 1 && activeTab === 'message' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col gap-2 p-4 rounded-2xl bg-[var(--color-surface)]
+                     border border-[var(--color-border)] shadow-2xs"
+        >
           <div className="flex items-center gap-1.5">
-            <label className="text-label" style={{ display: 'block', marginBottom: 0 }}>
+            <label className="text-[13px] font-semibold text-[var(--color-foreground)]" style={{ display: 'block', marginBottom: 0 }}>
               Сообщение перед выбором тарифа
             </label>
             <InfoTooltip
@@ -96,13 +210,14 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
             maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
             onChange={(value) => onChange('tariffSelectionText', value)}
           />
-        </div>
+        </motion.div>
       )}
 
-      <div className="flex flex-col gap-3">
+      {/* Таб: Тарифы */}
+      <div className={`flex flex-col gap-3 ${(tariffs.length > 1 && activeTab !== 'tariffs') ? 'hidden' : ''}`}>
         {/* Header row */}
         <div className="flex items-center gap-1.5">
-          <label className="text-label" style={{ display: 'block', marginBottom: 0 }}>
+          <label className="text-[13px] font-semibold text-[var(--color-foreground)]" style={{ display: 'block', marginBottom: 0 }}>
             Тарифы и стоимость
           </label>
           <InfoTooltip
@@ -132,17 +247,27 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
               >
                 {/* ── Tariff header (click to collapse) ── */}
                 <div
-                  className="flex items-center justify-between px-4 py-3 cursor-pointer select-none border-b border-[var(--color-border)] hover:bg-[var(--color-surface-2)] transition-colors"
+                  className={`flex items-center justify-between px-4 py-3.5 cursor-pointer select-none transition-colors hover:bg-[var(--color-surface-2)] ${!isCollapsed ? 'border-b border-[var(--color-border)]' : ''}`}
                   onClick={() => toggleCollapse(tariff.id)}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] shrink-0" />
-                    <span className="text-[13px] font-semibold text-[var(--color-foreground)] truncate">
-                      {tariffLabel}
-                      <span className="text-[var(--color-primary)]">{priceLabel}</span>
-                    </span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-[var(--color-primary-soft)] flex items-center justify-center shrink-0">
+                      <span className="text-[11px] font-bold text-[var(--color-primary)]">{index + 1}</span>
+                    </div>
+                    <div className="min-w-0 flex flex-col justify-center">
+                      <p className="text-[13px] font-semibold text-[var(--color-foreground)] truncate leading-tight mb-0.5">
+                        {tariff.name || 'Без названия'}
+                      </p>
+                      <p className="text-[12px] text-[var(--color-foreground-tertiary)] leading-tight">
+                        {tariff.price ? `${Number(tariff.price).toLocaleString('ru-RU')} ₽` : 'Цена не задана'}
+                      </p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {/* Status check if delivery is setup */}
+                    {tariff.actionData && isCollapsed && (
+                      <CheckCircle2 size={14} className="text-[var(--color-success)]" />
+                    )}
                     {tariffs.length > 1 && (
                       <button
                         type="button"
@@ -162,8 +287,8 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ node, bo
                         <Trash2 size={12} />
                       </button>
                     )}
-                    <motion.div animate={{ rotate: isCollapsed ? -90 : 0 }} transition={{ duration: 0.15 }}>
-                      <ChevronDown size={16} className="text-[var(--color-foreground-tertiary)]" />
+                    <motion.div animate={{ rotate: isCollapsed ? 0 : 180 }} transition={{ duration: 0.15 }}>
+                      <ChevronDown size={15} className="text-[var(--color-foreground-tertiary)]" />
                     </motion.div>
                   </div>
                 </div>
