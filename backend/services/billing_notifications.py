@@ -1,4 +1,4 @@
-"""Best-effort user notifications for Bot Father billing events."""
+"""Best-effort user notifications for BotFlow billing events."""
 
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties

@@ -636,7 +636,7 @@ export const Home = () => {
               animate={{ y: [0, -8, 0] }}
               transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
               src="/welcome_robot.png"
-              alt="Bot Father Welcome Robot"
+              alt="BotFlow Welcome Robot"
               className="w-full h-auto object-contain select-none transition-transform duration-500 group-hover:scale-105 group-hover:rotate-1"
               style={{
                 maxHeight: "clamp(240px, 45vh, 400px)",

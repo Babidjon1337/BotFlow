@@ -17,7 +17,7 @@ async def start_command_handler(message: Message):
     if not message.from_user:
         return
 
-    # The main Bot Father registers SaaS owners. Client bots use their own
+    # The main BotFlow registers SaaS owners. Client bots use their own
     # /start handler and only create leads for the configured funnel.
     try:
         await create_user_if_not_exists(message.from_user.id)
@@ -27,7 +27,7 @@ async def start_command_handler(message: Message):
         return
 
     await message.answer(
-        """🤖 <b>Привет! На связи FunnelGenius.</b> Мы стерли границы между сложным программированием и автоворонками, которые приносят деньги. Больше никаких программистов с огромными чеками, ТЗ на 50 страниц и багов в коде.
+        """🤖 <b>Привет! На связи BotFlow.</b> Мы стерли границы между сложным программированием и автоворонками, которые приносят деньги. Больше никаких программистов с огромными чеками, ТЗ на 50 страниц и багов в коде.
 
 Здесь ты можешь собрать свою идеальную автоворонку с продающим видео, кнопками тарифов и автоматическими дожимами (напоминалками) всего за <b>15 минут</b>.
 

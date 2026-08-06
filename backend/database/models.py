@@ -259,7 +259,7 @@ class MediaAsset(Base):
 
 
 # ==========================================
-# 5. ТАБЛИЦА SAAS_PAYMENTS (платежи Bot Father)
+# 5. ТАБЛИЦА SAAS_PAYMENTS (платежи BotFlow)
 # ==========================================
 class SaasPayment(Base):
     __tablename__ = "saas_payments"

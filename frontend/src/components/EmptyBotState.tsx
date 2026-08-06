@@ -61,7 +61,7 @@ export const EmptyBotState = ({
           boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
         }}>
           <LayoutGrid size={15} />
-          <span>Bot Father</span>
+          <span>BotFlow</span>
         </div>
 
         {/* Image — smaller on mobile */}

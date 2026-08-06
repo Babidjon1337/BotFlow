@@ -263,7 +263,7 @@ export const Subscription = () => {
                       </div>
                     </div>
                     <p className="text-[14px] md:text-[16px] text-[var(--color-foreground-secondary)] font-medium">
-                      {isAdmin ? "Безлимитный доступ ко всем функциям и аналитике Bot Father" : "Разблокированы все возможности платформы"}
+                      {isAdmin ? "Безлимитный доступ ко всем функциям и аналитике BotFlow" : "Разблокированы все возможности платформы"}
                     </p>
                   </div>
                 </div>

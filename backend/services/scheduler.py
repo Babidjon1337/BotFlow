@@ -1,4 +1,5 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_ERROR
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -178,10 +179,18 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
     return results
 
 
-def start_scheduler():
+def apscheduler_listener(event):
+    if event.exception:
+        logger.error(f"❌ Задача '{event.job_id}' упала с ошибкой: {event.exception}")
+    else:
+        logger.info(f"⚡ Задача '{event.job_id}' успешно выполнена.")
+
+
+async def start_scheduler():
     if scheduler.running:
         logger.info("⏳ Планировщик уже запущен.")
         return
+    scheduler.add_listener(apscheduler_listener, EVENT_JOB_EXECUTED | EVENT_JOB_ERROR)
     scheduler.add_job(
         check_reminders_job,
         trigger="interval",

@@ -86,7 +86,7 @@ export const Profile = () => {
               onClick={() => setActiveTab?.("admin_stats")}
               className="mt-4 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#4F46E5] to-[#C026D3] text-white font-bold text-[14px] shadow-md hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
             >
-              📊 Открыть дашборд статистики Bot Father
+              📊 Открыть дашборд статистики BotFlow
             </button>
           </motion.div>
         )}

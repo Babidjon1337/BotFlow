@@ -21,7 +21,7 @@ export const Landing = ({ onPay, isPaying }: LandingProps) => {
           className="absolute inset-0 bg-primary/40 rounded-[36px] blur-2xl"
         />
       </motion.div>
-      <h1 className="text-5xl font-black mb-4 tracking-tight text-foreground">Bot Father</h1>
+      <h1 className="text-5xl font-black mb-4 tracking-tight text-foreground">BotFlow</h1>
       <p className="text-muted-foreground mb-12 max-w-[280px] leading-relaxed font-medium">
         Ваша персональная империя ботов начинается здесь. Конструктор, воронки, платежи.
       </p>

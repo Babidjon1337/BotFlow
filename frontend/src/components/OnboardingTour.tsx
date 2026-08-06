@@ -12,7 +12,7 @@ interface TourStep {
 const TOUR_STEPS: TourStep[] = [
   {
     targetId: null,
-    title: '👋 Добро пожаловать в Bot Father',
+    title: '👋 Добро пожаловать в BotFlow',
     description: 'За несколько минут настроите Telegram-бота с автоматической воронкой продаж и приёмом оплат. Покажем, как всё устроено.',
     tooltipSide: 'center',
   },
@@ -25,7 +25,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     targetId: 'tour-token-input',
     title: '🔑 Токен бота',
-    description: 'Вставьте токен из @BotFather в Telegram. Это уникальный ключ, который связывает Bot Father с вашим ботом.',
+    description: 'Вставьте токен из @BotFather в Telegram. Это уникальный ключ, который связывает BotFlow с вашим ботом.',
     tooltipSide: 'bottom',
   },
   {

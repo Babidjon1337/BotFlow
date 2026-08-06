@@ -1,4 +1,4 @@
-"""Persistence operations for Bot Father's own products and subscriptions."""
+"""Persistence operations for BotFlow's own products and subscriptions."""
 
 import uuid
 from datetime import datetime, timedelta, timezone

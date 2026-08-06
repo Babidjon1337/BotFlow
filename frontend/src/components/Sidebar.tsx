@@ -44,9 +44,7 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
         style={{ height: '80px' }}
       >
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-accent)] flex items-center justify-center shadow-md">
-            <Bot size={18} className="text-white" />
-          </div>
+          <img src="/logo_BotFlow.png" alt="BotFlow" className="w-8 h-8 rounded-xl object-cover shadow-md" />
           <span
             style={{
               fontSize: '18px',
@@ -55,7 +53,7 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
               letterSpacing: '-0.03em',
             }}
           >
-            Bot Father
+            BotFlow
           </span>
         </div>
       </div>

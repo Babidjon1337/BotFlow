@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-
+import { ShieldAlert } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { MobileNav } from './components/MobileNav';
@@ -220,22 +220,28 @@ export default function App() {
 
   if (authError) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center bg-[var(--color-background)] px-6 text-center" style={{ color: 'var(--color-foreground)' }}>
-        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
-          <span className="text-3xl">⚠️</span>
+      <div className="flex h-full w-full flex-col items-center justify-center relative overflow-hidden bg-[var(--color-background)] px-6 text-center" style={{ color: 'var(--color-foreground)' }}>
+        {/* Background glow effects */}
+        <div style={{ position: 'absolute', top: '20%', left: '30%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(239,68,68,0.08) 0%, rgba(255,255,255,0) 70%)', zIndex: 0, borderRadius: '50%' }} />
+        <div style={{ position: 'absolute', bottom: '20%', right: '30%', width: '250px', height: '250px', background: 'radial-gradient(circle, rgba(245,158,11,0.05) 0%, rgba(255,255,255,0) 70%)', zIndex: 0, borderRadius: '50%' }} />
+        
+        <div className="relative z-10 flex flex-col items-center max-w-[400px] p-8 rounded-3xl border border-[var(--color-border)] shadow-xl" style={{ background: 'rgba(var(--color-surface-rgb), 0.7)', backdropFilter: 'blur(20px)' }}>
+          <div className="w-20 h-20 bg-red-500/10 rounded-2xl flex items-center justify-center mb-6 shadow-inner ring-1 ring-red-500/20">
+            <ShieldAlert className="text-red-500/90 w-10 h-10 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-black mb-3 tracking-tight">Ошибка авторизации</h2>
+          <p className="text-[var(--color-foreground-secondary)] mb-8 leading-relaxed text-sm">
+            Мы не смогли распознать ваш аккаунт. Пожалуйста, запустите главного бота (BotFlow) и нажмите кнопку <span className="font-semibold">«Открыть приложение»</span>.
+          </p>
+          <button
+            onClick={() => {
+              getTelegramWebApp()?.close?.();
+            }}
+            className="w-full py-3.5 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-bold rounded-xl active:scale-[0.98] transition-all shadow-md shadow-red-500/20"
+          >
+            Закрыть окно
+          </button>
         </div>
-        <h2 className="text-xl font-bold mb-3">Ошибка авторизации</h2>
-        <p className="text-[var(--color-foreground-secondary)] mb-8 max-w-sm">
-          Мы не смогли распознать ваш аккаунт. Пожалуйста, запустите главного бота (Bot Father) и нажмите кнопку "Открыть приложение".
-        </p>
-        <button
-          onClick={() => {
-            getTelegramWebApp()?.close?.();
-          }}
-          className="px-6 py-3 bg-[var(--color-primary)] text-white font-bold rounded-xl active:scale-95 transition-transform"
-        >
-          Закрыть
-        </button>
       </div>
     );
   }

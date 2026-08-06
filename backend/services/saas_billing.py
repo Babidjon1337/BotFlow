@@ -1,4 +1,4 @@
-"""YooKassa billing for Bot Father licenses and PRO subscriptions."""
+"""YooKassa billing for BotFlow licenses and PRO subscriptions."""
 
 import json
 import uuid
@@ -38,7 +38,7 @@ class BillingProviderUnavailable(RuntimeError):
 PRODUCTS = {
     "license": ("license", SAAS_LICENSE_PRICE_RUB, "Лицензия на Telegram-бота"),
     "basic": ("license", SAAS_LICENSE_PRICE_RUB, "Лицензия на Telegram-бота"),
-    "pro": ("pro_initial", SAAS_PRO_PRICE_RUB, "PRO-подписка Bot Father"),
+    "pro": ("pro_initial", SAAS_PRO_PRICE_RUB, "PRO-подписка BotFlow"),
 }
 
 
@@ -144,7 +144,7 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
         amount = Decimal(str(payment["amount"]["value"]))
         currency = str(payment["amount"]["currency"])
     except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
-        raise BillingError("Payment does not belong to Bot Father billing") from exc
+        raise BillingError("Payment does not belong to BotFlow billing") from exc
 
     try:
         if payment.get("status") == "canceled":
@@ -192,7 +192,7 @@ async def create_recurring_payment(user):
         "amount": {"value": f"{SAAS_PRO_PRICE_RUB:.2f}", "currency": "RUB"},
         "capture": True,
         "payment_method_id": method_id,
-        "description": "Продление PRO-подписки Bot Father",
+        "description": "Продление PRO-подписки BotFlow",
         "metadata": {"saas_payment_id": str(payment.id), "user_id": str(user.id), "product": "pro_renewal"},
     }
     try:

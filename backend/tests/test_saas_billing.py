@@ -1,4 +1,4 @@
-"""Main Bot Father billing verification and order-integrity tests."""
+"""Main BotFlow billing verification and order-integrity tests."""
 
 import uuid
 import asyncio

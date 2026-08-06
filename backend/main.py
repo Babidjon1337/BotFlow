@@ -302,7 +302,7 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
 @app.post("/webhook/billing/yookassa")
 @limiter.exempt
 async def saas_yookassa_webhook(request: Request):
-    """Apply Bot Father purchases only after YooKassa server verification."""
+    """Apply BotFlow purchases only after YooKassa server verification."""
     try:
         payload = await request.json()
         was_applied, user = await verify_billing_notification(payload)
@@ -321,7 +321,7 @@ async def saas_yookassa_webhook(request: Request):
         if payload.get("event") == "payment.succeeded":
             await notify_billing_user(
                 user.telegram_id,
-                "✅ Оплата успешно получена. Доступ Bot Father обновлён.",
+                "✅ Оплата успешно получена. Доступ BotFlow обновлён.",
             )
     return {"status": "ok"}
 

@@ -41,11 +41,11 @@ WEBAPP_URL = os.getenv("WEBAPP_URL")
 SECRET_KEY = os.getenv("SECRET_KEY")
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 
-# YooKassa credentials for Bot Father subscriptions and permanent bot licenses.
+# YooKassa credentials for BotFlow subscriptions and permanent bot licenses.
 # They are intentionally separate from the credentials stored for client bots.
 SAAS_YOOKASSA_SHOP_ID = os.getenv("SAAS_YOOKASSA_SHOP_ID")
 SAAS_YOOKASSA_SECRET_KEY = os.getenv("SAAS_YOOKASSA_SECRET_KEY")
-# Bot Father sells a digital SaaS service. The default is "без НДС"; change it
+# BotFlow sells a digital SaaS service. The default is "без НДС"; change it
 # only when the seller's tax regime requires another fiscal rate.
 SAAS_YOOKASSA_VAT_CODE = int(os.getenv("SAAS_YOOKASSA_VAT_CODE", "1"))
 SAAS_LICENSE_PRICE_RUB = int(os.getenv("SAAS_LICENSE_PRICE_RUB", "2000"))
