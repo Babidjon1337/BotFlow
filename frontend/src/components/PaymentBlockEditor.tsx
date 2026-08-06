@@ -229,12 +229,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
         <AnimatePresence>
           {tariffs.map((tariff, index) => {
             const isCollapsed = collapsedTariffs.has(tariff.id);
-            const tariffLabel = tariff.name
-              ? tariff.name
-              : `Тариф ${index + 1}`;
-            const priceLabel = tariff.price
-              ? ` · ${Number(tariff.price).toLocaleString('ru-RU')} ₽`
-              : '';
+            // Unused variables removed for TS compliance
 
             return (
               <motion.div

@@ -28,7 +28,7 @@ import { EmptyBotState } from "../EmptyBotState";
 import { FunnelCard } from "../FunnelCard";
 import { PaymentBlockEditor } from "../PaymentBlockEditor";
 import { TimerPresets } from "../TimerPresets";
-import { InfoTooltip } from "../InfoTooltip";
+
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
@@ -686,11 +686,7 @@ export const Build = () => {
   ];
   const incompleteSteps = funnelSteps.filter((step) => !step.complete);
   const completedStepsCount = funnelSteps.length - incompleteSteps.length;
-  const modeOutcome = paymentMode === "application"
-    ? "Клиент напишет менеджеру, а вы выставите счёт вручную."
-    : paymentMode === "hybrid"
-      ? "Клиент сможет оплатить сразу или написать менеджеру."
-      : "Клиент выберет тариф, оплатит онлайн и получит доступ автоматически.";
+
 
   const handlePreviewButtonClick = (btnIndex: 1 | 2) => {
     if (btnIndex === 2 || paymentMode === "application") {

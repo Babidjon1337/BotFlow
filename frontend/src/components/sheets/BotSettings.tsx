@@ -471,7 +471,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                             <div className="relative group">
                               <input
                                 type="text"
-                                value={activeBot.paymentCredentialsPreview[field.key] || '••••••••'}
+                                value={activeBot.paymentCredentialsPreview?.[field.key] || '••••••••'}
                                 readOnly
                                 className="input w-full cursor-default pr-10 text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] font-mono text-sm"
                               />
