@@ -186,7 +186,7 @@ def apscheduler_listener(event):
         logger.info(f"⚡ Задача '{event.job_id}' успешно выполнена.")
 
 
-async def start_scheduler():
+def start_scheduler():
     if scheduler.running:
         logger.info("⏳ Планировщик уже запущен.")
         return
