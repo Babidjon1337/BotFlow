@@ -43,14 +43,16 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
         className="px-6 flex items-center shrink-0" 
         style={{ height: '80px' }}
       >
-        <div className="flex items-center gap-3">
-          <img src="/logo_BotFlow.png" alt="BotFlow" className="w-8 h-8 rounded-xl object-cover shadow-md" />
+        <div className="flex items-center gap-3.5">
+          <img src="/logo_BotFlow.png" alt="BotFlow" className="w-11 h-11 rounded-[14px] object-cover shadow-sm" />
           <span
             style={{
-              fontSize: '18px',
+              fontSize: '20px',
               fontWeight: 800,
               color: 'var(--color-foreground)',
               letterSpacing: '-0.03em',
+              lineHeight: '1',
+              paddingTop: '2px', // Slight visual adjustment to perfectly align baselines
             }}
           >
             BotFlow
