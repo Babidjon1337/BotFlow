@@ -1,16 +1,16 @@
-﻿#!/bin/bash
+#!/bin/bash
 # ============================================================
-# Bot Father — Server Update Script
-# Usage: /opt/botfather/update.sh
+# BotFlow — Server Update Script
+# Usage: /opt/BotFlow/update.sh
 # Run this on the server after pushing changes to GitHub
 # ============================================================
 set -e
 
-BOTFATHER_DIR="/opt/botfather"
-SERVICE_NAME="botfather"
+BOTFATHER_DIR="/var/www/BotFlow"
+SERVICE_NAME="botflow"
 
 echo "========================================"
-echo "  Bot Father Update Script"
+echo "  BotFlow Update Script"
 echo "========================================"
 
 # Step 1: Pull latest code

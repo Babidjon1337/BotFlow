@@ -1,0 +1,28 @@
+# Systemd service for BotFlow backend
+# Place at: /etc/systemd/system/botflow.service
+# Then:
+#   systemctl daemon-reload
+#   systemctl enable botflow
+#   systemctl start botflow
+
+[Unit]
+Description=BotFlow FastAPI Backend
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/BotFlow/backend
+EnvironmentFile=/var/www/BotFlow/.env
+ExecStart=/var/www/BotFlow/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits (adjust to your VPS size)
+# MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
