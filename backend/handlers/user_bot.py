@@ -66,9 +66,11 @@ async def on_my_chat_member_update(event: ChatMemberUpdated):
                     chat_type_ru = "Канал" if event.chat.type == "channel" else "Группа"
                     from aiogram import Bot
                     from aiogram.client.default import DefaultBotProperties
-                    from config import MAIN_BOT_TOKEN
+                    from config import MAIN_BOT_TOKEN, PROXY_URL
+                    from aiogram.client.session.aiohttp import AiohttpSession
                     
-                    main_bot = Bot(token=MAIN_BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+                    session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else None
+                    main_bot = Bot(token=MAIN_BOT_TOKEN, session=session, default=DefaultBotProperties(parse_mode="HTML"))
                     await main_bot.send_message(
                         bot_config.owner.telegram_id,
                         f"✅ {chat_type_ru} <b>{event.chat.title or 'Без названия'}</b> успешно подключён(а) к вашему боту!\n\nСинхронизация завершена. Вернитесь в Mini App, чтобы настроить выдачу доступа."

@@ -1,6 +1,5 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from aiogram.client.session.aiohttp import AiohttpSession
-import os
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram import Bot
@@ -23,12 +22,13 @@ from database.requests.billing_rq import get_users_due_for_subscription_renewal
 from services.billing_notifications import notify_billing_user
 from services.saas_billing import BillingError, create_recurring_payment
 from database.requests.bot_rq import enforce_non_pro_bot_limits
+from database.models import Lead, ClientPayment
+from config import PROXY_URL
 from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
 from services.payment_fulfillment import process_client_payment_fulfillment
 
 scheduler = AsyncIOScheduler()
-tg_proxy = os.getenv("TG_PROXY")
-shared_scheduler_session = AiohttpSession(proxy=tg_proxy) if tg_proxy else AiohttpSession()
+shared_scheduler_session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else AiohttpSession()
 
 
 async def check_reminders_job():
