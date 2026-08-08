@@ -420,9 +420,11 @@ async def _send_tariff_invoice(
 
     lead = await get_lead(bot_config.id, callback.from_user.id)
     if not lead:
-        await loading_message.edit_text(
-            "Не удалось определить заявку. Нажмите /start и повторите попытку."
-        )
+        error_msg = "Не удалось определить заявку. Нажмите /start и повторите попытку."
+        if edit_message:
+            await callback.message.edit_text(error_msg)
+        else:
+            await callback.message.answer(error_msg)
         return
     tariff_snapshot = (
         tariff.model_dump(by_alias=True)
