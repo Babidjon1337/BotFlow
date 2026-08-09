@@ -22,7 +22,13 @@ TELEGRAM_INIT_DATA_MAX_AGE_SECONDS = int(
 # Защита: если нет ID, ставим 0, чтобы int() не падал
 MAIN_BOT_TG_ID = int(os.getenv("MAIN_BOT_TG_ID", 0))
 
+# Public base URL for payment-provider callbacks (YooKassa/Robokassa/Prodamus).
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+# Dedicated public base URL for Telegram updates from the main and client bots.
+# Keep it separate from payment callbacks: Telegram availability and Cloudflare
+# rules for this host are operationally independent from the Mini App.
+TG_WEBHOOK_URL = os.getenv("TG_WEBHOOK_URL")
+
 WEBHOOK_PORT = int(os.getenv("WEBHOOK_PORT", 8000))
 PROXY_URL = os.getenv("PROXY_URL")
 
@@ -81,4 +87,14 @@ if not DATABASE_URL:
 if ENVIRONMENT == "production" and not CORS_ALLOWED_ORIGINS and not WEBAPP_URL:
     raise RuntimeError(
         "Set CORS_ALLOWED_ORIGINS or WEBAPP_URL for production Mini App requests."
+    )
+
+if ENVIRONMENT == "production" and not TG_WEBHOOK_URL:
+    raise RuntimeError(
+        "Set TG_WEBHOOK_URL for production Telegram webhooks."
+    )
+
+if ENVIRONMENT == "production" and not WEBHOOK_URL:
+    raise RuntimeError(
+        "Set WEBHOOK_URL for production payment webhooks."
     )

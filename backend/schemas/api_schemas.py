@@ -117,12 +117,21 @@ class BotApiResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     @classmethod
-    def from_orm_bot(cls, bot, webhook_base_url: str = ""):
+    def from_orm_bot(
+        cls,
+        bot,
+        telegram_webhook_base_url: str = "",
+        payment_webhook_base_url: str = "",
+    ):
         bot_url = f"https://t.me/{bot.username}" if bot.username else None
-        webhook_url = f"{webhook_base_url}/webhook/bots/{bot.id}" if webhook_base_url else None
+        webhook_url = (
+            f"{telegram_webhook_base_url.rstrip('/')}/webhook/bots/{bot.id}"
+            if telegram_webhook_base_url
+            else None
+        )
         payment_webhook_url = (
-            f"{webhook_base_url}/webhook/payments/{bot.payment_provider}/{bot.tg_bot_id}"
-            if webhook_base_url and bot.payment_provider and bot.tg_bot_id
+            f"{payment_webhook_base_url.rstrip('/')}/webhook/payments/{bot.payment_provider}/{bot.tg_bot_id}"
+            if payment_webhook_base_url and bot.payment_provider and bot.tg_bot_id
             else None
         )
         created_str = bot.created_at.isoformat() if hasattr(bot, "created_at") and bot.created_at else None

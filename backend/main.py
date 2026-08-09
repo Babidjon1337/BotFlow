@@ -42,7 +42,7 @@ from loggers import logger
 from config import (
     CORS_ALLOWED_ORIGINS,
     ENVIRONMENT,
-    WEBHOOK_URL,
+    TG_WEBHOOK_URL,
     WEBAPP_URL,
     WEBHOOK_PORT,
     MAIN_BOT_TOKEN,
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
     app.state.main_bot = main_bot
 
     await main_bot.set_webhook(
-        url=f"{WEBHOOK_URL}/webhook/main",
+        url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/main",
         secret_token=SECRET_KEY,
         drop_pending_updates=True,
     )

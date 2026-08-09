@@ -5,7 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from loggers import logger
-from config import ADMIN_TELEGRAM_IDS, ALLOW_INSECURE_DEV_AUTH, WEBHOOK_URL, SECRET_KEY
+from config import (
+    ADMIN_TELEGRAM_IDS,
+    ALLOW_INSECURE_DEV_AUTH,
+    SECRET_KEY,
+    TG_WEBHOOK_URL,
+    WEBHOOK_URL,
+)
 from services.security import crypto
 from services.telegram_auth import TelegramAuthError, TelegramUser, validate_init_data
 from database.requests.bot_rq import (
@@ -179,7 +185,7 @@ async def auth_user(request: Request, body: dict = None):
 
     bots_resp = []
     for b in bots:
-        resp = BotApiResponse.from_orm_bot(b, WEBHOOK_URL)
+        resp = BotApiResponse.from_orm_bot(b, TG_WEBHOOK_URL, WEBHOOK_URL)
         sales, revenue = await get_client_payment_stats(b.id)
         resp.sales = sales
         resp.revenue = float(revenue)
@@ -267,7 +273,7 @@ async def list_bots(request: Request):
     
     bots_resp = []
     for b in bots:
-        resp = BotApiResponse.from_orm_bot(b, WEBHOOK_URL)
+        resp = BotApiResponse.from_orm_bot(b, TG_WEBHOOK_URL, WEBHOOK_URL)
         sales, revenue = await get_client_payment_stats(b.id)
         resp.sales = sales
         resp.revenue = float(revenue)
@@ -356,7 +362,7 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
     try:
         temp_bot = Bot(token=body.token, session=request.app.state.session)
         await temp_bot.set_webhook(
-            url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
+            url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot.id}",
             secret_token=SECRET_KEY,
             drop_pending_updates=True,
             allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
@@ -376,14 +382,14 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
             detail="Telegram не подтвердил подключение бота. Повторите попытку.",
         ) from exc
 
-    resp = BotApiResponse.from_orm_bot(bot, WEBHOOK_URL)
+    resp = BotApiResponse.from_orm_bot(bot, TG_WEBHOOK_URL, WEBHOOK_URL)
     return resp.model_dump(by_alias=True)
 
 
 @api_router.get("/api/bots/{bot_id}")
 async def get_bot(bot_id: int, request: Request):
     bot = await get_owned_bot(bot_id, request)
-    resp = BotApiResponse.from_orm_bot(bot, WEBHOOK_URL)
+    resp = BotApiResponse.from_orm_bot(bot, TG_WEBHOOK_URL, WEBHOOK_URL)
     return resp.model_dump(by_alias=True)
 
 
@@ -442,7 +448,7 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
             update_data["tg_bot_id"] = me.id
             update_data["username"] = me.username
             await temp_bot.set_webhook(
-                url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
+                url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot.id}",
                 secret_token=SECRET_KEY,
                 drop_pending_updates=True,
                 allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
@@ -469,7 +475,7 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         token_changed = True
 
     updated_bot = await update_bot_config(bot_id, **update_data)
-    resp = BotApiResponse.from_orm_bot(updated_bot or bot, WEBHOOK_URL)
+    resp = BotApiResponse.from_orm_bot(updated_bot or bot, TG_WEBHOOK_URL, WEBHOOK_URL)
     res_dict = resp.model_dump(by_alias=True)
     res_dict["token_changed"] = token_changed
     return res_dict
@@ -539,7 +545,7 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
         # User bot handlers will naturally ignore regular messages if status == draft.
         if new_status == "active":
             await temp_bot.set_webhook(
-                url=f"{WEBHOOK_URL}/webhook/bots/{bot.id}",
+                url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot.id}",
                 secret_token=SECRET_KEY,
                 drop_pending_updates=True,
                 allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
@@ -557,7 +563,7 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
     bot_url = (
         f"https://t.me/{updated_bot.username}" if updated_bot.username else None
     )
-    webhook_url = f"{WEBHOOK_URL}/webhook/bots/{updated_bot.id}"
+    webhook_url = f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{updated_bot.id}"
     return {
         "status": "ok",
         "message": f"Бот {'запущен' if new_status == 'active' else 'остановлен'}",
