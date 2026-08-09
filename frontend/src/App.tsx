@@ -21,7 +21,9 @@ import { useBotToggle } from './hooks/useBotToggle';
 import { useBotSelectionGuard } from './hooks/useBotSelectionGuard';
 
 type TelegramWebApp = {
-  ready?: () => void; expand?: () => void; enableClosingConfirmation?: () => void;
+  ready?: () => void; expand?: () => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
   requestFullscreen?: () => void; disableVerticalSwipes?: () => void;
   setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
@@ -79,7 +81,11 @@ export default function App() {
     if (tg) {
       tg.ready?.();
       tg.expand?.();
-      tg.enableClosingConfirmation?.();
+      if (appState.isDirty) {
+        tg.enableClosingConfirmation?.();
+      } else {
+        tg.disableClosingConfirmation?.();
+      }
       if (tg.requestFullscreen) {
         try {
           tg.requestFullscreen();
@@ -95,7 +101,7 @@ export default function App() {
       if (tg.setBackgroundColor) tg.setBackgroundColor(bgColor);
       if (tg.setBottomBarColor) tg.setBottomBarColor(bgColor);
     }
-  }, [theme]);
+  }, [theme, appState.isDirty]);
 
   useEffect(() => {
     if (theme === 'dark') {
