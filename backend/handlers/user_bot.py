@@ -517,7 +517,7 @@ async def process_payment_button(callback: CallbackQuery):
         )
         return
     if len(tariffs) > 1:
-        selection_text = (
+        selection_text = to_telegram_html(
             getattr(node_checkout, "tariff_selection_text", "")
             or "Выберите подходящий тариф:"
         )
