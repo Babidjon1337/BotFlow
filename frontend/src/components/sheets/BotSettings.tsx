@@ -89,7 +89,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
   const isTokenLocked = !isPro && activeBot?.isTokenLocked === true;
   const canEditToken = !isTokenLocked;
 
-  const { showAlert, showConfirm } = useAlert();
+  const { showAlert } = useAlert();
   const isFunnelReady = Boolean(
     activeBot &&
     funnelLoadState.status === 'ready' &&
@@ -105,19 +105,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
 
   const requestClose = useCallback(() => {
     if (isSaving) return;
-    if (!hasUnsavedChanges) {
-      onClose();
-      return;
-    }
-    showConfirm({
-      title: 'Закрыть без сохранения?',
-      message: 'Несохранённые изменения в настройках будут потеряны.',
-      type: 'warning',
-      confirmText: 'Закрыть',
-      cancelText: 'Остаться',
-      onConfirm: onClose,
-    });
-  }, [hasUnsavedChanges, isSaving, onClose, showConfirm]);
+    onClose();
+  }, [isSaving, onClose]);
 
   useEffect(() => {
     const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void } } } }).Telegram?.WebApp;
