@@ -3,16 +3,27 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/logo_BotFlow.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>BotFlow</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
       // Глобальный перехватчик вообще всех ошибок до запуска React
-      window.addEventListener('error', function(e) {
+      window.addEventListener("error", function (e) {
+        // ResizeObserver loop — известное безвредное предупреждение браузера,
+        // не влияющее на работу приложения. Не показываем пользователю.
+        if (e.message && e.message.includes("ResizeObserver loop")) {
+          return;
+        }
         alert("JS Error: " + e.message + " at " + e.filename + ":" + e.lineno);
       });
-      window.addEventListener('unhandledrejection', function(e) {
-        alert("Promise Rejection: " + (e.reason && e.reason.message ? e.reason.message : e.reason));
+      window.addEventListener("unhandledrejection", function (e) {
+        alert(
+          "Promise Rejection: " +
+            (e.reason && e.reason.message ? e.reason.message : e.reason),
+        );
       });
     </script>
   </head>
