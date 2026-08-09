@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+// Telegram WebView can retain an interrupted immutable asset after a deploy.
+// Stamp generated chunks so every production build gets fresh hashed URLs.
+const buildReleaseId = process.env.BOTFLOW_BUILD_ID ?? Date.now().toString();
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -29,6 +33,7 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        banner: `/* BotFlow release: ${buildReleaseId} */`,
         manualChunks(id) {
           // React и связанные библиотеки редко меняются между деплоями —
           // выносим отдельно, чтобы браузер/WebView кэшировал их надолго
