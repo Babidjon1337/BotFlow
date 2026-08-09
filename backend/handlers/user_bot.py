@@ -640,8 +640,11 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
         client_payment=payment,
     )
     if not url:
-        await callback.message.edit_text(
-            "⚠️ Не удалось сформировать счёт. Попробуйте позже."
+        await _remove_callback_message(callback)
+        await _send_payment_message(
+            callback,
+            "⚠️ Не удалось сформировать счёт. Попробуйте позже.",
+            InlineKeyboardMarkup(inline_keyboard=[]),
         )
         return
     details = f"<b>{escape(str(tariff.get('name', 'Тариф')))}</b>"
@@ -692,7 +695,9 @@ async def return_to_manual_invoice_choices(callback: CallbackQuery):
         for item in batch
         if item.status == "pending"
     ]
-    await callback.message.edit_text(
+    await _remove_callback_message(callback)
+    await _send_payment_message(
+        callback,
         "🧾 <b>Выберите товар для оплаты</b>\n\nНажмите нужный тариф.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=rows),
+        InlineKeyboardMarkup(inline_keyboard=rows),
     )
