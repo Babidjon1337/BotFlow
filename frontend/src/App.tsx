@@ -80,6 +80,7 @@ export default function App() {
   );
   const [isBotCreating, setIsBotCreating] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [hasFocusedTextField, setHasFocusedTextField] = useState(false);
 
   useEffect(() => {
     const tg = getTelegramWebApp();
@@ -124,6 +125,19 @@ export default function App() {
     return () => {
       tg?.offEvent?.("safeAreaChanged", applyTelegramSafeArea);
       tg?.offEvent?.("contentSafeAreaChanged", applyTelegramSafeArea);
+    };
+  }, []);
+
+  useEffect(() => {
+    const isTextField = (element: Element | null) =>
+      element instanceof HTMLElement && Boolean(element.closest('input, textarea, [contenteditable="true"]'));
+    const updateFocusState = () => setHasFocusedTextField(isTextField(document.activeElement));
+    const deferFocusStateUpdate = () => window.setTimeout(updateFocusState, 0);
+    document.addEventListener("focusin", updateFocusState);
+    document.addEventListener("focusout", deferFocusStateUpdate);
+    return () => {
+      document.removeEventListener("focusin", updateFocusState);
+      document.removeEventListener("focusout", deferFocusStateUpdate);
     };
   }, []);
 
@@ -250,7 +264,7 @@ export default function App() {
 
   return (
     <div
-      className="flex h-full overflow-hidden w-full"
+      className={`app-root flex h-full w-full overflow-hidden ${isKeyboardOpen || hasFocusedTextField ? "app-keyboard-open" : ""}`}
       style={{ color: 'var(--color-foreground)', position: 'relative' }}
     >
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '40vh', background: 'linear-gradient(180deg, rgba(46,154,219,0.06) 0%, rgba(242,241,236,0) 100%)', zIndex: 0, pointerEvents: 'none' }} />
@@ -284,6 +298,11 @@ export default function App() {
               /* Top: TG header bar (Close + Minimize buttons) — use env(safe-area-inset-top) + 44px */
               .tg-header-safe { padding-top: max(54px, calc(var(--tg-content-safe-area-inset-top, 0px) + 16px)) !important; }
               .flow-padding { padding-bottom: 0; }
+              .app-keyboard-open .action-bar-fixed {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transform: translateY(140%) !important;
+              }
             }
           `}</style>
 
@@ -324,7 +343,7 @@ export default function App() {
         </div>
       </main>
 
-      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} hidden={isKeyboardOpen} />
+      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} hidden={isKeyboardOpen || hasFocusedTextField} />
 
       {/* Sheets */}
       <AnimatePresence>

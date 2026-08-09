@@ -757,7 +757,7 @@ export const Build = () => {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-x-hidden pb-[calc(80px+env(safe-area-inset-bottom,0px))] lg:pb-0">
+    <div className="relative flex min-h-0 flex-col overflow-x-hidden pb-[calc(72px+env(safe-area-inset-bottom,0px))] lg:pb-0">
       <style>{`
         .action-bar-fixed {
           bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);
@@ -1207,20 +1207,6 @@ export const Build = () => {
             <div
               style={{ position: "relative", width: "320px", margin: "0 auto" }}
             >
-              {/* Glowing backdrop */}
-              <div
-                style={{
-                  position: "absolute",
-                  inset: -20,
-                  background: "var(--color-primary)",
-                  filter: "blur(60px)",
-                  opacity: 0.15,
-                  borderRadius: "50%",
-                  zIndex: 0,
-                  pointerEvents: "none",
-                }}
-              />
-
               <div
                 style={{
                   width: "320px",

@@ -1308,7 +1308,7 @@ export const Home = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[99999] flex items-center justify-center bg-[var(--color-surface)] md:bg-transparent"
+              className="fixed inset-0 z-[99999] flex touch-pan-y items-center justify-center overflow-x-hidden overscroll-x-none bg-[var(--color-surface)] md:bg-transparent"
             >
               {/* Dark blur overlay for PC only - covers ENTIRE screen */}
               <div
@@ -1328,11 +1328,11 @@ export const Home = () => {
                 animate={{ y: 0, opacity: 1 }}
                 exit={{ y: "100%", opacity: 0 }}
                 transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                className="bg-[var(--color-surface)] flex flex-col w-full h-[100dvh] md:w-[580px] md:h-[620px] md:max-h-[85vh] md:rounded-[24px] md:border md:border-[var(--color-border)] pointer-events-auto md:shadow-[0_24px_80px_rgba(0,0,0,0.5)] relative overflow-hidden z-10"
+                className="relative z-10 flex h-[100dvh] w-full max-w-full touch-pan-y flex-col overflow-x-hidden overscroll-x-none bg-[var(--color-surface)] pointer-events-auto md:h-[620px] md:max-h-[85vh] md:w-[580px] md:rounded-[24px] md:border md:border-[var(--color-border)] md:shadow-[0_24px_80px_rgba(0,0,0,0.5)]"
               >
                 {/* Modal Header */}
-                <div className="z-10 flex shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 pb-4 pt-[calc(var(--tg-content-safe-area-inset-top,0px)+16px)] md:p-5">
-                  <div className="flex min-w-0 items-center gap-3">
+                <div className="z-10 flex shrink-0 items-center justify-center border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 pb-4 pt-[max(96px,calc(var(--tg-content-safe-area-inset-top,0px)+16px))] md:justify-between md:p-5">
+                  <div className="flex min-w-0 flex-col items-center text-center md:flex-row md:items-center md:gap-3 md:text-left">
                     {selectedClientForInvoice && (
                       <button
                         onClick={() => {
