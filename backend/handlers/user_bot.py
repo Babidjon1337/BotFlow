@@ -474,9 +474,61 @@ async def _send_tariff_invoice(
     pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
     if edit_message:
-        await callback.message.edit_text(text=message_text, reply_markup=pay_keyboard)
+        await _remove_callback_message(callback)
+    await _send_payment_message(
+        callback,
+        message_text,
+        pay_keyboard,
+        media_type=getattr(tariff, "media_type", None),
+        file_id=getattr(tariff, "media_file_id", None),
+    )
+
+
+async def _remove_callback_message(callback: CallbackQuery) -> None:
+    """Remove a previous payment screen before rendering another message type."""
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except TelegramBadRequest:
+            pass
+
+
+async def _send_payment_message(
+    callback: CallbackQuery,
+    text: str,
+    reply_markup: InlineKeyboardMarkup,
+    *,
+    media_type: str | None = None,
+    file_id: str | None = None,
+) -> None:
+    """Send text/photo/video payment screens without unsupported Telegram edits."""
+    chat_id = callback.message.chat.id
+    if media_type == "photo" and file_id:
+        await callback.bot.send_photo(
+            chat_id, file_id, caption=text or "👋", reply_markup=reply_markup
+        )
+    elif media_type == "video" and file_id:
+        await callback.bot.send_video(
+            chat_id, file_id, caption=text or "👋", reply_markup=reply_markup
+        )
     else:
-        await callback.message.answer(text=message_text, reply_markup=pay_keyboard)
+        await callback.bot.send_message(chat_id, text or "👋", reply_markup=reply_markup)
+
+
+async def _send_tariff_selection_message(callback: CallbackQuery, node_checkout, tariffs) -> None:
+    selection_text = to_telegram_html(
+        getattr(node_checkout, "tariff_selection_text", "")
+        or "Выберите подходящий тариф:"
+    )
+    await _send_payment_message(
+        callback,
+        selection_text,
+        user_tariff_keyboard(tariffs),
+        media_type=getattr(node_checkout, "media_type", None),
+        file_id=getattr(node_checkout, "media_file_id", None),
+    )
 
 
 @user_bot_router.callback_query(F.data == "payment")
@@ -517,13 +569,7 @@ async def process_payment_button(callback: CallbackQuery):
         )
         return
     if len(tariffs) > 1:
-        selection_text = to_telegram_html(
-            getattr(node_checkout, "tariff_selection_text", "")
-            or "Выберите подходящий тариф:"
-        )
-        await callback.message.answer(
-            selection_text, reply_markup=user_tariff_keyboard(tariffs)
-        )
+        await _send_tariff_selection_message(callback, node_checkout, tariffs)
         return
     await _send_tariff_invoice(
         callback, bot_config, funnel, tariffs[0], edit_message=False
@@ -568,14 +614,8 @@ async def return_to_tariff_choices(callback: CallbackQuery):
     if len(tariffs) < 2:
         await callback.answer("Выбор тарифов больше недоступен.", show_alert=True)
         return
-    selection_text = to_telegram_html(
-        getattr(node_checkout, "tariff_selection_text", "")
-        or "Выберите подходящий тариф:"
-    )
-    await callback.message.edit_text(
-        selection_text,
-        reply_markup=user_tariff_keyboard(tariffs),
-    )
+    await _remove_callback_message(callback)
+    await _send_tariff_selection_message(callback, node_checkout, tariffs)
 
 
 @user_bot_router.callback_query(F.data.startswith("manual_invoice:"))
@@ -619,8 +659,13 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
                 )
             ]
         )
-    await callback.message.edit_text(
-        details, reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+    await _remove_callback_message(callback)
+    await _send_payment_message(
+        callback,
+        details,
+        InlineKeyboardMarkup(inline_keyboard=rows),
+        media_type=tariff.get("mediaType") or tariff.get("media_type"),
+        file_id=tariff.get("mediaFileId") or tariff.get("media_file_id"),
     )
 
 

@@ -5,6 +5,7 @@ import { DeliverySelector } from './DeliverySelector';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
 import { TariffDescriptionEditor } from './TariffDescriptionEditor';
+import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import type { FunnelNode, Tariff } from '../types';
 
 interface PaymentBlockEditorProps {
@@ -17,6 +18,10 @@ interface PaymentBlockEditorProps {
   managerText: string;
   onManagerUrlChange: (v: string) => void;
   onManagerTextChange: (v: string) => void;
+  onUploadPaymentMedia: (file: File) => Promise<void>;
+  onRemovePaymentMedia: () => void;
+  onUploadTariffMedia: (tariffId: string, file: File) => Promise<void>;
+  onRemoveTariffMedia: (tariffId: string) => void;
 }
 
 const MAX_TARIFF_SELECTION_CHARACTERS = 4096;
@@ -37,7 +42,8 @@ const Toggle = ({ checked, onToggle }: { checked: boolean; onToggle: () => void 
 );
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ 
-  node, botId, onChange, paymentMode, onPaymentModeChange, managerUrl, managerText, onManagerUrlChange, onManagerTextChange 
+  node, botId, onChange, paymentMode, onPaymentModeChange, managerUrl, managerText, onManagerUrlChange, onManagerTextChange,
+  onUploadPaymentMedia, onRemovePaymentMedia, onUploadTariffMedia, onRemoveTariffMedia,
 }) => {
   const { showConfirm } = useAlert();
   const tariffs: Tariff[] = node?.tariffs || [];
@@ -210,6 +216,16 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
             onChange={(value) => onChange('tariffSelectionText', value)}
           />
+          <MediaAttachmentPicker
+            botId={botId}
+            assetId={node?.mediaAssetId}
+            fileId={node?.mediaFileId}
+            mediaType={node?.mediaType === 'photo' || node?.mediaType === 'video' ? node.mediaType : null}
+            onUpload={onUploadPaymentMedia}
+            onRemove={onRemovePaymentMedia}
+            label="Добавить фото или видео"
+            hint="Будет показано над текстом выбора тарифа. До 20 МБ."
+          />
         </motion.div>
       )}
 
@@ -348,6 +364,16 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                           <TariffDescriptionEditor
                             value={tariff.description}
                             onChange={(value) => updateTariff(tariff.id, 'description', value)}
+                          />
+                          <MediaAttachmentPicker
+                            botId={botId}
+                            assetId={tariff.mediaAssetId}
+                            fileId={tariff.mediaFileId}
+                            mediaType={tariff.mediaType}
+                            onUpload={(file) => onUploadTariffMedia(tariff.id, file)}
+                            onRemove={() => onRemoveTariffMedia(tariff.id)}
+                            label="Добавить фото или видео к счёту"
+                            hint="Клиент увидит его над описанием выбранного тарифа. До 20 МБ."
                           />
                         </div>
 

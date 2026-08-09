@@ -112,9 +112,14 @@ def evaluate_funnel_readiness(
         if len(tariffs) > 1:
             if not _text(selection_text):
                 reasons.append("Добавьте текст выбора тарифов.")
-            elif _visible_length(selection_text) > MAX_MESSAGE_CHARACTERS:
+            elif _visible_length(selection_text) > (
+                MAX_MEDIA_CAPTION_CHARACTERS
+                if payment.get("mediaFileId") or payment.get("media_file_id")
+                else MAX_MESSAGE_CHARACTERS
+            ):
                 reasons.append(
-                    f"Сократите текст выбора тарифов до {MAX_MESSAGE_CHARACTERS} символов."
+                    "Сократите текст выбора тарифов до "
+                    f"{MAX_MEDIA_CAPTION_CHARACTERS if payment.get('mediaFileId') or payment.get('media_file_id') else MAX_MESSAGE_CHARACTERS} символов."
                 )
         for index, raw_tariff in enumerate(tariffs, start=1):
             tariff = _as_dict(raw_tariff)
@@ -143,7 +148,12 @@ def evaluate_funnel_readiness(
                 + _visible_length(tariff.get("description"))
                 + INVOICE_PRICE_RESERVE_CHARACTERS
             )
-            if invoice_length > MAX_MESSAGE_CHARACTERS:
+            invoice_max_length = (
+                MAX_MEDIA_CAPTION_CHARACTERS
+                if tariff.get("mediaFileId") or tariff.get("media_file_id")
+                else MAX_MESSAGE_CHARACTERS
+            )
+            if invoice_length > invoice_max_length:
                 reasons.append(
                     f"Сократите текст счёта или описание: {label} не помещается в сообщение Telegram."
                 )

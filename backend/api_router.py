@@ -744,8 +744,20 @@ async def upload_bot_media(
         raise HTTPException(status_code=415, detail="Не удалось определить тип файла.")
     schema = dict(bot.funnel_schema or {})
     nodes = list(schema.get("nodes") or [])
-    if not any(node.get("id") == node_id for node in nodes):
+    target_node = next((node for node in nodes if node.get("id") == node_id), None)
+    target_tariff_id: str | None = None
+    if target_node is None and node_id.startswith("payment:tariff:"):
+        target_tariff_id = node_id.removeprefix("payment:tariff:")
+        payment_node = next((node for node in nodes if node.get("id") == "payment"), None)
+        tariffs = payment_node.get("tariffs") if isinstance(payment_node, dict) else None
+        if not target_tariff_id or not isinstance(tariffs, list) or not any(
+            str(tariff.get("id")) == target_tariff_id for tariff in tariffs if isinstance(tariff, dict)
+        ):
+            target_tariff_id = None
+    if target_node is None and target_tariff_id is None:
         raise HTTPException(status_code=404, detail="Блок воронки не найден")
+    if target_tariff_id is not None and media_type == "document":
+        raise HTTPException(status_code=415, detail="Для тарифа можно использовать только фото или видео.")
     payload = await file.read(20 * 1024 * 1024 + 1)
     if not payload or len(payload) > 20 * 1024 * 1024:
         raise HTTPException(status_code=413, detail="Размер файла должен быть не больше 20 МБ.")
@@ -786,7 +798,17 @@ async def upload_bot_media(
     current_schema = dict(current_bot.funnel_schema or {})
     current_nodes = list(current_schema.get("nodes") or [])
     current_node = next((node for node in current_nodes if node.get("id") == node_id), None)
-    if current_node is None:
+    current_payment_node = next((node for node in current_nodes if node.get("id") == "payment"), None)
+    current_tariff = None
+    if target_tariff_id and isinstance(current_payment_node, dict):
+        current_tariff = next(
+            (
+                tariff for tariff in (current_payment_node.get("tariffs") or [])
+                if isinstance(tariff, dict) and str(tariff.get("id")) == target_tariff_id
+            ),
+            None,
+        )
+    if current_node is None and current_tariff is None:
         raise HTTPException(
             status_code=409,
             detail="Воронка была изменена. Обновите страницу и повторите загрузку.",
@@ -800,10 +822,12 @@ async def upload_bot_media(
         mime_type=content_type,
         file_name=file.filename,
     )
-    current_node["mediaFileId"] = telegram_file_id
-    current_node["mediaAssetId"] = str(asset.id)
-    current_node["mediaType"] = media_type
-    current_node["media"] = True
+    media_target = current_tariff if current_tariff is not None else current_node
+    assert media_target is not None
+    media_target["mediaFileId"] = telegram_file_id
+    media_target["mediaAssetId"] = str(asset.id)
+    media_target["mediaType"] = media_type
+    media_target["media"] = True
     current_schema["nodes"] = current_nodes
     await update_bot_funnel(current_bot.id, current_schema, current_bot.funnel_complete)
     return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}

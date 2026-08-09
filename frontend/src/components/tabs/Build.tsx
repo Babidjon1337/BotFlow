@@ -588,6 +588,37 @@ export const Build = () => {
     updateBlock(nodeId, "mediaType", null);
   };
 
+  const handleTariffMediaUpload = async (tariffId: string, file: File) => {
+    if (!appState.activeBot) return;
+    if (file.size > 20 * 1024 * 1024) throw new Error("Размер файла не должен превышать 20 МБ.");
+    try {
+      const { apiService } = await import("../../services/api");
+      const media = await apiService.uploadBotMedia(appState.activeBot.id, `payment:tariff:${tariffId}`, file);
+      const tariffs = (getBlock("payment")?.tariffs || []).map((tariff) => tariff.id === tariffId
+        ? { ...tariff, mediaFileId: media.fileId, mediaAssetId: media.id, mediaType: media.mediaType as "photo" | "video" }
+        : tariff);
+      updateBlock("payment", "tariffs", tariffs);
+      setToastType("success");
+      setToastMessage("Файл синхронизирован с Telegram");
+    } catch (error) {
+      showAlert({
+        title: "Не удалось загрузить файл",
+        message: error instanceof Error ? error.message : "Повторите попытку.",
+        type: "danger",
+        confirmText: "Понятно",
+        cancelText: "",
+      });
+      throw error;
+    }
+  };
+
+  const removeTariffMedia = (tariffId: string) => {
+    const tariffs = (getBlock("payment")?.tariffs || []).map((tariff) => tariff.id === tariffId
+      ? { ...tariff, mediaFileId: null, mediaAssetId: null, mediaType: null }
+      : tariff);
+    updateBlock("payment", "tariffs", tariffs);
+  };
+
   const handleSave = async () => {
     if (!appState.activeBot) return;
     const activeBotId = appState.activeBot.id;
@@ -1131,6 +1162,10 @@ export const Build = () => {
                   managerText={paymentBlock?.managerText || ""}
                   onManagerUrlChange={(v) => updateBlock("payment", "managerUrl", v)}
                   onManagerTextChange={(v) => updateBlock("payment", "managerText", v)}
+                  onUploadPaymentMedia={(file) => handleMediaUpload("payment", file)}
+                  onRemovePaymentMedia={() => removeMedia("payment")}
+                  onUploadTariffMedia={handleTariffMediaUpload}
+                  onRemoveTariffMedia={removeTariffMedia}
                 />
               </div>
             </FunnelCard>

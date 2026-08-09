@@ -10,6 +10,9 @@ export interface Tariff {
   inviteExpiresHours?: number;
   chatType?: 'channel' | 'group' | 'supergroup';
   installments?: boolean;
+  mediaFileId?: string | null;
+  mediaAssetId?: string | null;
+  mediaType?: 'photo' | 'video' | null;
 }
 
 export interface FunnelNode {

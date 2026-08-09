@@ -73,6 +73,9 @@ class TariffSchema(BaseModel):
     chat_type: Optional[Literal["channel", "group", "supergroup"]] = Field(
         default=None, alias="chatType"
     )
+    media_file_id: Optional[str] = Field(default=None, alias="mediaFileId")
+    media_asset_id: Optional[str] = Field(default=None, alias="mediaAssetId")
+    media_type: Optional[Literal["photo", "video"]] = Field(default=None, alias="mediaType")
 
     model_config = ConfigDict(populate_by_name=True)
 
