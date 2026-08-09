@@ -7,9 +7,17 @@ import path from "path";
 // Stamp generated chunks so every production build gets fresh hashed URLs.
 const buildReleaseId = process.env.BOTFLOW_BUILD_ID ?? Date.now().toString();
 
+const releaseAssetHashPlugin = () => ({
+  name: "botflow-release-asset-hashes",
+  apply: "build" as const,
+  // Vite/Rolldown does not include output.banner in a chunk filename hash.
+  // This hook deliberately makes immutable JS URLs unique per release.
+  augmentChunkHash: () => buildReleaseId,
+});
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), releaseAssetHashPlugin()],
   server: {
     allowedHosts: true,
     host: true,
@@ -33,7 +41,6 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        banner: `/* BotFlow release: ${buildReleaseId} */`,
         manualChunks(id) {
           // React и связанные библиотеки редко меняются между деплоями —
           // выносим отдельно, чтобы браузер/WebView кэшировал их надолго
