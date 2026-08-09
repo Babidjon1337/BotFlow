@@ -767,21 +767,28 @@ async def upload_bot_media(
     from database.requests.media_rq import create_media_asset
 
     telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
+    sent_message = None
     try:
         upload = BufferedInputFile(payload, filename=file.filename or f"{node_id}.{media_type}")
         if media_type == "photo":
-            sent = await telegram_bot.send_photo(bot.owner.telegram_id, upload, disable_notification=True)
-            telegram_file_id = sent.photo[-1].file_id
+            sent_message = await telegram_bot.send_photo(bot.owner.telegram_id, upload, disable_notification=True)
+            telegram_file_id = sent_message.photo[-1].file_id
         elif media_type == "video":
-            sent = await telegram_bot.send_video(bot.owner.telegram_id, upload, disable_notification=True)
-            telegram_file_id = sent.video.file_id
+            sent_message = await telegram_bot.send_video(bot.owner.telegram_id, upload, disable_notification=True)
+            telegram_file_id = sent_message.video.file_id
         else:
-            sent = await telegram_bot.send_document(bot.owner.telegram_id, upload, disable_notification=True)
-            telegram_file_id = sent.document.file_id
-        await telegram_bot.delete_message(bot.owner.telegram_id, sent.message_id)
+            sent_message = await telegram_bot.send_document(bot.owner.telegram_id, upload, disable_notification=True)
+            telegram_file_id = sent_message.document.file_id
     except Exception as exc:
         logger.warning("Не удалось синхронизировать медиа для бота %s: %s", bot_id, exc)
         raise HTTPException(status_code=502, detail="Telegram не смог обработать файл. Повторите попытку.") from exc
+    finally:
+        if sent_message is not None:
+            try:
+                await telegram_bot.delete_message(bot.owner.telegram_id, sent_message.message_id)
+            except Exception as exc:
+                # The file_id is already received; a failed cleanup must not discard the upload.
+                logger.info("Не удалось удалить временное медиа для бота %s: %s", bot_id, exc)
 
     current_bot = await get_bot_by_id(bot.id)
     if (
