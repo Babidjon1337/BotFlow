@@ -169,7 +169,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
         <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1 border border-[var(--color-border)]">
           {([
             { id: 'tariffs' as const, label: 'Тарифы', badge: tariffs.length },
-            { id: 'message' as const, label: 'Сообщение выбора' },
+            { id: 'message' as const, label: 'Перед выбором тарифа' },
           ]).map(tab => (
             <button key={tab.id} type="button"
               onClick={() => setActiveTab(tab.id)}
@@ -202,7 +202,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
         >
           <div className="flex items-center gap-1.5">
             <label className="text-[13px] font-semibold text-[var(--color-foreground)]" style={{ display: 'block', marginBottom: 0 }}>
-              Сообщение перед выбором тарифа
+              Текст перед выбором тарифа
             </label>
             <InfoTooltip
               title="Меню выбора тарифа"
@@ -219,17 +219,18 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
               botId={botId} onUpload={onUploadPaymentMedia} onRemove={onRemovePaymentMedia}
               label="Добавить фото или видео" hint="Фото или видео над текстом выбора тарифа. До 20 МБ." triggerOnly
             /> : undefined}
+            attachment={node?.mediaFileId ? <MediaAttachmentPicker
+              botId={botId}
+              assetId={node?.mediaAssetId}
+              fileId={node?.mediaFileId}
+              mediaType={node?.mediaType === 'photo' || node?.mediaType === 'video' ? node.mediaType : null}
+              onUpload={onUploadPaymentMedia}
+              onRemove={onRemovePaymentMedia}
+              label="Добавить фото или видео"
+              hint="Будет показано над текстом выбора тарифа. До 20 МБ."
+              embedded
+            /> : undefined}
           />
-          {node?.mediaFileId && <MediaAttachmentPicker
-            botId={botId}
-            assetId={node?.mediaAssetId}
-            fileId={node?.mediaFileId}
-            mediaType={node?.mediaType === 'photo' || node?.mediaType === 'video' ? node.mediaType : null}
-            onUpload={onUploadPaymentMedia}
-            onRemove={onRemovePaymentMedia}
-            label="Добавить фото или видео"
-            hint="Будет показано над текстом выбора тарифа. До 20 МБ."
-          />}
         </motion.div>
       )}
 
@@ -372,17 +373,18 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                               botId={botId} onUpload={(file) => onUploadTariffMedia(tariff.id, file)} onRemove={() => onRemoveTariffMedia(tariff.id)}
                               label="Добавить фото или видео к счёту" hint="Фото или видео над описанием счёта. До 20 МБ." triggerOnly
                             /> : undefined}
+                            attachment={tariff.mediaFileId ? <MediaAttachmentPicker
+                              botId={botId}
+                              assetId={tariff.mediaAssetId}
+                              fileId={tariff.mediaFileId}
+                              mediaType={tariff.mediaType}
+                              onUpload={(file) => onUploadTariffMedia(tariff.id, file)}
+                              onRemove={() => onRemoveTariffMedia(tariff.id)}
+                              label="Добавить фото или видео к счёту"
+                              hint="Клиент увидит его над описанием выбранного тарифа. До 20 МБ."
+                              embedded
+                            /> : undefined}
                           />
-                          {tariff.mediaFileId && <MediaAttachmentPicker
-                            botId={botId}
-                            assetId={tariff.mediaAssetId}
-                            fileId={tariff.mediaFileId}
-                            mediaType={tariff.mediaType}
-                            onUpload={(file) => onUploadTariffMedia(tariff.id, file)}
-                            onRemove={() => onRemoveTariffMedia(tariff.id)}
-                            label="Добавить фото или видео к счёту"
-                            hint="Клиент увидит его над описанием выбранного тарифа. До 20 МБ."
-                          />}
                         </div>
 
 

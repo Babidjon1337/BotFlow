@@ -14,6 +14,7 @@ interface MediaAttachmentPickerProps {
   label: string;
   hint: string;
   triggerOnly?: boolean;
+  embedded?: boolean;
 }
 
 /** Compact, reusable attachment control for payment messages. */
@@ -27,6 +28,7 @@ export function MediaAttachmentPicker({
   label,
   hint,
   triggerOnly = false,
+  embedded = false,
 }: MediaAttachmentPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -68,24 +70,28 @@ export function MediaAttachmentPicker({
   };
 
   const hasMedia = Boolean(fileId && mediaType);
+  const attachmentContent = hasMedia ? (
+    <div className="flex items-center gap-3">
+      <div className="size-[72px] shrink-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+        {previewUrl && mediaType === "photo" ? <img src={previewUrl} alt="Предпросмотр вложения" className="size-full object-cover" />
+          : previewUrl && mediaType === "video" ? <video src={previewUrl} muted className="size-full object-cover" />
+          : mediaType === "video" ? <Video className="m-5 text-[var(--color-primary)]" size={28} />
+          : <FileImage className="m-5 text-[var(--color-primary)]" size={28} />}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-[var(--color-foreground)]">{mediaType === "video" ? "Видео" : "Фото"}</p>
+        <p className="mt-0.5 text-[11px] text-[var(--color-foreground-tertiary)]">{isUploading ? "Синхронизируем с Telegram…" : "Синхронизировано с Telegram"}</p>
+      </div>
+      <button type="button" onClick={openPicker} disabled={isUploading} className="rounded-xl bg-[var(--color-primary)] px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50">Заменить</button>
+      <button type="button" onClick={onRemove} disabled={isUploading} aria-label="Удалить медиа" className="flex size-8 items-center justify-center rounded-full bg-[var(--color-danger-soft)] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:opacity-50"><Trash2 size={15} /></button>
+    </div>
+  ) : null;
+
   return (
-    <div className={triggerOnly ? "contents" : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"}>
+    <div className={triggerOnly ? "contents" : embedded ? "border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2" : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"}>
       <input ref={inputRef} type="file" accept="image/*,video/*" className="sr-only" onChange={handleChange} />
       {hasMedia ? (
-        <div className="flex items-center gap-3">
-          <div className="size-14 shrink-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-            {previewUrl && mediaType === "photo" ? <img src={previewUrl} alt="Предпросмотр вложения" className="size-full object-cover" />
-              : previewUrl && mediaType === "video" ? <video src={previewUrl} muted className="size-full object-cover" />
-              : mediaType === "video" ? <Video className="m-4 text-[var(--color-primary)]" size={24} />
-              : <FileImage className="m-4 text-[var(--color-primary)]" size={24} />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold text-[var(--color-foreground)]">{mediaType === "video" ? "Видео прикреплено" : "Фото прикреплено"}</p>
-            <p className="mt-0.5 text-[11px] text-[var(--color-foreground-tertiary)]">{isUploading ? "Синхронизируем с Telegram…" : "Синхронизировано с Telegram"}</p>
-          </div>
-          <button type="button" onClick={openPicker} disabled={isUploading} className="rounded-lg bg-[var(--color-primary)] px-2.5 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">Заменить</button>
-          <button type="button" onClick={onRemove} disabled={isUploading} aria-label="Удалить медиа" className="rounded-lg p-2 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"><Trash2 size={15} /></button>
-        </div>
+        attachmentContent
       ) : (
         <button type="button" onClick={openPicker} disabled={isUploading} title={hint} className={triggerOnly
           ? "flex items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-3 py-1 text-[12px] font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-50"

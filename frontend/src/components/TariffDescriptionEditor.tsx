@@ -8,6 +8,7 @@ interface TariffDescriptionEditorProps {
   placeholder?: string;
   helperText?: string;
   toolbarAccessory?: ReactNode;
+  attachment?: ReactNode;
 }
 
 const DEFAULT_MAX_CHARACTERS = 3000;
@@ -24,6 +25,7 @@ export function TariffDescriptionEditor({
   placeholder = "Опишите, что входит в тариф...",
   helperText = "Описание для счёта",
   toolbarAccessory,
+  attachment,
 }: TariffDescriptionEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const textLength = getPlainTextLength(value);
@@ -49,6 +51,7 @@ export function TariffDescriptionEditor({
 
   return (
     <div className={`overflow-hidden rounded-xl border bg-[var(--color-surface)] focus-within:border-[var(--color-primary)] ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)]"}`}>
+      {attachment}
       <div className="flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
         <button
           type="button"
