@@ -52,7 +52,7 @@ const WEBHOOK_INSTRUCTIONS: Record<PaymentProvider, string> = {
 };
 
 export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => {
-  const { isAdmin, setAppState, setToastMessage, blocks, funnelLoadState, getFunnelRevision, replaceFunnelWorkspace } = useAppState();
+  const { isAdmin, setAppState, setToastMessage, blocks, funnelLoadState, getFunnelRevision, replaceFunnelWorkspace, markFunnelSaved } = useAppState();
   const vh = useViewportHeight();
   const formId = useId();
   const [contentRef, contentHeight] = useHeight();
@@ -171,6 +171,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         revisionAtSave = replaceFunnelWorkspace(blocksForSave);
       }
       const savedFunnel = await apiService.saveFunnel(activeBot.id, blocksForSave, false);
+      markFunnelSaved(revisionAtSave);
       setAppState(prev => {
         const nextBot = {
           ...activeBot,
@@ -199,9 +200,6 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
             funnelComplete: savedFunnel.funnelComplete,
             status: savedFunnel.botStatus === 'active' ? 'active' : 'inactive',
           } : prev.activeBot,
-          isDirty: prev.activeBot?.id === activeBot.id && getFunnelRevision() === revisionAtSave
-            ? false
-            : prev.isDirty,
         };
       });
       setToastMessage(savedFunnel.stopped

@@ -519,6 +519,7 @@ export const Build = () => {
     setAppState,
     getFunnelRevision,
     getFunnelWorkspaceGeneration,
+    markFunnelSaved,
   } = useAppState();
 
   const onOpenSettings = () => setSheet("bot_settings");
@@ -595,12 +596,10 @@ export const Build = () => {
     try {
       const { apiService } = await import("../../services/api");
       const savedFunnel = await apiService.saveFunnel(activeBotId, blocks, isAllBlocksComplete);
+      markFunnelSaved(revisionAtSave);
       setIsSaving(false);
       setAppState((prev) => ({
         ...prev,
-        isDirty: prev.activeBot?.id === activeBotId && getFunnelRevision() === revisionAtSave
-          ? false
-          : prev.isDirty,
         bots: prev.bots.map(bot => bot.id === activeBotId ? {
           ...bot,
           funnelComplete: savedFunnel.funnelComplete,
@@ -719,9 +718,9 @@ export const Build = () => {
 
   return (
     <div className="relative flex flex-col min-h-screen overflow-x-hidden">
-      {/* Background glow for phone and blocks */}
-      <div className="fixed top-[10%] left-[20%] w-[50vw] h-[50vw] max-w-[800px] max-h-[800px] bg-[var(--color-primary)]/10 rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-screen opacity-70" />
-      <div className="fixed bottom-[10%] right-[10%] w-[40vw] h-[40vw] max-w-[600px] max-h-[600px] bg-[#a855f7]/15 rounded-full blur-[140px] pointer-events-none -z-10 mix-blend-screen opacity-70" />
+      {/* Decorative light remains behind the editor; it must not blend into cards. */}
+      <div className="fixed top-[10%] left-[20%] w-[50vw] h-[50vw] max-w-[800px] max-h-[800px] bg-[var(--color-primary)]/10 rounded-full blur-[140px] pointer-events-none -z-10 opacity-70" />
+      <div className="fixed bottom-[10%] right-[10%] w-[40vw] h-[40vw] max-w-[600px] max-h-[600px] bg-[#a855f7]/15 rounded-full blur-[140px] pointer-events-none -z-10 opacity-70" />
 
       <style>{`
         .action-bar-fixed {

@@ -35,6 +35,7 @@ interface AppContextType {
   getFunnelRevision: () => number;
   getFunnelWorkspaceGeneration: () => number;
   replaceFunnelWorkspace: (nodes: FunnelNode[]) => number;
+  markFunnelSaved: (revision: number) => boolean;
 }
 
 export type FunnelLoadState = {
@@ -64,6 +65,17 @@ function getFunnelErrorMessage(error: unknown): string {
     return 'Не удалось связаться с сервером. Проверьте подключение и попробуйте снова.';
   }
   return error.message;
+}
+
+function funnelFingerprint(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(funnelFingerprint).join(',')}]`;
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map(key => `${JSON.stringify(key)}:${funnelFingerprint(record[key])}`)
+    .join(',')}}`;
 }
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
@@ -100,6 +112,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const botSelectionInProgressRef = useRef(false);
   const funnelRevisionRef = useRef(0);
   const funnelWorkspaceGenerationRef = useRef(0);
+  const blocksRef = useRef<FunnelNode[]>(INITIAL_BLOCKS);
+  const savedFunnelFingerprintRef = useRef(funnelFingerprint(INITIAL_BLOCKS));
   
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     return (localStorage.getItem('bot_father_theme') as 'light' | 'dark') || 'light';
@@ -175,6 +189,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadedFunnelBotIdRef.current = botId;
       funnelRevisionRef.current += 1;
       funnelWorkspaceGenerationRef.current += 1;
+      blocksRef.current = nextBlocks;
+      savedFunnelFingerprintRef.current = funnelFingerprint(nextBlocks);
       setBlocks(nextBlocks);
       setSelectedBlockId('start');
       setFunnelLoadState({ botId, status: 'ready', error: null });
@@ -242,6 +258,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       loadedFunnelBotIdRef.current = botId;
       funnelRevisionRef.current += 1;
       funnelWorkspaceGenerationRef.current += 1;
+      blocksRef.current = nextBlocks;
+      savedFunnelFingerprintRef.current = funnelFingerprint(nextBlocks);
       setBlocks(nextBlocks);
       setSelectedBlockId('start');
       setFunnelLoadState({ botId, status: 'ready', error: null });
@@ -283,20 +301,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   };
 
   const updateBlock = <K extends keyof FunnelNode>(id: string, field: K, value: FunnelNode[K]) => {
-    funnelRevisionRef.current += 1;
-    setBlocks(prev => {
-      const existingBlock = prev.find(block => block.id === id);
-      if (existingBlock) {
-        if (Object.is(existingBlock[field], value)) {
-          return prev;
-        }
-        return prev.map(block => block.id === id ? { ...block, [field]: value } : block);
-      }
+    const currentBlocks = blocksRef.current;
+    const existingBlock = currentBlocks.find(block => block.id === id);
+    let nextBlocks: FunnelNode[] | null = null;
 
+    if (existingBlock) {
+      if (Object.is(existingBlock[field], value)) return;
+      nextBlocks = currentBlocks.map(block => block.id === id ? { ...block, [field]: value } : block);
+    } else {
       const defaultBlock = INITIAL_BLOCKS.find(block => block.id === id);
-      return defaultBlock ? [...prev, { ...defaultBlock, [field]: value }] : prev;
-    });
-    setAppState(prev => ({ ...prev, isDirty: true }));
+      if (!defaultBlock) return;
+      nextBlocks = [...currentBlocks, { ...defaultBlock, [field]: value }];
+    }
+
+    funnelRevisionRef.current += 1;
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
+    setAppState(prev => ({
+      ...prev,
+      isDirty: funnelFingerprint(nextBlocks) !== savedFunnelFingerprintRef.current,
+    }));
   };
 
   const getFunnelRevision = useCallback(() => funnelRevisionRef.current, []);
@@ -307,8 +331,20 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const replaceFunnelWorkspace = useCallback((nodes: FunnelNode[]) => {
     funnelRevisionRef.current += 1;
     funnelWorkspaceGenerationRef.current += 1;
+    blocksRef.current = nodes;
     setBlocks(nodes);
+    setAppState(prev => ({
+      ...prev,
+      isDirty: funnelFingerprint(nodes) !== savedFunnelFingerprintRef.current,
+    }));
     return funnelRevisionRef.current;
+  }, []);
+
+  const markFunnelSaved = useCallback((revision: number) => {
+    if (funnelRevisionRef.current !== revision) return false;
+    savedFunnelFingerprintRef.current = funnelFingerprint(blocksRef.current);
+    setAppState(prev => ({ ...prev, isDirty: false }));
+    return true;
   }, []);
 
   const handleCreateBotClick = () => {
@@ -375,6 +411,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         getFunnelRevision,
         getFunnelWorkspaceGeneration,
         replaceFunnelWorkspace,
+        markFunnelSaved,
       }}
     >
       {children}

@@ -41,6 +41,13 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // CSS also has immutable cache headers in production. Give every
+        // release a new CSS URL so a Telegram WebView cannot retain a partial
+        // stylesheet from an interrupted deployment.
+        assetFileNames: (assetInfo) =>
+          assetInfo.name?.endsWith(".css")
+            ? `assets/[name]-[hash]-${buildReleaseId}[extname]`
+            : "assets/[name]-[hash][extname]",
         manualChunks(id) {
           // React и связанные библиотеки редко меняются между деплоями —
           // выносим отдельно, чтобы браузер/WebView кэшировал их надолго
