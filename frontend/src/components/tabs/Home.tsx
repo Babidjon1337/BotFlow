@@ -37,6 +37,19 @@ import {
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
 
+/** The editor stores HTML for Telegram; selection cards need a safe, readable preview. */
+const toPlainPreviewText = (value: string | null | undefined) => {
+  if (!value) return "";
+
+  const withLineBreaks = value.replace(
+    /<\/?(?:p|div|li|h[1-6])\b[^>]*>|<br\s*\/?\s*>/gi,
+    "\n",
+  );
+  const element = document.createElement("textarea");
+  element.innerHTML = withLineBreaks.replace(/<[^>]*>/g, "");
+  return element.value.replace(/\n{3,}/g, "\n\n").trim();
+};
+
 
 // Features list (honest, explaining why it is great)
 const FEATURES = [
@@ -1420,10 +1433,10 @@ export const Home = () => {
                                 >
                                   <div className="flex-1 min-w-0">
                                     <div className="text-[15px] font-bold text-[var(--color-foreground)] mb-1">
-                                      {tariff.name}
+                                      {toPlainPreviewText(tariff.name)}
                                     </div>
                                     <div className="text-[13px] text-[var(--color-foreground-secondary)] leading-snug pr-2">
-                                      {tariff.description}
+                                      {toPlainPreviewText(tariff.description)}
                                     </div>
                                   </div>
 
