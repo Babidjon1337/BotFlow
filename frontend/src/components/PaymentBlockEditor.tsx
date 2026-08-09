@@ -114,12 +114,13 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
              role="radiogroup" aria-label="Режим работы воронки">
           {(['auto', 'application', 'hybrid'] as const).map((mode) => {
             const labels = { auto: 'Автопродажа', application: 'По заявкам', hybrid: 'Гибрид' };
+            const mobileLabels = { auto: 'Авто', application: 'Заявки', hybrid: 'Гибрид' };
             const colors = { auto: 'var(--color-success)', application: '#3b82f6', hybrid: '#a855f7' };
             return (
               <button key={mode} type="button"
                 onClick={() => onPaymentModeChange(mode)}
                 role="radio" aria-checked={paymentMode === mode}
-                className={`flex-1 py-2 px-2 text-[12px] font-bold rounded-lg transition-all
+                className={`flex-1 min-w-0 whitespace-nowrap py-2 px-1 text-[12px] font-bold rounded-lg transition-all
                   flex items-center justify-center gap-1.5 ${
                   paymentMode === mode
                     ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]'
@@ -128,7 +129,8 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
               >
                 <span className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
                       style={{ background: colors[mode] }} />
-                <span>{labels[mode]}</span>
+                <span className="sm:hidden">{mobileLabels[mode]}</span>
+                <span className="hidden sm:inline">{labels[mode]}</span>
               </button>
             );
           })}
@@ -169,7 +171,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
         <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1 border border-[var(--color-border)]">
           {([
             { id: 'tariffs' as const, label: 'Тарифы', badge: tariffs.length },
-            { id: 'message' as const, label: 'Перед выбором тарифа' },
+            { id: 'message' as const, label: 'Текст выбора' },
           ]).map(tab => (
             <button key={tab.id} type="button"
               onClick={() => setActiveTab(tab.id)}

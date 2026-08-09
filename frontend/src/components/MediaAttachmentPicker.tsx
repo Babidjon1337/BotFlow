@@ -80,7 +80,7 @@ export function MediaAttachmentPicker({
       </div>
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-semibold text-[var(--color-foreground)]">{mediaType === "video" ? "Видео" : "Фото"}</p>
-        <p className="mt-0.5 text-[11px] text-[var(--color-foreground-tertiary)]">{isUploading ? "Синхронизируем с Telegram…" : "Синхронизировано с Telegram"}</p>
+        {isUploading && <p className="mt-0.5 text-[11px] text-[var(--color-foreground-tertiary)]">Загружаем…</p>}
       </div>
       <button type="button" onClick={openPicker} disabled={isUploading} className="rounded-xl bg-[var(--color-primary)] px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50">Заменить</button>
       <button type="button" onClick={onRemove} disabled={isUploading} aria-label="Удалить медиа" className="flex size-8 items-center justify-center rounded-full bg-[var(--color-danger-soft)] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)] hover:text-white disabled:opacity-50"><Trash2 size={15} /></button>

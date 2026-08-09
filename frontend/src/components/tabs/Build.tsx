@@ -170,7 +170,6 @@ export const RichTextEditor = ({
   placeholder,
   hasMedia = false,
   botId,
-  mediaFileId,
   mediaAssetId,
   mediaType,
   onUploadMedia,
@@ -276,9 +275,9 @@ export const RichTextEditor = ({
                 <p className="text-[12px] font-semibold text-[var(--color-foreground)] truncate">
                   {isUploading ? "Загружаем…" : mediaType === "document" ? "Документ" : mediaType === "video" ? "Видео" : "Фото"}
                 </p>
-                <p className="text-[11px] text-[var(--color-foreground-tertiary)]">
-                  {isUploading ? "Синхронизируем с Telegram…" : mediaFileId ? "Синхронизировано с Telegram" : "Подготавливаем…"}
-                </p>
+                {isUploading && (
+                  <p className="text-[11px] text-[var(--color-foreground-tertiary)]">Загружаем…</p>
+                )}
               </div>
               {/* Actions */}
               <button
