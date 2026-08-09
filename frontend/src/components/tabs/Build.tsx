@@ -749,10 +749,6 @@ export const Build = () => {
 
   return (
     <div className="relative flex flex-col min-h-screen overflow-x-hidden">
-      {/* Decorative light remains behind the editor; it must not blend into cards. */}
-      <div className="fixed top-[10%] left-[20%] w-[50vw] h-[50vw] max-w-[800px] max-h-[800px] bg-[var(--color-primary)]/10 rounded-full blur-[140px] pointer-events-none -z-10 opacity-70" />
-      <div className="fixed bottom-[10%] right-[10%] w-[40vw] h-[40vw] max-w-[600px] max-h-[600px] bg-[#a855f7]/15 rounded-full blur-[140px] pointer-events-none -z-10 opacity-70" />
-
       <style>{`
         .action-bar-fixed {
           bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);

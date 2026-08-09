@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Bold, Italic, Strikethrough } from "lucide-react";
 
 interface TariffDescriptionEditorProps {
@@ -7,6 +7,7 @@ interface TariffDescriptionEditorProps {
   maxCharacters?: number;
   placeholder?: string;
   helperText?: string;
+  toolbarAccessory?: ReactNode;
 }
 
 const DEFAULT_MAX_CHARACTERS = 3000;
@@ -22,6 +23,7 @@ export function TariffDescriptionEditor({
   maxCharacters = DEFAULT_MAX_CHARACTERS,
   placeholder = "Опишите, что входит в тариф...",
   helperText = "Описание для счёта",
+  toolbarAccessory,
 }: TariffDescriptionEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const textLength = getPlainTextLength(value);
@@ -87,6 +89,7 @@ export function TariffDescriptionEditor({
         <span className="ml-2 text-[11px] text-[var(--color-foreground-tertiary)]">
           Форматирование увидит клиент в счёте
         </span>
+        {toolbarAccessory && <div className="ml-auto shrink-0">{toolbarAccessory}</div>}
       </div>
       <div
         ref={editorRef}

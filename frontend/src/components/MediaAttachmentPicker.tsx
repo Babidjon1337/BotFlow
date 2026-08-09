@@ -13,6 +13,7 @@ interface MediaAttachmentPickerProps {
   onRemove: () => void;
   label: string;
   hint: string;
+  triggerOnly?: boolean;
 }
 
 /** Compact, reusable attachment control for payment messages. */
@@ -25,6 +26,7 @@ export function MediaAttachmentPicker({
   onRemove,
   label,
   hint,
+  triggerOnly = false,
 }: MediaAttachmentPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -67,7 +69,7 @@ export function MediaAttachmentPicker({
 
   const hasMedia = Boolean(fileId && mediaType);
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+    <div className={triggerOnly ? "contents" : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"}>
       <input ref={inputRef} type="file" accept="image/*,video/*" className="sr-only" onChange={handleChange} />
       {hasMedia ? (
         <div className="flex items-center gap-3">
@@ -85,9 +87,11 @@ export function MediaAttachmentPicker({
           <button type="button" onClick={onRemove} disabled={isUploading} aria-label="Удалить медиа" className="rounded-lg p-2 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"><Trash2 size={15} /></button>
         </div>
       ) : (
-        <button type="button" onClick={openPicker} disabled={isUploading} className="flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-[13px] font-medium text-[var(--color-foreground)] disabled:opacity-50">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]"><ImagePlus size={16} /></span>
-          <span><span className="block">{isUploading ? "Загружаем…" : label}</span><span className="block text-[11px] font-normal text-[var(--color-foreground-tertiary)]">{hint}</span></span>
+        <button type="button" onClick={openPicker} disabled={isUploading} title={hint} className={triggerOnly
+          ? "flex items-center gap-1.5 rounded-md bg-[var(--color-primary-soft)] px-3 py-1 text-[12px] font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-50"
+          : "flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-[13px] font-medium text-[var(--color-foreground)] disabled:opacity-50"}>
+          <span className={triggerOnly ? "" : "flex size-8 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]"}><ImagePlus size={triggerOnly ? 14 : 16} /></span>
+          <span>{triggerOnly ? (isUploading ? "Загружаем…" : "Медиа") : <><span className="block">{isUploading ? "Загружаем…" : label}</span><span className="block text-[11px] font-normal text-[var(--color-foreground-tertiary)]">{hint}</span></>}</span>
         </button>
       )}
     </div>

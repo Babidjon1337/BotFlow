@@ -215,8 +215,12 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             helperText="Сообщение для клиента"
             maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
             onChange={(value) => onChange('tariffSelectionText', value)}
+            toolbarAccessory={!node?.mediaFileId ? <MediaAttachmentPicker
+              botId={botId} onUpload={onUploadPaymentMedia} onRemove={onRemovePaymentMedia}
+              label="Добавить фото или видео" hint="Фото или видео над текстом выбора тарифа. До 20 МБ." triggerOnly
+            /> : undefined}
           />
-          <MediaAttachmentPicker
+          {node?.mediaFileId && <MediaAttachmentPicker
             botId={botId}
             assetId={node?.mediaAssetId}
             fileId={node?.mediaFileId}
@@ -225,7 +229,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             onRemove={onRemovePaymentMedia}
             label="Добавить фото или видео"
             hint="Будет показано над текстом выбора тарифа. До 20 МБ."
-          />
+          />}
         </motion.div>
       )}
 
@@ -364,8 +368,12 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                           <TariffDescriptionEditor
                             value={tariff.description}
                             onChange={(value) => updateTariff(tariff.id, 'description', value)}
+                            toolbarAccessory={!tariff.mediaFileId ? <MediaAttachmentPicker
+                              botId={botId} onUpload={(file) => onUploadTariffMedia(tariff.id, file)} onRemove={() => onRemoveTariffMedia(tariff.id)}
+                              label="Добавить фото или видео к счёту" hint="Фото или видео над описанием счёта. До 20 МБ." triggerOnly
+                            /> : undefined}
                           />
-                          <MediaAttachmentPicker
+                          {tariff.mediaFileId && <MediaAttachmentPicker
                             botId={botId}
                             assetId={tariff.mediaAssetId}
                             fileId={tariff.mediaFileId}
@@ -374,7 +382,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                             onRemove={() => onRemoveTariffMedia(tariff.id)}
                             label="Добавить фото или видео к счёту"
                             hint="Клиент увидит его над описанием выбранного тарифа. До 20 МБ."
-                          />
+                          />}
                         </div>
 
 
