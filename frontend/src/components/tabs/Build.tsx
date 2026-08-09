@@ -33,6 +33,21 @@ import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
 import type { Tariff } from "../../types";
+
+const keepMobileFieldVisible = (element: HTMLElement) => {
+  if (window.innerWidth >= 1024) return;
+  const reveal = () => element.scrollIntoView({ behavior: "smooth", block: "center" });
+  requestAnimationFrame(reveal);
+  window.setTimeout(reveal, 360);
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+  const onResize = () => {
+    reveal();
+    viewport.removeEventListener("resize", onResize);
+  };
+  viewport.addEventListener("resize", onResize, { once: true });
+};
+
 // --- Button Input with Telegram Limit Validator ---
 const ButtonInput = ({
   label,
@@ -71,16 +86,7 @@ const ButtonInput = ({
         value={value || ""}
         maxLength={64}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={(e) => {
-          if (window.innerWidth <= 768) {
-            setTimeout(() => {
-              e.target.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-              });
-            }, 300);
-          }
-        }}
+        onFocus={(e) => keepMobileFieldVisible(e.currentTarget)}
         placeholder={placeholder}
         className={`input w-full ${isOverLimit ? "border-[var(--color-danger)]" : isOverRecommended ? "border-[var(--color-warning)]" : ""}`}
       />
@@ -307,9 +313,12 @@ export const RichTextEditor = ({
         aria-multiline="true"
         aria-label={placeholder || "Текст сообщения"}
         onInput={handleInput}
-        onFocus={() => setIsFocused(true)}
+        onFocus={(event) => {
+          setIsFocused(true);
+          keepMobileFieldVisible(event.currentTarget);
+        }}
         onBlur={() => { handleInput(); setIsFocused(false); }}
-        className="p-3 min-h-[88px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor"
+        className="p-3 min-h-[88px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor scroll-my-24"
         style={{
           color: "var(--color-foreground)",
           wordBreak: "break-word",
@@ -748,7 +757,7 @@ export const Build = () => {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-x-hidden">
+    <div className="relative flex flex-col min-h-screen overflow-x-hidden pb-[calc(80px+env(safe-area-inset-bottom,0px))] lg:pb-0">
       <style>{`
         .action-bar-fixed {
           bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);

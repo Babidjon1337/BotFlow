@@ -1188,25 +1188,25 @@ export const Home = () => {
               filteredClients.slice(0, 3).map((client, i) => (
                 <div
                   key={i}
-                  className="flex items-center justify-between p-3.5 hover:bg-[var(--color-surface-2)]/60 transition-colors"
+                  className="flex flex-col items-stretch gap-3 p-3.5 transition-colors hover:bg-[var(--color-surface-2)]/60 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
                     <div
                       className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(client.username)} text-white flex items-center justify-center font-bold text-[14px] shrink-0 shadow-xs`}
                     >
                       {client.name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[14px] font-bold text-[var(--color-foreground)] truncate">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="text-[14px] font-bold text-[var(--color-foreground)] break-words">
                           {client.name}
                         </span>
-                        <span className="text-[12px] text-[var(--color-foreground-tertiary)] shrink-0">
+                        <span className="text-[12px] text-[var(--color-foreground-tertiary)]">
                           {client.time ? `Пришёл ${client.time}` : ""}
                         </span>
                       </div>
-                      <div className="text-[12px] text-[var(--color-foreground-secondary)] truncate flex items-center gap-1.5 mt-0.5">
-                        <span>{client.username}</span>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-[var(--color-foreground-secondary)]">
+                        <span className="max-w-full break-all">{client.username}</span>
                         <span className="w-1 h-1 rounded-full bg-[var(--color-border)] shrink-0" />
                         {client.paid ? (
                           <span className="text-[var(--color-success)] font-semibold flex items-center gap-1">
@@ -1230,7 +1230,7 @@ export const Home = () => {
                         setShowAllClients(true);
                         document.body.style.overflow = "hidden";
                       }}
-                      className="shrink-0 px-3.5 py-1.5 ml-3 rounded-xl text-[13px] font-bold transition-all bg-[var(--color-primary-soft)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white shadow-2xs active:scale-95"
+                      className="h-10 w-full shrink-0 rounded-xl bg-[var(--color-primary-soft)] px-3.5 text-[13px] font-bold text-[var(--color-primary)] shadow-2xs transition-all hover:bg-[var(--color-primary)] hover:text-white active:scale-95 sm:ml-3 sm:h-auto sm:w-auto sm:py-1.5"
                     >
                       Выставить счет
                     </button>
@@ -1331,8 +1331,8 @@ export const Home = () => {
                 className="bg-[var(--color-surface)] flex flex-col w-full h-[100dvh] md:w-[580px] md:h-[620px] md:max-h-[85vh] md:rounded-[24px] md:border md:border-[var(--color-border)] pointer-events-auto md:shadow-[0_24px_80px_rgba(0,0,0,0.5)] relative overflow-hidden z-10"
               >
                 {/* Modal Header */}
-                <div className="flex-shrink-0 flex items-center justify-between p-5 border-b border-[var(--color-border)] bg-[var(--color-surface)] z-10 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] md:pt-5">
-                  <div className="flex items-center gap-3">
+                <div className="z-10 flex shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 pb-4 pt-[calc(var(--tg-content-safe-area-inset-top,0px)+16px)] md:p-5">
+                  <div className="flex min-w-0 items-center gap-3">
                     {selectedClientForInvoice && (
                       <button
                         onClick={() => {
@@ -1340,20 +1340,20 @@ export const Home = () => {
                           setSelectedTariffs([]);
                           setIsInvoiceSent(false);
                         }}
-                        className="w-9 h-9 flex items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-border)] transition-colors active:scale-95"
+                        className="hidden size-9 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-border)] active:scale-95 md:flex"
                         title="Назад к списку клиентов"
                       >
                         <ArrowLeft size={18} />
                       </button>
                     )}
-                    <div>
-                      <h2 className="text-[18px] font-bold text-[var(--color-foreground)] leading-tight">
+                    <div className="min-w-0">
+                      <h2 className="truncate text-[18px] font-bold leading-tight text-[var(--color-foreground)]">
                         {selectedClientForInvoice
                           ? `Выставить счет`
                           : `Клиенты (${leadsTotal})`}
                       </h2>
                       {selectedClientForInvoice && (
-                        <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-0.5">
+                        <div className="mt-0.5 truncate text-[13px] text-[var(--color-foreground-secondary)]">
                           {selectedClientForInvoice.name}{" "}
                           <span className="opacity-60">
                             {selectedClientForInvoice.username}
@@ -1378,7 +1378,7 @@ export const Home = () => {
                 </div>
 
                 {selectedClientForInvoice ? (
-                  <div className="flex-1 overflow-y-auto min-h-0 px-6 py-6 flex flex-col justify-between custom-scrollbar">
+                  <div className="custom-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 md:px-6 md:py-6">
                     {isInvoiceSent ? (
                       <motion.div
                         key="success"
@@ -1425,7 +1425,7 @@ export const Home = () => {
                                         : [...prev, tariff.id],
                                     )
                                   }
-                                  className={`relative p-4 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between gap-3 select-none ${
+                                  className={`relative flex cursor-pointer flex-col items-stretch gap-3 rounded-2xl border-2 p-4 transition-all select-none sm:flex-row sm:items-center sm:justify-between ${
                                     isSelected
                                       ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
                                       : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/40"
@@ -1440,7 +1440,7 @@ export const Home = () => {
                                     </div>
                                   </div>
 
-                                  <div className="flex items-center gap-3 shrink-0">
+                                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
                                     <div className="text-[15px] font-extrabold text-[var(--color-foreground)] whitespace-nowrap">
                                       {tariff.price}
                                     </div>
@@ -1465,7 +1465,7 @@ export const Home = () => {
                           </div>
                         </div>
 
-                        <div className="pt-5 mt-5 border-t border-[var(--color-border)]">
+                        <div className="sticky bottom-0 -mx-4 mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 pb-[calc(var(--tg-content-safe-area-inset-bottom,0px)+12px)] pt-4 md:-mx-6 md:px-6 md:pb-0">
                           <button
                             onClick={() => void sendInvoice()}
                             disabled={
@@ -1515,25 +1515,25 @@ export const Home = () => {
                         modalFilteredClients.map((client, i) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between p-3.5 rounded-xl hover:bg-[var(--color-surface-2)]/60 transition-colors"
+                            className="flex flex-col items-stretch gap-3 rounded-xl p-3.5 transition-colors hover:bg-[var(--color-surface-2)]/60 sm:flex-row sm:items-center sm:justify-between"
                           >
-                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
                               <div
                                 className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(client.username)} text-white flex items-center justify-center font-bold text-[14px] shrink-0 shadow-xs`}
                               >
                                 {client.name.charAt(0)}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[14px] font-bold text-[var(--color-foreground)] truncate">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                  <span className="text-[14px] font-bold text-[var(--color-foreground)] break-words">
                                     {client.name}
                                   </span>
-                                  <span className="text-[12px] text-[var(--color-foreground-tertiary)] shrink-0">
+                                  <span className="text-[12px] text-[var(--color-foreground-tertiary)]">
                                     {client.time}
                                   </span>
                                 </div>
-                                <div className="text-[12px] text-[var(--color-foreground-secondary)] truncate flex items-center gap-1.5 mt-0.5">
-                                  <span>{client.username}</span>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-[var(--color-foreground-secondary)]">
+                                  <span className="max-w-full break-all">{client.username}</span>
                                   <span className="w-1 h-1 rounded-full bg-[var(--color-border)] shrink-0" />
                                   {client.paid ? (
                                     <span className="text-[var(--color-success)] font-semibold flex items-center gap-1">
@@ -1559,7 +1559,7 @@ export const Home = () => {
                                   setSelectedTariffs([]);
                                   setIsInvoiceSent(false);
                                 }}
-                                className="shrink-0 px-3.5 py-1.5 ml-3 rounded-xl text-[13px] font-bold transition-all bg-[var(--color-primary-soft)] text-[var(--color-primary)] hover:bg-[var(--color-primary)] hover:text-white shadow-2xs active:scale-95"
+                                className="h-10 w-full shrink-0 rounded-xl bg-[var(--color-primary-soft)] px-3.5 text-[13px] font-bold text-[var(--color-primary)] shadow-2xs transition-all hover:bg-[var(--color-primary)] hover:text-white active:scale-95 sm:ml-3 sm:h-auto sm:w-auto sm:py-1.5"
                               >
                                 Выставить счет
                               </button>

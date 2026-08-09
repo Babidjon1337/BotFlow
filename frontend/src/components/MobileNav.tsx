@@ -5,6 +5,7 @@ import { useAppState } from '../providers/AppStateProvider';
 interface MobileNavProps {
   activeTab: TabType;
   setActiveTab: (tab: TabType) => void;
+  hidden?: boolean;
 }
 
 type TelegramWebApp = { HapticFeedback?: { selectionChanged: () => void } };
@@ -16,7 +17,7 @@ const TABS: { id: TabType; icon: LucideIcon; label: string; activeColor: string 
   { id: 'profile', icon: User,   label: 'Профиль',  activeColor: 'var(--color-success)' },
 ];
 
-export const MobileNav = ({ activeTab, setActiveTab }: MobileNavProps) => {
+export const MobileNav = ({ activeTab, setActiveTab, hidden = false }: MobileNavProps) => {
   const { isAdmin } = useAppState();
   const navTabs = [
     ...TABS,
@@ -25,7 +26,7 @@ export const MobileNav = ({ activeTab, setActiveTab }: MobileNavProps) => {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 w-full z-50 lg:hidden"
+      className={`fixed bottom-0 left-0 w-full z-50 lg:hidden transition-transform duration-150 ${hidden ? "translate-y-full pointer-events-none" : "translate-y-0"}`}
       aria-label="Мобильная навигация"
       style={{
         backgroundColor: 'color-mix(in srgb, var(--color-background) 80%, transparent)',

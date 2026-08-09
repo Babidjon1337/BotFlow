@@ -56,41 +56,6 @@ export const Profile = () => {
       className="w-full pb-10 flex justify-center"
     >
       <div className="w-full max-w-[640px] pt-2 lg:pt-6 px-4 lg:px-0">
-        {isAdmin && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-6 p-5 rounded-2xl relative overflow-hidden shadow-lg border border-[#c084fc]/30"
-            style={{
-              background: 'linear-gradient(135deg, rgba(79, 70, 229, 0.15) 0%, rgba(192, 38, 211, 0.15) 100%)',
-              backdropFilter: 'blur(12px)',
-            }}
-          >
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#4F46E5] to-[#C026D3] flex items-center justify-center shrink-0 shadow-md">
-                  <Crown size={24} className="text-white animate-bounce" />
-                </div>
-                <div>
-                  <div className="text-[16px] font-black text-[#c084fc] flex items-center gap-1.5">
-                    Администратор платформы
-                    <span className="text-[10px] bg-[#c084fc]/20 text-[#c084fc] px-2 py-0.5 rounded-full uppercase font-extrabold">SaaS Owner</span>
-                  </div>
-                  <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-0.5">
-                    Вам доступен полный безлимит и управление всей аналитикой.
-                  </div>
-                </div>
-              </div>
-            </div>
-            <button
-              onClick={() => setActiveTab?.("admin_stats")}
-              className="mt-4 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#4F46E5] to-[#C026D3] text-white font-bold text-[14px] shadow-md hover:opacity-95 transition-opacity flex items-center justify-center gap-2"
-            >
-              📊 Открыть дашборд статистики BotFlow
-            </button>
-          </motion.div>
-        )}
-
         <AnimatePresence mode="wait">
           {/* ── PROFILE SECTION ── */}
           <motion.div

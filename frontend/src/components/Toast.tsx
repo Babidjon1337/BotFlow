@@ -10,6 +10,7 @@ export interface ToastProps {
 }
 
 export const Toast = ({ message, type = 'success', duration = 3000, onClose }: ToastProps) => {
+  const isMobileViewport = window.innerWidth < 1024;
   useEffect(() => {
     const t = setTimeout(onClose, duration);
     return () => clearTimeout(t);
@@ -31,15 +32,20 @@ export const Toast = ({ message, type = 'success', duration = 3000, onClose }: T
         }}
         style={{
           position: 'fixed',
-          top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px)',
+          top: isMobileViewport
+            ? 'max(80px, calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px))'
+            : '24px',
           left: '50%',
           zIndex: 9999, display: 'flex', alignItems: 'center', gap: '10px',
           padding: '12px 18px',
+          width: 'min(calc(100vw - 32px), 440px)',
+          minHeight: '44px',
           background: 'var(--color-surface)',
           border: '1px solid var(--color-border)',
           borderRadius: 'var(--radius-md)',
           boxShadow: 'var(--shadow-float)',
-          whiteSpace: 'nowrap',
+          whiteSpace: 'normal',
+          lineHeight: 1.35,
           cursor: 'pointer',
           touchAction: 'none'
         }}
@@ -47,7 +53,7 @@ export const Toast = ({ message, type = 'success', duration = 3000, onClose }: T
         {type === 'success'
           ? <CheckCircle2 size={16} style={{ color: 'var(--color-success)', flexShrink: 0 }} />
           : <XCircle size={16} style={{ color: 'var(--color-danger)', flexShrink: 0 }} />}
-        <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-foreground)' }}>{message}</span>
+        <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-foreground)', minWidth: 0 }}>{message}</span>
       </motion.div>
     </AnimatePresence>
   );

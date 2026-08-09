@@ -28,6 +28,10 @@ type TelegramWebApp = {
   setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
   close?: () => void;
+  safeAreaInset?: { top?: number; bottom?: number; left?: number; right?: number };
+  contentSafeAreaInset?: { top?: number; bottom?: number; left?: number; right?: number };
+  onEvent?: (eventType: "safeAreaChanged" | "contentSafeAreaChanged", callback: () => void) => void;
+  offEvent?: (eventType: "safeAreaChanged" | "contentSafeAreaChanged", callback: () => void) => void;
   BackButton?: { show: () => void; hide: () => void; onClick: (callback: () => void) => void; offClick: (callback: () => void) => void; };
 };
 
@@ -75,6 +79,7 @@ export default function App() {
     funnelLoadState.botId === appState.activeBot.id
   );
   const [isBotCreating, setIsBotCreating] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
   useEffect(() => {
     const tg = getTelegramWebApp();
@@ -102,6 +107,36 @@ export default function App() {
       if (tg.setBottomBarColor) tg.setBottomBarColor(bgColor);
     }
   }, [theme, appState.isDirty]);
+
+  useEffect(() => {
+    const tg = getTelegramWebApp();
+    const root = document.documentElement;
+    const applyTelegramSafeArea = () => {
+      const inset = tg?.contentSafeAreaInset ?? tg?.safeAreaInset;
+      for (const side of ["top", "right", "bottom", "left"] as const) {
+        root.style.setProperty(`--tg-content-safe-area-inset-${side}`, `${inset?.[side] ?? 0}px`);
+      }
+    };
+
+    applyTelegramSafeArea();
+    tg?.onEvent?.("safeAreaChanged", applyTelegramSafeArea);
+    tg?.onEvent?.("contentSafeAreaChanged", applyTelegramSafeArea);
+    return () => {
+      tg?.offEvent?.("safeAreaChanged", applyTelegramSafeArea);
+      tg?.offEvent?.("contentSafeAreaChanged", applyTelegramSafeArea);
+    };
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const updateKeyboardState = () => {
+      setIsKeyboardOpen(window.innerWidth < 1024 && window.innerHeight - viewport.height > 120);
+    };
+    updateKeyboardState();
+    viewport.addEventListener("resize", updateKeyboardState);
+    return () => viewport.removeEventListener("resize", updateKeyboardState);
+  }, []);
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -147,45 +182,6 @@ export default function App() {
       backButton.hide();
     }
   }, [appState.activeSheet, setSheet, activeTab, setActiveTab, switchingBotId, isBotCreating]);
-
-  useEffect(() => {
-
-    // Prevent swipe-to-close ONLY when no scrollable parent is being scrolled.
-    // This allows content inside overflow-y-auto containers to scroll normally.
-    let startY = 0;
-    const onTouchStart = (e: TouchEvent) => {
-      startY = e.touches[0]?.clientY ?? 0;
-    };
-    const onTouchMove = (e: TouchEvent) => {
-      const currentY = e.touches[0]?.clientY ?? 0;
-      const swipingDown = currentY > startY;
-
-      // Walk up the DOM to check if any ancestor is scrollable
-      let el = e.target as HTMLElement | null;
-      while (el && el !== document.body) {
-        const overflowY = window.getComputedStyle(el).overflowY;
-        const isScrollable = overflowY === 'auto' || overflowY === 'scroll';
-        if (isScrollable) {
-          // Allow scroll if we're not at the very top (can scroll up more)
-          if (!swipingDown || el.scrollTop > 0) return;
-          break;
-        }
-        el = el.parentElement;
-      }
-
-      // Block only at root level and swiping down (prevents TG collapse)
-      if (swipingDown) {
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener('touchstart', onTouchStart, { passive: true });
-    document.addEventListener('touchmove', onTouchMove, { passive: false });
-    return () => {
-      document.removeEventListener('touchstart', onTouchStart);
-      document.removeEventListener('touchmove', onTouchMove);
-    };
-  }, []);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -277,16 +273,16 @@ export default function App() {
         <Header activeTab={activeTab} appState={appState} setSheet={setSheet} onCreateBot={handleCreateBotClick} />
 
         {/* Content Area with its own scroll */}
-        <div className={`flex-1 min-h-0 flex flex-col relative ${activeTab === 'flow' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+        <div data-app-scroll-container className={`flex-1 min-h-0 flex flex-col relative ${activeTab === 'flow' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           
           {/* Mobile Navigation Spacer */}
           <style>{`
             @media (max-width: 1023px) {
               /* Bottom: nav bar height (56) + 16px breathing room + safe area */
-              .mobile-padding { padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px)) !important; }
+              .mobile-padding { padding-bottom: calc(72px + max(env(safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px))) !important; }
               .action-bar-mobile { bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px) !important; }
               /* Top: TG header bar (Close + Minimize buttons) — use env(safe-area-inset-top) + 44px */
-              .tg-header-safe { padding-top: max(54px, calc(env(safe-area-inset-top, 0px) + 44px)) !important; }
+              .tg-header-safe { padding-top: max(54px, calc(var(--tg-content-safe-area-inset-top, 0px) + 16px)) !important; }
               .flow-padding { padding-bottom: 0; }
             }
           `}</style>
@@ -328,7 +324,7 @@ export default function App() {
         </div>
       </main>
 
-      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} hidden={isKeyboardOpen} />
 
       {/* Sheets */}
       <AnimatePresence>
