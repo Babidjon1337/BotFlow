@@ -277,6 +277,7 @@ export const RichTextEditor = ({
               {/* Actions */}
               <button
                 type="button"
+                onMouseDown={keepEditorSelection}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
                 className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--color-primary)] hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0 shadow-sm"
@@ -356,7 +357,11 @@ export const RichTextEditor = ({
             </div>
             {/* Media upload button in toolbar */}
             {onUploadMedia && !hasMedia && (
-              <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isUploading}
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-bold text-[var(--color-primary)] bg-[var(--color-primary-soft)] hover:bg-[var(--color-primary)] hover:text-white transition-all shadow-sm"
                 title="Прикрепить фото или видео" aria-label="Добавить медиафайл">
                 <ImageIcon size={14} />
