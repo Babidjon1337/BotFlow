@@ -23,6 +23,84 @@ export interface BillingProduct {
   period: "lifetime" | "month";
 }
 
+export interface AdminOverview {
+  users_total: number;
+  bots_total: number;
+  bots_active: number;
+  saas_payments_succeeded: number;
+  saas_revenue: number;
+  operations_requiring_attention: number;
+}
+
+export interface AdminUser {
+  id: number;
+  telegram_id: number;
+  bots_count: number;
+  lifetime_slots: number;
+  subscription_ends_at: string | null;
+  subscription_auto_renew: boolean;
+  subscription_retry_count: number;
+  created_at: string | null;
+}
+
+export interface AdminBot {
+  id: number;
+  owner_id: number;
+  owner_telegram_id: number;
+  display_name: string;
+  username: string | null;
+  tg_bot_id: number | null;
+  status: "draft" | "active" | "archived";
+  users_count: number;
+  is_token_locked: boolean;
+  has_lifetime_license: boolean;
+  funnel_complete: boolean;
+  media_sync_done: boolean;
+  payment_provider: string | null;
+  has_payment_credentials: boolean;
+  created_at: string | null;
+}
+
+export interface AdminSaasPayment {
+  id: string;
+  user_id: number;
+  user_telegram_id: number;
+  product: "license" | "pro_initial" | "pro_renewal";
+  amount: number;
+  currency: string;
+  status: "pending" | "succeeded" | "failed";
+  attempt: number;
+  paid_at: string | null;
+  created_at: string | null;
+}
+
+export interface AdminOperation {
+  payment_id: string;
+  bot_id: number;
+  bot_name: string;
+  lead_id: number;
+  provider: string;
+  amount: number;
+  currency: string;
+  paid_at: string | null;
+  fulfillment_status: string;
+  fulfillment_attempts: number;
+  fulfillment_error: string | null;
+  owner_notification_status: string;
+  owner_notification_attempts: number;
+  owner_notification_error: string | null;
+}
+
+export interface AdminAuditEntry {
+  id: string;
+  actor_telegram_id: number;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string | null;
+}
+
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 function getInitData(): string {
@@ -97,6 +175,47 @@ async function fetchApi<T>(
 }
 
 export const apiService = {
+  async getAdminOverview() {
+    return fetchApi<AdminOverview>("/api/admin/overview");
+  },
+
+  async getAdminUsers(query?: string, page: number = 1, limit: number = 25) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (query?.trim()) params.set("query", query.trim());
+    return fetchApi<{ users: AdminUser[]; total: number; page: number; limit: number }>(
+      `/api/admin/users?${params.toString()}`
+    );
+  },
+
+  async getAdminBots(filters: { query?: string; status?: AdminBot["status"]; page?: number; limit?: number } = {}) {
+    const params = new URLSearchParams({ page: String(filters.page ?? 1), limit: String(filters.limit ?? 25) });
+    if (filters.query?.trim()) params.set("query", filters.query.trim());
+    if (filters.status) params.set("status", filters.status);
+    return fetchApi<{ bots: AdminBot[]; total: number; page: number; limit: number }>(
+      `/api/admin/bots?${params.toString()}`
+    );
+  },
+
+  async getAdminPayments(status?: AdminSaasPayment["status"], page: number = 1, limit: number = 25) {
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) params.set("status", status);
+    return fetchApi<{ payments: AdminSaasPayment[]; total: number; page: number; limit: number }>(
+      `/api/admin/payments?${params.toString()}`
+    );
+  },
+
+  async getAdminOperations(page: number = 1, limit: number = 25) {
+    return fetchApi<{ operations: AdminOperation[]; total: number; page: number; limit: number }>(
+      `/api/admin/operations?page=${page}&limit=${limit}`
+    );
+  },
+
+  async getAdminAuditLog(page: number = 1, limit: number = 25) {
+    return fetchApi<{ entries: AdminAuditEntry[]; total: number; page: number; limit: number }>(
+      `/api/admin/audit-log?page=${page}&limit=${limit}`
+    );
+  },
+
   async updateNotificationSettings(data: {
     email?: string;
     emailReceiptsEnabled: boolean;
