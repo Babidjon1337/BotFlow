@@ -6,6 +6,7 @@ import uuid
 from aiogram import Bot
 from aiogram.client.default import DefaultBotProperties
 
+from config import MAIN_BOT_TOKEN
 from database.requests.bot_rq import get_bot_by_id
 from database.requests.client_payment_rq import (
     claim_client_payment_fulfillment,
@@ -18,16 +19,19 @@ from database.requests.client_payment_rq import (
 )
 from loggers import logger
 from services.payment_link import send_success_message
-from services.security import crypto
 
 
 async def _notify_owner(payment, http_session) -> None:
     bot_config = await get_bot_by_id(payment.bot_id)
     if not bot_config:
         raise RuntimeError("Bot configuration is unavailable")
-    token = crypto.decrypt(bot_config.bot_token_enc)
+    if not MAIN_BOT_TOKEN:
+        raise RuntimeError("MAIN_BOT_TOKEN is not configured")
+
+    # The buyer receives their access from the client bot. The owner receives
+    # operational sales notifications from the single BotFlow service bot.
     bot = Bot(
-        token=token,
+        token=MAIN_BOT_TOKEN,
         session=http_session,
         default=DefaultBotProperties(parse_mode="HTML"),
     )
