@@ -18,6 +18,7 @@ from database.requests.bot_rq import (
     get_bot_by_id,
     get_bot_by_tg_id,
     create_user_if_not_exists,
+    get_user_by_tg_id,
     get_user_bots,
     create_bot_config,
     update_bot_config,
@@ -38,6 +39,11 @@ from database.requests.admin_rq import (
     list_admin_operations,
     list_admin_saas_payments,
     list_admin_users,
+    AdminMutationError,
+    change_admin_user_lifetime_licenses,
+    disable_admin_user_auto_renew,
+    extend_admin_user_pro,
+    set_admin_user_access,
 )
 from schemas.api_schemas import (
     BotCreateApiRequest,
@@ -46,6 +52,9 @@ from schemas.api_schemas import (
     BillingCheckoutRequest,
     BillingCheckoutResponse,
     NotificationSettingsRequest,
+    AdminLifetimeLicenseRequest,
+    AdminProExtensionRequest,
+    AdminUserAccessRequest,
     ManualInvoiceRequest,
     ChatDeliveryVerifyRequest,
     FunnelApiResponse,
@@ -147,15 +156,28 @@ async def get_current_user(request: Request) -> TelegramUser:
     init_data = request.headers.get("X-Telegram-Init-Data")
     if init_data:
         try:
-            return validate_init_data(init_data)
+            telegram_user = validate_init_data(init_data)
         except TelegramAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        await _ensure_account_is_active(telegram_user.telegram_id)
+        return telegram_user
 
     development_user = _get_development_user(request)
     if development_user:
+        await _ensure_account_is_active(development_user.telegram_id)
         return development_user
 
     raise HTTPException(status_code=401, detail="Telegram authorization is required")
+
+
+async def _ensure_account_is_active(telegram_id: int) -> None:
+    """Reject a paused SaaS account across all authenticated Mini App routes."""
+    account = await get_user_by_tg_id(telegram_id)
+    if account and account.is_disabled:
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ к BotFlow временно ограничен. Свяжитесь с поддержкой.",
+        )
 
 
 async def get_current_admin(request: Request) -> TelegramUser:
@@ -196,6 +218,7 @@ async def auth_user(request: Request, body: dict = None):
             )
         telegram_user = development_user
 
+    await _ensure_account_is_active(telegram_user.telegram_id)
     user = await create_user_if_not_exists(telegram_id=telegram_user.telegram_id)
     bots = await get_user_bots(owner_id=user.id)
 
@@ -232,6 +255,70 @@ async def get_admin_users_endpoint(
     await get_current_admin(request)
     users, total = await list_admin_users(query=query, page=page, limit=limit)
     return {"users": users, "total": total, "page": page, "limit": limit}
+
+
+@api_router.post("/api/admin/users/{user_id}/access")
+async def update_admin_user_access_endpoint(
+    user_id: int, request: Request, body: AdminUserAccessRequest
+):
+    """Pause/restore Mini App access and optionally stop the owner's active bots."""
+    admin = await get_current_admin(request)
+    try:
+        return await set_admin_user_access(
+            user_id=user_id,
+            disabled=body.disabled,
+            stop_active_bots=body.stop_active_bots,
+            actor_telegram_id=admin.telegram_id,
+            protected_admin_telegram_ids=ADMIN_TELEGRAM_IDS,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@api_router.post("/api/admin/users/{user_id}/lifetime-licenses")
+async def change_admin_user_lifetime_licenses_endpoint(
+    user_id: int, request: Request, body: AdminLifetimeLicenseRequest
+):
+    """Adjust available permanent-license capacity without detaching existing bots."""
+    admin = await get_current_admin(request)
+    try:
+        return await change_admin_user_lifetime_licenses(
+            user_id=user_id,
+            direction=body.direction,
+            quantity=body.quantity,
+            actor_telegram_id=admin.telegram_id,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@api_router.post("/api/admin/users/{user_id}/pro")
+async def extend_admin_user_pro_endpoint(
+    user_id: int, request: Request, body: AdminProExtensionRequest
+):
+    """Extend a user's PRO expiry from the later of now or their current expiry."""
+    admin = await get_current_admin(request)
+    try:
+        return await extend_admin_user_pro(
+            user_id=user_id,
+            days=body.days,
+            actor_telegram_id=admin.telegram_id,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@api_router.post("/api/admin/users/{user_id}/cancel-auto-renew")
+async def disable_admin_user_auto_renew_endpoint(user_id: int, request: Request):
+    """Disable only future automatic payments; the paid PRO period stays unchanged."""
+    admin = await get_current_admin(request)
+    try:
+        return await disable_admin_user_auto_renew(
+            user_id=user_id,
+            actor_telegram_id=admin.telegram_id,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @api_router.get("/api/admin/bots")

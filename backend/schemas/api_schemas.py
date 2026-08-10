@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Dict, Any
@@ -47,6 +48,22 @@ class NotificationSettingsRequest(BaseModel):
     email_billing_notifications_enabled: bool = Field(default=True, alias="emailBillingNotificationsEnabled")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class AdminUserAccessRequest(BaseModel):
+    disabled: bool
+    stop_active_bots: bool = Field(default=False, alias="stopActiveBots")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AdminLifetimeLicenseRequest(BaseModel):
+    direction: Literal["grant", "revoke"]
+    quantity: int = Field(..., ge=1, le=100)
+
+
+class AdminProExtensionRequest(BaseModel):
+    days: int = Field(..., ge=1, le=365)
 
 
 class BillingCheckoutResponse(BaseModel):

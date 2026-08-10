@@ -58,6 +58,11 @@ class User(Base):
     email: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
     email_receipts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     email_billing_notifications_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Account access may be paused by a platform administrator.  Data and
+    # entitlements remain intact so that restoring access never requires a
+    # destructive recovery operation.
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    disabled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
