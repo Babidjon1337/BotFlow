@@ -299,7 +299,11 @@ async def auth_user(request: Request, body: dict = None):
         telegram_user = development_user
 
     await _ensure_account_is_active(telegram_user.telegram_id)
-    user = await create_user_if_not_exists(telegram_id=telegram_user.telegram_id)
+    user = await create_user_if_not_exists(
+        telegram_id=telegram_user.telegram_id,
+        username=telegram_user.username,
+        refresh_username=True,
+    )
     bots = await get_user_bots(owner_id=user.id)
 
     bots_resp = []

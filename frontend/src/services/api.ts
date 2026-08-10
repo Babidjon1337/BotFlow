@@ -35,6 +35,7 @@ export interface AdminOverview {
 export interface AdminUser {
   id: number;
   telegram_id: number;
+  username: string | null;
   bots_count: number;
   lifetime_slots: number;
   subscription_ends_at: string | null;

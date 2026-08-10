@@ -24,13 +24,22 @@ async def get_bot_by_tg_id(tg_bot_id: int) -> BotConfig | None:
         )
 
 
-async def create_user_if_not_exists(telegram_id: int) -> User:
-    """Создает пользователя, если его еще нет в базе."""
+async def create_user_if_not_exists(
+    telegram_id: int,
+    username: str | None = None,
+    *,
+    refresh_username: bool = False,
+) -> User:
+    """Create a user and refresh the optional Telegram username from trusted auth data."""
     async with async_session() as session:
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
         if not user:
-            user = User(telegram_id=telegram_id)
+            user = User(telegram_id=telegram_id, username=username)
             session.add(user)
+            await session.commit()
+            await session.refresh(user)
+        elif refresh_username and username != user.username:
+            user.username = username
             await session.commit()
             await session.refresh(user)
         return user

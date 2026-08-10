@@ -37,6 +37,9 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    # Telegram username is optional and may change. It is refreshed from signed
+    # Mini App init data and is used only to help platform administrators search.
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
 
     # Подписка на SaaS и юридическое согласие
     subscription_ends_at: Mapped[Optional[datetime]] = mapped_column(

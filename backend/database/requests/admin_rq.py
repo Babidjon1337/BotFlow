@@ -70,9 +70,16 @@ async def list_admin_users(*, query: str | None, page: int, limit: int) -> tuple
     )
     filters = []
     if query:
-        value = f"%{query.strip()}%"
+        normalized_query = query.strip().lstrip("@")
+        value = f"%{normalized_query}%"
         if value != "%%":
-            filters.append(cast(User.telegram_id, String).ilike(value))
+            filters.append(
+                or_(
+                    cast(User.telegram_id, String).ilike(value),
+                    cast(User.id, String).ilike(value),
+                    func.lower(func.coalesce(User.username, "")).ilike(value.lower()),
+                )
+            )
 
     async with async_session() as session:
         base = select(User).where(*filters)
@@ -89,6 +96,7 @@ async def list_admin_users(*, query: str | None, page: int, limit: int) -> tuple
         {
             "id": user.id,
             "telegram_id": user.telegram_id,
+            "username": user.username,
             "bots_count": int(bots_count or 0),
             "lifetime_slots": user.lifetime_slots,
             "subscription_ends_at": _iso(user.subscription_ends_at),
