@@ -118,17 +118,42 @@ deploy_backend() {
     separator
     echo
 
-    info "Проверяю миграции базы данных..."
+    # ---------- Backend directory ----------
 
-    cd "$PROJECT_DIR" || fail "Не удалось перейти в $PROJECT_DIR"
+    cd "$PROJECT_DIR/backend" || fail "Не удалось перейти в backend"
+
+    # ---------- Virtual Environment ----------
+
+    info "Активирую virtual environment..."
+
+    if [ -f "$PROJECT_DIR/backend/venv/bin/activate" ]; then
+        source "$PROJECT_DIR/backend/venv/bin/activate"
+        success "Virtual environment активирован"
+    else
+        fail "Не найден virtual environment: $PROJECT_DIR/backend/venv"
+    fi
+
+    # ---------- Dependencies ----------
+
+    info "Устанавливаю зависимости из requirements.txt..."
+
+    if python -m pip install -r requirements.txt; then
+        success "Зависимости установлены/обновлены"
+    else
+        fail "Ошибка установки зависимостей. BotFlow НЕ перезапущен."
+    fi
+
+    # ---------- Database migrations ----------
+
+    info "Применяю миграции базы данных..."
 
     if alembic upgrade head; then
         success "Миграции успешно применены"
     else
-        fail "Ошибка применения миграций. BotFlow НЕ перезапущен."
+        fail "Ошибка миграций. BotFlow НЕ перезапущен."
     fi
 
-    echo
+    # ---------- Restart ----------
 
     info "Перезапускаю BotFlow..."
 
@@ -137,6 +162,8 @@ deploy_backend() {
     else
         fail "Ошибка перезапуска BotFlow"
     fi
+
+    # ---------- Status ----------
 
     info "Проверяю статус BotFlow..."
 
