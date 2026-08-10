@@ -66,6 +66,10 @@ class AdminProExtensionRequest(BaseModel):
     days: int = Field(..., ge=1, le=365)
 
 
+class AdminBotActionRequest(BaseModel):
+    action: Literal["start", "stop", "reinstall_webhook"]
+
+
 class BillingCheckoutResponse(BaseModel):
     payment_id: str = Field(..., alias="paymentId")
     confirmation_url: str = Field(..., alias="confirmationUrl")

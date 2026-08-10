@@ -62,6 +62,15 @@ export interface AdminBot {
   created_at: string | null;
 }
 
+export type AdminBotAction = "start" | "stop" | "reinstall_webhook";
+
+export interface AdminBotActionResult {
+  status: string;
+  message: string;
+  botStatus: AdminBot["status"];
+  webhookUrl?: string | null;
+}
+
 export interface AdminSaasPayment {
   id: string;
   user_id: number;
@@ -228,6 +237,19 @@ export const apiService = {
     if (filters.status) params.set("status", filters.status);
     return fetchApi<{ bots: AdminBot[]; total: number; page: number; limit: number }>(
       `/api/admin/bots?${params.toString()}`
+    );
+  },
+
+  async runAdminBotAction(botId: number, action: AdminBotAction) {
+    return fetchApi<AdminBotActionResult>(`/api/admin/bots/${botId}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+    });
+  },
+
+  async getAdminBotReadiness(botId: number) {
+    return fetchApi<{ isReady: boolean; reasons: string[] }>(
+      `/api/admin/bots/${botId}/readiness`,
     );
   },
 

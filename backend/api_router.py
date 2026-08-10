@@ -39,6 +39,7 @@ from database.requests.admin_rq import (
     list_admin_operations,
     list_admin_saas_payments,
     list_admin_users,
+    write_admin_audit_log,
     AdminMutationError,
     change_admin_user_lifetime_licenses,
     disable_admin_user_auto_renew,
@@ -55,6 +56,7 @@ from schemas.api_schemas import (
     AdminLifetimeLicenseRequest,
     AdminProExtensionRequest,
     AdminUserAccessRequest,
+    AdminBotActionRequest,
     ManualInvoiceRequest,
     ChatDeliveryVerifyRequest,
     FunnelApiResponse,
@@ -98,6 +100,78 @@ async def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
         connected_chat_ids={chat.chat_id for chat in connected_chats},
     )
     return readiness.is_ready, list(readiness.reasons)
+
+
+async def _install_client_bot_webhook(bot, request) -> None:
+    """Install the fixed client-bot webhook without exposing its token."""
+    try:
+        token = crypto.decrypt(bot.bot_token_enc)
+        from aiogram import Bot
+
+        telegram_bot = Bot(token=token, session=request.app.state.session)
+        await telegram_bot.set_webhook(
+            url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot.id}",
+            secret_token=SECRET_KEY,
+            drop_pending_updates=True,
+            allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
+        )
+    except Exception as exc:
+        logger.warning("Не удалось установить webhook для бота %s: %s", bot.id, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Telegram не подтвердил webhook бота. Проверьте токен и повторите попытку.",
+        ) from exc
+
+
+async def _toggle_client_bot(
+    bot,
+    request: Request,
+    *,
+    action: str,
+    allow_admin_entitlement_bypass: bool,
+) -> dict:
+    """Apply the one shared start/stop policy for owners and administrators."""
+    new_status = "active" if action in ["start", "active", "activate", "true", "1"] else "draft"
+
+    if new_status == "active":
+        is_ready, reasons = await _readiness_for_bot(bot)
+        if not is_ready:
+            raise HTTPException(
+                status_code=422,
+                detail="Бот нельзя запустить: " + " ".join(reasons),
+            )
+
+    if new_status == "active" and not (
+        is_pro_active(bot.owner) or allow_admin_entitlement_bypass
+    ):
+        owner_bots = await get_user_bots(bot.owner_id)
+        if not bot.has_lifetime_license:
+            available = available_lifetime_licenses(bot.owner, owner_bots)
+            if available <= 0:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Чтобы запустить этот бот, купите лицензию или подключите PRO.",
+                )
+            bot = await assign_lifetime_license(bot.id) or bot
+        for owner_bot in owner_bots:
+            if owner_bot.id != bot.id and owner_bot.status == "active":
+                await set_bot_status(owner_bot.id, "draft")
+
+    if new_status == "active":
+        await _install_client_bot_webhook(bot, request)
+
+    updated_bot = await set_bot_status(bot.id, new_status)
+    if not updated_bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    bot_url = f"https://t.me/{updated_bot.username}" if updated_bot.username else None
+    webhook_url = f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{updated_bot.id}"
+    return {
+        "status": "ok",
+        "message": f"Бот {'запущен' if new_status == 'active' else 'остановлен'}",
+        "botStatus": new_status,
+        "webhookUrl": webhook_url if new_status == "active" else None,
+        "botUrl": bot_url,
+    }
 
 
 def _merged_payment_credentials(bot, incoming: dict | None, provider_changed: bool) -> dict:
@@ -333,6 +407,55 @@ async def get_admin_bots_endpoint(
     await get_current_admin(request)
     bots, total = await list_admin_bots(query=query, status=status, page=page, limit=limit)
     return {"bots": bots, "total": total, "page": page, "limit": limit}
+
+
+@api_router.post("/api/admin/bots/{bot_id}/action")
+async def admin_bot_action_endpoint(
+    bot_id: int, request: Request, body: AdminBotActionRequest
+):
+    """Run a traced, entitlement-safe operational action on a customer bot."""
+    admin = await get_current_admin(request)
+    bot = await get_bot_by_id(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+
+    if body.action == "reinstall_webhook":
+        await _install_client_bot_webhook(bot, request)
+        result = {
+            "status": "ok",
+            "message": "Webhook переустановлен",
+            "botStatus": bot.status,
+            "webhookUrl": f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot.id}",
+        }
+    else:
+        # A platform operator cannot silently bypass a customer's purchased
+        # license/PRO limits by starting their bot from the admin panel.
+        result = await _toggle_client_bot(
+            bot,
+            request,
+            action=body.action,
+            allow_admin_entitlement_bypass=False,
+        )
+
+    await write_admin_audit_log(
+        actor_telegram_id=admin.telegram_id,
+        action=f"bot_{body.action}",
+        target_type="bot",
+        target_id=bot.id,
+        details={"owner_id": bot.owner_id, "status": result["botStatus"]},
+    )
+    return result
+
+
+@api_router.get("/api/admin/bots/{bot_id}/readiness")
+async def admin_bot_readiness_endpoint(bot_id: int, request: Request):
+    """Expose the exact launch decision to an administrator without mutating a bot."""
+    await get_current_admin(request)
+    bot = await get_bot_by_id(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    is_ready, reasons = await _readiness_for_bot(bot)
+    return {"isReady": is_ready, "reasons": reasons}
 
 
 @api_router.get("/api/admin/payments")
@@ -678,73 +801,12 @@ async def toggle_bot(bot_id: int, request: Request, body: dict):
     bot = await get_owned_bot(bot_id, request)
     current_user = await get_current_user(request)
     action = str(body.get("action", "")).lower()
-    new_status = (
-        "active"
-        if action in ["start", "active", "activate", "true", "1"]
-        else "draft"
+    return await _toggle_client_bot(
+        bot,
+        request,
+        action=action,
+        allow_admin_entitlement_bypass=current_user.telegram_id in ADMIN_TELEGRAM_IDS,
     )
-
-    if new_status == "active":
-        is_ready, reasons = await _readiness_for_bot(bot)
-        if not is_ready:
-            raise HTTPException(
-                status_code=422,
-                detail="Бот нельзя запустить: " + " ".join(reasons),
-            )
-
-    if new_status == "active" and not (
-        is_pro_active(bot.owner) or current_user.telegram_id in ADMIN_TELEGRAM_IDS
-    ):
-        owner_bots = await get_user_bots(bot.owner_id)
-        if not bot.has_lifetime_license:
-            available = available_lifetime_licenses(bot.owner, owner_bots)
-            if available <= 0:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Чтобы запустить этот бот, купите лицензию или подключите PRO.",
-                )
-            bot = await assign_lifetime_license(bot.id) or bot
-        for owner_bot in owner_bots:
-            if owner_bot.id != bot.id and owner_bot.status == "active":
-                await set_bot_status(owner_bot.id, "draft")
-
-    try:
-        token = crypto.decrypt(bot.bot_token_enc)
-        from aiogram import Bot
-
-        temp_bot = Bot(token=token, session=request.app.state.session)
-        
-        # We always keep the webhook active so we can track my_chat_member
-        # (when user adds bot to channel/group) even if bot is draft.
-        # User bot handlers will naturally ignore regular messages if status == draft.
-        if new_status == "active":
-            await temp_bot.set_webhook(
-                url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot.id}",
-                secret_token=SECRET_KEY,
-                drop_pending_updates=True,
-                allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
-            )
-        # Note: we intentionally do NOT call delete_webhook() here when new_status is draft.
-    except Exception as exc:
-        logger.warning("Ошибка переключения webhook для бота %s: %s", bot_id, exc)
-        operation = "запуск" if new_status == "active" else "остановку"
-        raise HTTPException(
-            status_code=502,
-            detail=f"Telegram не подтвердил {operation} бота. Проверьте токен и повторите попытку.",
-        ) from exc
-
-    updated_bot = await set_bot_status(bot_id, new_status)
-    bot_url = (
-        f"https://t.me/{updated_bot.username}" if updated_bot.username else None
-    )
-    webhook_url = f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{updated_bot.id}"
-    return {
-        "status": "ok",
-        "message": f"Бот {'запущен' if new_status == 'active' else 'остановлен'}",
-        "botStatus": new_status,
-        "webhookUrl": webhook_url if new_status == "active" else None,
-        "botUrl": bot_url,
-    }
 
 
 @api_router.get("/api/bots/{bot_id}/funnel")

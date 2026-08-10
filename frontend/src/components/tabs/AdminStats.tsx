@@ -12,9 +12,11 @@ import {
   Users,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
+import { useAlert } from "../AlertProvider";
 import {
   apiService,
   type AdminAuditEntry,
+  type AdminBotAction,
   type AdminBot,
   type AdminOperation,
   type AdminOverview,
@@ -58,6 +60,7 @@ const productName: Record<AdminSaasPayment["product"], string> = {
 
 export function AdminStats() {
   const { setToastMessage, setToastType } = useAppState();
+  const { showConfirm } = useAlert();
   const [section, setSection] = useState<AdminSection>("overview");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -72,6 +75,7 @@ export function AdminStats() {
   const [botsStatus, setBotsStatus] = useState<AdminBot["status"] | "all">("all");
   const [actionUser, setActionUser] = useState<AdminUser | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [botActionId, setBotActionId] = useState<number | null>(null);
 
   const refreshSection = useCallback(async () => {
     setState("loading");
@@ -173,6 +177,50 @@ export function AdminStats() {
     }
   }, [actionUser, refreshSection, setToastMessage, setToastType]);
 
+  const executeBotAction = useCallback(async (bot: AdminBot, action: AdminBotAction) => {
+    setBotActionId(bot.id);
+    try {
+      const result = await apiService.runAdminBotAction(bot.id, action);
+      setBots((current) => current.map((item) => item.id === bot.id ? { ...item, status: result.botStatus } : item));
+      setToastType("success");
+      setToastMessage(result.message);
+    } catch (requestError) {
+      setToastType("error");
+      setToastMessage(requestError instanceof Error ? requestError.message : "Не удалось выполнить действие с ботом.");
+    } finally {
+      setBotActionId(null);
+    }
+  }, [setToastMessage, setToastType]);
+
+  const requestBotAction = useCallback((bot: AdminBot, action: AdminBotAction) => {
+    if (action === "stop") {
+      showConfirm({
+        title: "Остановить бота?",
+        message: "Бот перестанет обрабатывать воронку. Webhook останется подключённым только для технических событий Telegram.",
+        type: "danger",
+        confirmText: "Остановить",
+        cancelText: "Отмена",
+        onConfirm: () => { void executeBotAction(bot, action); },
+      });
+      return;
+    }
+    void executeBotAction(bot, action);
+  }, [executeBotAction, showConfirm]);
+
+  const checkBotReadiness = useCallback(async (bot: AdminBot) => {
+    setBotActionId(bot.id);
+    try {
+      const result = await apiService.getAdminBotReadiness(bot.id);
+      setToastType(result.isReady ? "success" : "error");
+      setToastMessage(result.isReady ? "Воронка готова к запуску." : `Бот пока нельзя запустить: ${result.reasons.join(" ")}`);
+    } catch (requestError) {
+      setToastType("error");
+      setToastMessage(requestError instanceof Error ? requestError.message : "Не удалось проверить готовность.");
+    } finally {
+      setBotActionId(null);
+    }
+  }, [setToastMessage, setToastType]);
+
   return (
     <section className="w-full pb-16" aria-labelledby="admin-title">
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
@@ -226,7 +274,7 @@ export function AdminStats() {
       {state === "error" ? <ErrorState message={error ?? "Не удалось загрузить данные."} onRetry={refreshSection} /> : null}
       {state !== "error" && section === "overview" ? <Overview overview={overview} operations={operations} loading={state === "loading"} onNavigate={setSection} /> : null}
       {state !== "error" && section === "users" ? <UsersSection users={users} query={usersQuery} onQueryChange={setUsersQuery} loading={state === "loading"} onManage={setActionUser} /> : null}
-      {state !== "error" && section === "bots" ? <BotsSection bots={bots} query={botsQuery} onQueryChange={setBotsQuery} status={botsStatus} onStatusChange={setBotsStatus} loading={state === "loading"} /> : null}
+      {state !== "error" && section === "bots" ? <BotsSection bots={bots} query={botsQuery} onQueryChange={setBotsQuery} status={botsStatus} onStatusChange={setBotsStatus} loading={state === "loading"} busyBotId={botActionId} onAction={requestBotAction} onCheckReadiness={checkBotReadiness} /> : null}
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} loading={state === "loading"} /> : null}
@@ -282,8 +330,13 @@ function UserActionDialog({ user, busy, onClose, onApply }: { user: AdminUser; b
   return <div className="fixed inset-0 z-[150] flex items-end bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="admin-user-action-title" className="w-full max-w-lg rounded-t-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl sm:rounded-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold text-[var(--color-foreground-secondary)]">Пользователь {user.telegram_id}</p><h2 id="admin-user-action-title" className="mt-1 text-lg font-bold text-[var(--color-foreground)]">Управление доступом</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Закрыть" className="rounded-lg p-2 text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-50"><X size={18} /></button></div><label className="mt-6 block text-xs font-semibold text-[var(--color-foreground-secondary)]" htmlFor="admin-user-action">Действие</label><select id="admin-user-action" value={action} onChange={(event) => setAction(event.target.value as AdminUserAction)} disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="access">{isRestricting ? "Ограничить доступ" : "Восстановить доступ"}</option><option value="licenses">Выдать или отозвать лицензии</option><option value="pro">Продлить PRO</option><option value="auto-renew">Отключить автопродление PRO</option></select>{action === "access" ? <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"><p className="text-sm font-semibold text-[var(--color-foreground)]">{isRestricting ? "Вход в Mini App будет запрещён." : "Пользователь снова сможет войти в Mini App."}</p>{isRestricting ? <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-5 text-[var(--color-foreground-secondary)]"><input type="checkbox" checked={stopActiveBots} onChange={(event) => setStopActiveBots(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" /><span><strong className="text-[var(--color-foreground)]">Также остановить все активные боты.</strong><br />Боты станут черновиками и не запустятся автоматически после восстановления доступа.</span></label> : null}</div> : null}{action === "licenses" ? <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_112px]"><select value={licenseDirection} onChange={(event) => setLicenseDirection(event.target.value as "grant" | "revoke")} disabled={busy} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]"><option value="grant">Выдать лицензии</option><option value="revoke">Отозвать свободные лицензии</option></select><label><span className="sr-only">Количество</span><input value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} type="number" min="1" max="100" disabled={busy} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /></label><p className="sm:col-span-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Отозвать можно только лицензии, не закреплённые за ботами.</p></div> : null}{action === "pro" ? <div className="mt-5"><label htmlFor="admin-pro-days" className="text-sm font-semibold text-[var(--color-foreground)]">Продлить на дней</label><input id="admin-pro-days" value={days} onChange={(event) => setDays(Math.max(1, Math.min(365, Number(event.target.value) || 1)))} type="number" min="1" max="365" disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /><p className="mt-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Срок добавится к текущему оплаченному периоду. Автопродление не включится.</p></div> : null}{action === "auto-renew" ? <p className="mt-5 rounded-xl bg-[var(--color-warning-soft)] p-4 text-sm leading-6 text-[var(--color-foreground)]">Будущие автоматические списания будут отменены. Уже оплаченный срок PRO останется без изменений.</p> : null}<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl px-4 text-sm font-semibold text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] disabled:opacity-50">Отмена</button><button type="button" onClick={submit} disabled={busy} className={`h-11 rounded-xl px-4 text-sm font-semibold text-white transition-opacity disabled:cursor-wait disabled:opacity-60 ${action === "access" && isRestricting || action === "licenses" && licenseDirection === "revoke" ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>{busy ? "Сохраняем…" : submitLabel}</button></div></div></div>;
 }
 
-function BotsSection({ bots, query, onQueryChange, status, onStatusChange, loading }: { bots: AdminBot[]; query: string; onQueryChange: (value: string) => void; status: AdminBot["status"] | "all"; onStatusChange: (value: AdminBot["status"] | "all") => void; loading: boolean }) {
-  return <Section title="Боты" description="Операционное состояние без раскрытия Telegram-токенов и ключей платёжных систем."><div className="flex flex-col gap-3 md:flex-row"><SearchInput value={query} onChange={onQueryChange} placeholder="Название, @username или Telegram ID" /><label className="sr-only" htmlFor="admin-bot-status">Статус бота</label><select id="admin-bot-status" value={status} onChange={(event) => onStatusChange(event.target.value as AdminBot["status"] | "all")} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="all">Все статусы</option><option value="active">Активные</option><option value="draft">Черновики</option><option value="archived">Архив</option></select></div>{loading ? <RowsSkeleton count={5} /> : bots.length ? <div className="mt-5 space-y-2">{bots.map((bot) => <article key={bot.id} className="grid gap-3 rounded-xl border border-[var(--color-border)] px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto_auto_auto] md:items-center"><div className="min-w-0"><h2 className="truncate font-semibold text-[var(--color-foreground)]">{bot.display_name}</h2><p className="mt-1 truncate text-xs text-[var(--color-foreground-secondary)]">{bot.username ? `@${bot.username.replace(/^@/, "")}` : "Username не задан"} · владелец {bot.owner_telegram_id}</p></div><StatusBadge tone={bot.status === "active" ? "success" : bot.status === "archived" ? "danger" : "neutral"}>{bot.status === "active" ? "Работает" : bot.status === "archived" ? "Архив" : "Черновик"}</StatusBadge><span className="text-xs text-[var(--color-foreground-secondary)]">{bot.users_count} лидов</span><span className="text-xs text-[var(--color-foreground-secondary)]">{bot.payment_provider ? bot.payment_provider : "Касса не выбрана"}</span></article>)}</div> : <EmptyState icon={<Bot size={21} />} title="Боты не найдены" description="Измените фильтр или дождитесь создания первого бота." />}</Section>;
+function BotsSection({ bots, query, onQueryChange, status, onStatusChange, loading, busyBotId, onAction, onCheckReadiness }: { bots: AdminBot[]; query: string; onQueryChange: (value: string) => void; status: AdminBot["status"] | "all"; onStatusChange: (value: AdminBot["status"] | "all") => void; loading: boolean; busyBotId: number | null; onAction: (bot: AdminBot, action: AdminBotAction) => void; onCheckReadiness: (bot: AdminBot) => void }) {
+  return <Section title="Боты" description="Операционное состояние без раскрытия Telegram-токенов и ключей платёжных систем."><div className="flex flex-col gap-3 md:flex-row"><SearchInput value={query} onChange={onQueryChange} placeholder="Название, @username или Telegram ID" /><label className="sr-only" htmlFor="admin-bot-status">Статус бота</label><select id="admin-bot-status" value={status} onChange={(event) => onStatusChange(event.target.value as AdminBot["status"] | "all")} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="all">Все статусы</option><option value="active">Активные</option><option value="draft">Черновики</option><option value="archived">Архив</option></select></div>{loading ? <RowsSkeleton count={5} /> : bots.length ? <div className="mt-5 space-y-3">{bots.map((bot) => <AdminBotRow key={bot.id} bot={bot} busy={busyBotId === bot.id} onAction={onAction} onCheckReadiness={onCheckReadiness} />)}</div> : <EmptyState icon={<Bot size={21} />} title="Боты не найдены" description="Измените фильтр или дождитесь создания первого бота." />}</Section>;
+}
+
+function AdminBotRow({ bot, busy, onAction, onCheckReadiness }: { bot: AdminBot; busy: boolean; onAction: (bot: AdminBot, action: AdminBotAction) => void; onCheckReadiness: (bot: AdminBot) => void }) {
+  const isActive = bot.status === "active";
+  return <article className="rounded-xl border border-[var(--color-border)] p-4"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-semibold text-[var(--color-foreground)]">{bot.display_name}</h2><StatusBadge tone={isActive ? "success" : bot.status === "archived" ? "danger" : "neutral"}>{isActive ? "Работает" : bot.status === "archived" ? "Архив" : "Черновик"}</StatusBadge></div><p className="mt-1 break-words text-xs text-[var(--color-foreground-secondary)]">{bot.username ? `@${bot.username.replace(/^@/, "")}` : "Username не задан"} · владелец {bot.owner_telegram_id} · {bot.users_count} лидов</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">{bot.payment_provider ? `Касса: ${bot.payment_provider}` : "Касса не выбрана"} · Воронка: {bot.funnel_complete ? "готова" : "не готова"}</p></div><div className="grid grid-cols-2 gap-2 sm:flex"><button type="button" onClick={() => onCheckReadiness(bot)} disabled={busy} className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] disabled:opacity-60">Проверить</button><button type="button" onClick={() => onAction(bot, "reinstall_webhook")} disabled={busy} className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] disabled:opacity-60">Webhook</button><button type="button" onClick={() => onAction(bot, isActive ? "stop" : "start")} disabled={busy || bot.status === "archived"} className={`col-span-2 h-9 rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-60 sm:col-span-1 ${isActive ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>{busy ? "Выполняем…" : isActive ? "Остановить" : "Запустить"}</button></div></div></article>;
 }
 
 function PaymentsSection({ payments, loading }: { payments: AdminSaasPayment[]; loading: boolean }) {
