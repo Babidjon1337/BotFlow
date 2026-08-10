@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  X,
   Users,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
@@ -23,6 +24,7 @@ import {
 
 type AdminSection = "overview" | "users" | "bots" | "payments" | "operations" | "system";
 type LoadState = "idle" | "loading" | "ready" | "error";
+type AdminUserAction = "access" | "licenses" | "pro" | "auto-renew";
 
 const sections: Array<{ id: AdminSection; label: string }> = [
   { id: "overview", label: "Обзор" },
@@ -68,6 +70,8 @@ export function AdminStats() {
   const [usersQuery, setUsersQuery] = useState("");
   const [botsQuery, setBotsQuery] = useState("");
   const [botsStatus, setBotsStatus] = useState<AdminBot["status"] | "all">("all");
+  const [actionUser, setActionUser] = useState<AdminUser | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
 
   const refreshSection = useCallback(async () => {
     setState("loading");
@@ -128,6 +132,47 @@ export function AdminStats() {
     [section],
   );
 
+  const applyUserAction = useCallback(async (action: AdminUserAction, data: { stopActiveBots?: boolean; direction?: "grant" | "revoke"; quantity?: number; days?: number }) => {
+    if (!actionUser) return;
+    setActionBusy(true);
+    try {
+      if (action === "access") {
+        const result = await apiService.setAdminUserAccess(actionUser.id, {
+          disabled: !actionUser.is_disabled,
+          stopActiveBots: Boolean(data.stopActiveBots),
+        });
+        setToastType("success");
+        setToastMessage(result.is_disabled ? `Доступ ограничен${result.stopped_active_bots ? `, остановлено ботов: ${result.stopped_active_bots}` : ""}.` : "Доступ к Mini App восстановлен.");
+      }
+      if (action === "licenses" && data.direction && data.quantity) {
+        const result = await apiService.changeAdminLifetimeLicenses(actionUser.id, {
+          direction: data.direction,
+          quantity: data.quantity,
+        });
+        setToastType("success");
+        setToastMessage(`Лицензии обновлены: всего ${result.lifetime_slots}, закреплено за ботами ${result.used_lifetime_licenses}.`);
+      }
+      if (action === "pro" && data.days) {
+        const result = await apiService.extendAdminUserPro(actionUser.id, data.days);
+        setToastType("success");
+        setToastMessage(`PRO продлён до ${formatDate(result.subscription_ends_at)}.`);
+      }
+      if (action === "auto-renew") {
+        await apiService.disableAdminUserAutoRenew(actionUser.id);
+        setToastType("success");
+        setToastMessage("Автопродление отключено. Уже оплаченный срок PRO сохранён.");
+      }
+      setActionUser(null);
+      await refreshSection();
+    } catch (requestError) {
+      const message = requestError instanceof Error ? requestError.message : "Не удалось применить изменение.";
+      setToastType("error");
+      setToastMessage(message);
+    } finally {
+      setActionBusy(false);
+    }
+  }, [actionUser, refreshSection, setToastMessage, setToastType]);
+
   return (
     <section className="w-full pb-16" aria-labelledby="admin-title">
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
@@ -180,11 +225,12 @@ export function AdminStats() {
 
       {state === "error" ? <ErrorState message={error ?? "Не удалось загрузить данные."} onRetry={refreshSection} /> : null}
       {state !== "error" && section === "overview" ? <Overview overview={overview} operations={operations} loading={state === "loading"} onNavigate={setSection} /> : null}
-      {state !== "error" && section === "users" ? <UsersSection users={users} query={usersQuery} onQueryChange={setUsersQuery} loading={state === "loading"} /> : null}
+      {state !== "error" && section === "users" ? <UsersSection users={users} query={usersQuery} onQueryChange={setUsersQuery} loading={state === "loading"} onManage={setActionUser} /> : null}
       {state !== "error" && section === "bots" ? <BotsSection bots={bots} query={botsQuery} onQueryChange={setBotsQuery} status={botsStatus} onStatusChange={setBotsStatus} loading={state === "loading"} /> : null}
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} loading={state === "loading"} /> : null}
+      {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
     </section>
   );
 }
@@ -216,8 +262,24 @@ function Overview({ overview, operations, loading, onNavigate }: { overview: Adm
   );
 }
 
-function UsersSection({ users, query, onQueryChange, loading }: { users: AdminUser[]; query: string; onQueryChange: (value: string) => void; loading: boolean }) {
-  return <Section title="Пользователи" description="Поиск владельцев по Telegram ID. Имена не сохраняются в профиле владельца, поэтому интерфейс не подменяет их вымышленными данными."><SearchInput value={query} onChange={onQueryChange} placeholder="Telegram ID" />{loading ? <RowsSkeleton count={5} /> : users.length ? <div className="mt-5 overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Доступ</th><th className="pb-3">Боты</th><th className="pb-3">PRO</th><th className="pb-3">Зарегистрирован</th></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4"><p className="font-semibold tabular-nums text-[var(--color-foreground)]">{user.telegram_id}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">ID в BotFlow: {user.id}</p></td><td className="py-4"><StatusBadge tone="neutral">{user.lifetime_slots} лиц.</StatusBadge></td><td className="py-4 tabular-nums text-[var(--color-foreground)]">{user.bots_count}</td><td className="py-4"><StatusBadge tone={user.subscription_ends_at ? "success" : "neutral"}>{user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Нет"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(user.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<Users size={21} />} title="Пользователи не найдены" description="Измените запрос или дождитесь первой регистрации в Mini App." />}</Section>;
+function UsersSection({ users, query, onQueryChange, loading, onManage }: { users: AdminUser[]; query: string; onQueryChange: (value: string) => void; loading: boolean; onManage: (user: AdminUser) => void }) {
+  return <Section title="Пользователи" description="Поиск владельцев по Telegram ID. Имена не сохраняются в профиле владельца, поэтому интерфейс не подменяет их вымышленными данными."><SearchInput value={query} onChange={onQueryChange} placeholder="Telegram ID" />{loading ? <RowsSkeleton count={5} /> : users.length ? <><div className="mt-5 space-y-3 md:hidden">{users.map((user) => <UserCard key={user.id} user={user} onManage={onManage} />)}</div><div className="mt-5 hidden overflow-x-auto md:block"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Доступ</th><th className="pb-3">Боты</th><th className="pb-3">PRO</th><th className="pb-3">Зарегистрирован</th><th className="pb-3" aria-label="Действия" /></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4"><p className="font-semibold tabular-nums text-[var(--color-foreground)]">{user.telegram_id}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">ID в BotFlow: {user.id}</p></td><td className="py-4"><StatusBadge tone={user.is_disabled ? "danger" : "success"}>{user.is_disabled ? "Ограничен" : "Активен"}</StatusBadge></td><td className="py-4"><p className="font-semibold tabular-nums text-[var(--color-foreground)]">{user.bots_count}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">{user.lifetime_slots} лиц.</p></td><td className="py-4"><StatusBadge tone={user.subscription_ends_at ? "success" : "neutral"}>{user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Нет"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(user.created_at)}</td><td className="py-4 text-right"><button type="button" onClick={() => onManage(user)} className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)]">Управлять</button></td></tr>)}</tbody></table></div></> : <EmptyState icon={<Users size={21} />} title="Пользователи не найдены" description="Измените запрос или дождитесь первой регистрации в Mini App." />}</Section>;
+}
+
+function UserCard({ user, onManage }: { user: AdminUser; onManage: (user: AdminUser) => void }) {
+  return <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold tabular-nums text-[var(--color-foreground)]">{user.telegram_id}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">ID в BotFlow: {user.id}</p></div><StatusBadge tone={user.is_disabled ? "danger" : "success"}>{user.is_disabled ? "Ограничен" : "Активен"}</StatusBadge></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-[var(--color-foreground-secondary)]">Боты</dt><dd className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.bots_count}</dd></div><div><dt className="text-xs text-[var(--color-foreground-secondary)]">Лицензии</dt><dd className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.lifetime_slots}</dd></div><div className="col-span-2"><dt className="text-xs text-[var(--color-foreground-secondary)]">PRO</dt><dd className="mt-1 text-sm text-[var(--color-foreground)]">{user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Не подключён"}</dd></div></dl><button type="button" onClick={() => onManage(user)} className="mt-4 h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]/70">Управлять доступом</button></article>;
+}
+
+function UserActionDialog({ user, busy, onClose, onApply }: { user: AdminUser; busy: boolean; onClose: () => void; onApply: (action: AdminUserAction, data: { stopActiveBots?: boolean; direction?: "grant" | "revoke"; quantity?: number; days?: number }) => Promise<void> }) {
+  const [action, setAction] = useState<AdminUserAction>("access");
+  const [stopActiveBots, setStopActiveBots] = useState(false);
+  const [licenseDirection, setLicenseDirection] = useState<"grant" | "revoke">("grant");
+  const [quantity, setQuantity] = useState(1);
+  const [days, setDays] = useState(30);
+  const isRestricting = !user.is_disabled;
+  const submit = () => void onApply(action, { stopActiveBots, direction: licenseDirection, quantity, days });
+  const submitLabel = action === "access" ? (isRestricting ? "Ограничить доступ" : "Восстановить доступ") : action === "licenses" ? (licenseDirection === "grant" ? "Выдать лицензии" : "Отозвать лицензии") : action === "pro" ? "Продлить PRO" : "Отключить автопродление";
+  return <div className="fixed inset-0 z-[150] flex items-end bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="admin-user-action-title" className="w-full max-w-lg rounded-t-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl sm:rounded-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold text-[var(--color-foreground-secondary)]">Пользователь {user.telegram_id}</p><h2 id="admin-user-action-title" className="mt-1 text-lg font-bold text-[var(--color-foreground)]">Управление доступом</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Закрыть" className="rounded-lg p-2 text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-50"><X size={18} /></button></div><label className="mt-6 block text-xs font-semibold text-[var(--color-foreground-secondary)]" htmlFor="admin-user-action">Действие</label><select id="admin-user-action" value={action} onChange={(event) => setAction(event.target.value as AdminUserAction)} disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="access">{isRestricting ? "Ограничить доступ" : "Восстановить доступ"}</option><option value="licenses">Выдать или отозвать лицензии</option><option value="pro">Продлить PRO</option><option value="auto-renew">Отключить автопродление PRO</option></select>{action === "access" ? <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"><p className="text-sm font-semibold text-[var(--color-foreground)]">{isRestricting ? "Вход в Mini App будет запрещён." : "Пользователь снова сможет войти в Mini App."}</p>{isRestricting ? <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-5 text-[var(--color-foreground-secondary)]"><input type="checkbox" checked={stopActiveBots} onChange={(event) => setStopActiveBots(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" /><span><strong className="text-[var(--color-foreground)]">Также остановить все активные боты.</strong><br />Боты станут черновиками и не запустятся автоматически после восстановления доступа.</span></label> : null}</div> : null}{action === "licenses" ? <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_112px]"><select value={licenseDirection} onChange={(event) => setLicenseDirection(event.target.value as "grant" | "revoke")} disabled={busy} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]"><option value="grant">Выдать лицензии</option><option value="revoke">Отозвать свободные лицензии</option></select><label><span className="sr-only">Количество</span><input value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} type="number" min="1" max="100" disabled={busy} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /></label><p className="sm:col-span-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Отозвать можно только лицензии, не закреплённые за ботами.</p></div> : null}{action === "pro" ? <div className="mt-5"><label htmlFor="admin-pro-days" className="text-sm font-semibold text-[var(--color-foreground)]">Продлить на дней</label><input id="admin-pro-days" value={days} onChange={(event) => setDays(Math.max(1, Math.min(365, Number(event.target.value) || 1)))} type="number" min="1" max="365" disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /><p className="mt-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Срок добавится к текущему оплаченному периоду. Автопродление не включится.</p></div> : null}{action === "auto-renew" ? <p className="mt-5 rounded-xl bg-[var(--color-warning-soft)] p-4 text-sm leading-6 text-[var(--color-foreground)]">Будущие автоматические списания будут отменены. Уже оплаченный срок PRO останется без изменений.</p> : null}<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl px-4 text-sm font-semibold text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] disabled:opacity-50">Отмена</button><button type="button" onClick={submit} disabled={busy} className={`h-11 rounded-xl px-4 text-sm font-semibold text-white transition-opacity disabled:cursor-wait disabled:opacity-60 ${action === "access" && isRestricting || action === "licenses" && licenseDirection === "revoke" ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>{busy ? "Сохраняем…" : submitLabel}</button></div></div></div>;
 }
 
 function BotsSection({ bots, query, onQueryChange, status, onStatusChange, loading }: { bots: AdminBot[]; query: string; onQueryChange: (value: string) => void; status: AdminBot["status"] | "all"; onStatusChange: (value: AdminBot["status"] | "all") => void; loading: boolean }) {

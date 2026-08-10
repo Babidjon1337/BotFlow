@@ -40,6 +40,7 @@ export interface AdminUser {
   subscription_ends_at: string | null;
   subscription_auto_renew: boolean;
   subscription_retry_count: number;
+  is_disabled: boolean;
   created_at: string | null;
 }
 
@@ -184,6 +185,40 @@ export const apiService = {
     if (query?.trim()) params.set("query", query.trim());
     return fetchApi<{ users: AdminUser[]; total: number; page: number; limit: number }>(
       `/api/admin/users?${params.toString()}`
+    );
+  },
+
+  async setAdminUserAccess(
+    userId: number,
+    data: { disabled: boolean; stopActiveBots: boolean },
+  ) {
+    return fetchApi<{ user_id: number; is_disabled: boolean; stopped_active_bots: number; changed: boolean }>(
+      `/api/admin/users/${userId}/access`,
+      { method: "POST", body: JSON.stringify(data) },
+    );
+  },
+
+  async changeAdminLifetimeLicenses(
+    userId: number,
+    data: { direction: "grant" | "revoke"; quantity: number },
+  ) {
+    return fetchApi<{ user_id: number; lifetime_slots: number; used_lifetime_licenses: number }>(
+      `/api/admin/users/${userId}/lifetime-licenses`,
+      { method: "POST", body: JSON.stringify(data) },
+    );
+  },
+
+  async extendAdminUserPro(userId: number, days: number) {
+    return fetchApi<{ user_id: number; subscription_ends_at: string }>(
+      `/api/admin/users/${userId}/pro`,
+      { method: "POST", body: JSON.stringify({ days }) },
+    );
+  },
+
+  async disableAdminUserAutoRenew(userId: number) {
+    return fetchApi<{ user_id: number; subscription_auto_renew: boolean; changed: boolean }>(
+      `/api/admin/users/${userId}/cancel-auto-renew`,
+      { method: "POST" },
     );
   },
 
