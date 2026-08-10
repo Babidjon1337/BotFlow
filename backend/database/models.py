@@ -285,6 +285,24 @@ class SaasPayment(Base):
     user: Mapped["User"] = relationship(back_populates="saas_payments")
 
 
+class AdminAuditLog(Base):
+    """Append-only record of administrative actions performed in BotFlow."""
+
+    __tablename__ = "admin_audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str] = mapped_column(String(32), index=True)
+    target_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    details: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 # ==========================================
 # 4. ТАБЛИЦА SCHEDULED_TASKS (Очередь дожимов)
 # ==========================================

@@ -2,7 +2,7 @@ import json
 import io
 from uuid import UUID
 
-from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from loggers import logger
 from config import (
@@ -31,6 +31,14 @@ from database.requests.user_rq import get_lead, get_leads_by_bot_id, delete_lead
 from database.requests.client_payment_rq import get_client_payment_stats, get_chart_data
 from database.requests.billing_rq import cancel_subscription_auto_renew
 from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
+from database.requests.admin_rq import (
+    get_admin_overview,
+    list_admin_audit_log,
+    list_admin_bots,
+    list_admin_operations,
+    list_admin_saas_payments,
+    list_admin_users,
+)
 from schemas.api_schemas import (
     BotCreateApiRequest,
     BotUpdateApiRequest,
@@ -150,6 +158,14 @@ async def get_current_user(request: Request) -> TelegramUser:
     raise HTTPException(status_code=401, detail="Telegram authorization is required")
 
 
+async def get_current_admin(request: Request) -> TelegramUser:
+    """Resolve a Telegram identity and enforce the server-side admin allowlist."""
+    current_user = await get_current_user(request)
+    if current_user.telegram_id not in ADMIN_TELEGRAM_IDS:
+        raise HTTPException(status_code=403, detail="Administrative access is required")
+    return current_user
+
+
 async def get_owned_bot(bot_id: int, request: Request):
     """Load a bot only when it belongs to the authenticated dashboard user."""
     current_user = await get_current_user(request)
@@ -196,6 +212,77 @@ async def auth_user(request: Request, body: dict = None):
         "user": _user_payload(user, telegram_user.telegram_id),
         "bots": [b.model_dump(by_alias=True) for b in bots_resp],
     }
+
+
+@api_router.get("/api/admin/overview")
+async def get_admin_overview_endpoint(request: Request):
+    """Return truthful, platform-wide operational metrics to administrators only."""
+    await get_current_admin(request)
+    return await get_admin_overview()
+
+
+@api_router.get("/api/admin/users")
+async def get_admin_users_endpoint(
+    request: Request,
+    query: str | None = Query(default=None, max_length=255),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    """List bot owners for support without returning secret or payment credentials."""
+    await get_current_admin(request)
+    users, total = await list_admin_users(query=query, page=page, limit=limit)
+    return {"users": users, "total": total, "page": page, "limit": limit}
+
+
+@api_router.get("/api/admin/bots")
+async def get_admin_bots_endpoint(
+    request: Request,
+    query: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, pattern="^(draft|active|archived)$"),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    """List operational bot metadata for administrators only."""
+    await get_current_admin(request)
+    bots, total = await list_admin_bots(query=query, status=status, page=page, limit=limit)
+    return {"bots": bots, "total": total, "page": page, "limit": limit}
+
+
+@api_router.get("/api/admin/payments")
+async def get_admin_saas_payments_endpoint(
+    request: Request,
+    status: str | None = Query(default=None, pattern="^(pending|succeeded|failed)$"),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    """List BotFlow's own payment history. Provider truth is read-only here."""
+    await get_current_admin(request)
+    payments, total = await list_admin_saas_payments(status=status, page=page, limit=limit)
+    return {"payments": payments, "total": total, "page": page, "limit": limit}
+
+
+@api_router.get("/api/admin/operations")
+async def get_admin_operations_endpoint(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    """List paid client orders that still need fulfilment or owner notification."""
+    await get_current_admin(request)
+    operations, total = await list_admin_operations(page=page, limit=limit)
+    return {"operations": operations, "total": total, "page": page, "limit": limit}
+
+
+@api_router.get("/api/admin/audit-log")
+async def get_admin_audit_log_endpoint(
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    """Read append-only administrative history."""
+    await get_current_admin(request)
+    entries, total = await list_admin_audit_log(page=page, limit=limit)
+    return {"entries": entries, "total": total, "page": page, "limit": limit}
 
 
 @api_router.post("/api/billing/checkout", response_model=BillingCheckoutResponse)
