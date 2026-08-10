@@ -118,6 +118,18 @@ deploy_backend() {
     separator
     echo
 
+    info "Проверяю миграции базы данных..."
+
+    cd "$PROJECT_DIR" || fail "Не удалось перейти в $PROJECT_DIR"
+
+    if alembic upgrade head; then
+        success "Миграции успешно применены"
+    else
+        fail "Ошибка применения миграций. BotFlow НЕ перезапущен."
+    fi
+
+    echo
+
     info "Перезапускаю BotFlow..."
 
     if systemctl restart botflow; then
