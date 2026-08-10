@@ -77,11 +77,18 @@ async def lifespan(app: FastAPI):
     app.state.session = session
     app.state.main_bot = main_bot
 
-    await main_bot.set_webhook(
-        url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/main",
-        secret_token=SECRET_KEY,
-        drop_pending_updates=True,
-    )
+    try:
+        await main_bot.set_webhook(
+            url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/main",
+            secret_token=SECRET_KEY,
+            drop_pending_updates=True,
+        )
+    except Exception:
+        # A proxy or Telegram connectivity failure must not leave the temporary
+        # startup HTTP sessions open while systemd restarts the process.
+        await session.close()
+        await stop_scheduler()
+        raise
     logger.info("Вебхук главного бота успешно установлен ✅")
 
     yield
