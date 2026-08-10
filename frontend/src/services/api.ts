@@ -111,6 +111,16 @@ export interface AdminAuditEntry {
   created_at: string | null;
 }
 
+export interface AdminSystemStatus {
+  running: boolean;
+  jobs: Array<{
+    id: string;
+    next_run_at: string | null;
+    last_finished_at: string | null;
+    last_error: string | null;
+  }>;
+}
+
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 function getInitData(): string {
@@ -271,6 +281,10 @@ export const apiService = {
     return fetchApi<{ entries: AdminAuditEntry[]; total: number; page: number; limit: number }>(
       `/api/admin/audit-log?page=${page}&limit=${limit}`
     );
+  },
+
+  async getAdminSystemStatus() {
+    return fetchApi<AdminSystemStatus>("/api/admin/system");
   },
 
   async updateNotificationSettings(data: {

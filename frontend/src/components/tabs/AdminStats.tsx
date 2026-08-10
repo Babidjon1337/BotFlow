@@ -21,6 +21,7 @@ import {
   type AdminOperation,
   type AdminOverview,
   type AdminSaasPayment,
+  type AdminSystemStatus,
   type AdminUser,
 } from "../../services/api";
 
@@ -68,6 +69,7 @@ export function AdminStats() {
   const [payments, setPayments] = useState<AdminSaasPayment[]>([]);
   const [operations, setOperations] = useState<AdminOperation[]>([]);
   const [auditEntries, setAuditEntries] = useState<AdminAuditEntry[]>([]);
+  const [systemStatus, setSystemStatus] = useState<AdminSystemStatus | null>(null);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [usersQuery, setUsersQuery] = useState("");
@@ -110,8 +112,12 @@ export function AdminStats() {
         setOperations(nextOperations.operations);
       }
       if (section === "system") {
-        const nextAudit = await apiService.getAdminAuditLog(1, 50);
+        const [nextAudit, nextSystemStatus] = await Promise.all([
+          apiService.getAdminAuditLog(1, 50),
+          apiService.getAdminSystemStatus(),
+        ]);
         setAuditEntries(nextAudit.entries);
+        setSystemStatus(nextSystemStatus);
       }
       setState("ready");
     } catch (requestError) {
@@ -277,7 +283,7 @@ export function AdminStats() {
       {state !== "error" && section === "bots" ? <BotsSection bots={bots} query={botsQuery} onQueryChange={setBotsQuery} status={botsStatus} onStatusChange={setBotsStatus} loading={state === "loading"} busyBotId={botActionId} onAction={requestBotAction} onCheckReadiness={checkBotReadiness} /> : null}
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} /> : null}
-      {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} loading={state === "loading"} /> : null}
+      {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
       {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
     </section>
   );
@@ -347,8 +353,9 @@ function OperationsSection({ operations, loading }: { operations: AdminOperation
   return <Section title="Операции" description="Оплата уже подтверждена, но выдача доступа или уведомление владельца требует внимания.">{loading ? <RowsSkeleton count={4} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} expanded />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Ничего не требует действий" description="Все подтверждённые платежи обработаны или ожидают штатной очереди." />}</Section>;
 }
 
-function SystemSection({ entries, loading }: { entries: AdminAuditEntry[]; loading: boolean }) {
-  return <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]"><Section title="Контур системы" description="Статусы ниже показываются только на основании успешно загруженных данных."><div className="space-y-3"><SystemRow label="API и база данных" value="Доступны для чтения" tone="success" /><SystemRow label="Планировщик" value="Отдельный health-check появится в следующем API-этапе" tone="neutral" /><SystemRow label="Финансовые операции" value="Подтверждаются вебхуками провайдеров" tone="neutral" /></div></Section><Section title="Журнал действий" description="Новые изменения доступа, статусов и повторные операции будут записываться здесь.">{loading ? <RowsSkeleton count={4} /> : entries.length ? <ol className="divide-y divide-[var(--color-border)]">{entries.map((entry) => <li key={entry.id} className="py-4 first:pt-0"><p className="font-semibold text-[var(--color-foreground)]">{entry.action}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Администратор {entry.actor_telegram_id} · {entry.target_type}{entry.target_id ? ` #${entry.target_id}` : ""} · {formatDate(entry.created_at)}</p></li>)}</ol> : <EmptyState icon={<ClipboardList size={21} />} title="Журнал пока пуст" description="Он начнёт заполняться, когда будут добавлены административные действия." />}</Section></div>;
+function SystemSection({ entries, systemStatus, loading }: { entries: AdminAuditEntry[]; systemStatus: AdminSystemStatus | null; loading: boolean }) {
+  const jobLabel: Record<string, string> = { "bot-reminders": "Дожимы", "pro-renewals": "Продление PRO", "client-payment-fulfillment": "Выдача после оплаты" };
+  return <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]"><Section title="Контур системы" description="Состояние планировщика относится к текущему процессу приложения и не заменяет внешний мониторинг.">{loading ? <RowsSkeleton count={3} /> : systemStatus ? <div className="space-y-3"><SystemRow label="Планировщик" value={systemStatus.running ? "Запущен" : "Не запущен"} tone={systemStatus.running ? "success" : "danger"} />{systemStatus.jobs.map((job) => <SystemRow key={job.id} label={jobLabel[job.id] ?? job.id} value={job.last_error ? `Ошибка: ${job.last_error}` : job.last_finished_at ? `Последний запуск: ${formatDate(job.last_finished_at)}` : job.next_run_at ? `Первый запуск: ${formatDate(job.next_run_at)}` : "Нет данных о запуске"} tone={job.last_error ? "danger" : "neutral"} />)}</div> : <EmptyState icon={<AlertTriangle size={21} />} title="Статус процесса недоступен" description="Нажмите «Обновить», чтобы повторить запрос." />}</Section><Section title="Журнал действий" description="Изменения доступа, статусов и повторные операции записываются здесь.">{loading ? <RowsSkeleton count={4} /> : entries.length ? <ol className="divide-y divide-[var(--color-border)]">{entries.map((entry) => <li key={entry.id} className="py-4 first:pt-0"><p className="font-semibold text-[var(--color-foreground)]">{entry.action}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Администратор {entry.actor_telegram_id} · {entry.target_type}{entry.target_id ? ` #${entry.target_id}` : ""} · {formatDate(entry.created_at)}</p></li>)}</ol> : <EmptyState icon={<ClipboardList size={21} />} title="Журнал пока пуст" description="Он начнёт заполняться, когда будут добавлены административные действия." />}</Section></div>;
 }
 
 function OperationRow({ operation, expanded = false }: { operation: AdminOperation; expanded?: boolean }) {
@@ -370,7 +377,7 @@ function StatusBadge({ tone, children }: { tone: "success" | "warning" | "danger
   return <span className={`inline-flex w-fit items-center rounded-lg px-2.5 py-1 text-xs font-semibold ${styles[tone]}`}>{children}</span>;
 }
 
-function SystemRow({ label, value, tone }: { label: string; value: string; tone: "success" | "neutral" }) { return <div className="flex items-start justify-between gap-4 rounded-xl bg-[var(--color-surface-2)] p-4"><div><p className="text-sm font-semibold text-[var(--color-foreground)]">{label}</p><p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">{value}</p></div><StatusBadge tone={tone}>{tone === "success" ? "OK" : "Нет данных"}</StatusBadge></div>; }
+function SystemRow({ label, value, tone }: { label: string; value: string; tone: "success" | "neutral" | "danger" }) { return <div className="flex items-start justify-between gap-4 rounded-xl bg-[var(--color-surface-2)] p-4"><div className="min-w-0"><p className="text-sm font-semibold text-[var(--color-foreground)]">{label}</p><p className="mt-1 break-words text-xs leading-5 text-[var(--color-foreground-secondary)]">{value}</p></div><StatusBadge tone={tone}>{tone === "success" ? "OK" : tone === "danger" ? "Ошибка" : "Нет данных"}</StatusBadge></div>; }
 
 function EmptyState({ icon, title, description }: { icon: ReactNode; title: string; description: string }) { return <div className="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center"><div className="mb-3 text-[var(--color-foreground-tertiary)]">{icon}</div><h3 className="text-sm font-bold text-[var(--color-foreground)]">{title}</h3><p className="mt-1 max-w-sm text-xs leading-5 text-[var(--color-foreground-secondary)]">{description}</p></div>; }
 

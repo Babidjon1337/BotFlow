@@ -11,6 +11,7 @@ from aiogram.exceptions import (
     TelegramAPIError,
 )
 import asyncio
+from datetime import datetime, timezone
 
 from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
 from database.requests import *
@@ -30,6 +31,7 @@ from services.payment_fulfillment import process_client_payment_fulfillment
 
 scheduler = AsyncIOScheduler()
 shared_scheduler_session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else AiohttpSession()
+scheduler_runtime: dict[str, dict[str, str | None]] = {}
 
 
 async def check_reminders_job():
@@ -180,6 +182,10 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
 
 
 def apscheduler_listener(event):
+    scheduler_runtime[event.job_id] = {
+        "last_finished_at": datetime.now(timezone.utc).isoformat(),
+        "last_error": str(event.exception) if event.exception else None,
+    }
     if event.exception:
         logger.error(f"❌ Задача '{event.job_id}' упала с ошибкой: {event.exception}")
     else:
@@ -220,6 +226,22 @@ def start_scheduler():
     )
     scheduler.start()
     logger.info("⏳ Планировщик успешно запущен и следит за дожимами!")
+
+
+def get_scheduler_health() -> dict:
+    """Return the scheduler state for this application process only."""
+    jobs = []
+    for job in scheduler.get_jobs():
+        runtime = scheduler_runtime.get(job.id, {})
+        jobs.append(
+            {
+                "id": job.id,
+                "next_run_at": job.next_run_time.isoformat() if job.next_run_time else None,
+                "last_finished_at": runtime.get("last_finished_at"),
+                "last_error": runtime.get("last_error"),
+            }
+        )
+    return {"running": scheduler.running, "jobs": jobs}
 
 
 async def stop_scheduler():

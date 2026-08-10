@@ -495,6 +495,17 @@ async def get_admin_audit_log_endpoint(
     return {"entries": entries, "total": total, "page": page, "limit": limit}
 
 
+@api_router.get("/api/admin/system")
+async def get_admin_system_endpoint(request: Request):
+    """Expose only the current process' verifiable scheduler state to admins."""
+    await get_current_admin(request)
+    # Import lazily: the scheduler owns an HTTP session and must not be
+    # initialised merely because a regular API route is imported or tested.
+    from services.scheduler import get_scheduler_health
+
+    return get_scheduler_health()
+
+
 @api_router.post("/api/billing/checkout", response_model=BillingCheckoutResponse)
 async def create_billing_checkout(request: Request, body: BillingCheckoutRequest):
     current_user = await get_current_user(request)
