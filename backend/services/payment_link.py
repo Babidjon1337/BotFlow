@@ -175,6 +175,13 @@ async def _create_yookassa_link(
             **({"client_payment_id": str(client_payment.id), "tariff_id": client_payment.tariff_id} if client_payment else {}),
         },
     }
+    # A YooKassa shop can be connected to several client bots. The callback
+    # must identify the bot that created this payment rather than rely on one
+    # shop-wide notification URL configured in the YooKassa dashboard.
+    if WEBHOOK_URL:
+        payload["notification_url"] = (
+            f"{WEBHOOK_URL.rstrip('/')}/webhook/payments/yookassa/{bot_config.tg_bot_id}"
+        )
     # We don't force 'sber_bnpl' anymore. Users can choose it on the YooKassa checkout page natively.
 
     try:
