@@ -59,6 +59,38 @@ const productName: Record<AdminSaasPayment["product"], string> = {
   pro_renewal: "Продление PRO",
 };
 
+const auditActionLabel: Record<string, string> = {
+  user_access_disabled: "Доступ пользователя ограничен",
+  user_access_restored: "Доступ пользователя восстановлен",
+  lifetime_licenses_granted: "Выданы лицензии",
+  lifetime_licenses_revoked: "Отозваны свободные лицензии",
+  pro_extended: "PRO продлён",
+  pro_auto_renew_disabled: "Автопродление PRO отключено",
+  bot_start: "Бот запущен",
+  bot_stop: "Бот остановлен",
+  bot_reinstall_webhook: "Webhook бота переустановлен",
+  payment_delivery_retry: "Повторена выдача после оплаты",
+};
+
+function auditSummary(entry: AdminAuditEntry): string | null {
+  const details = entry.details;
+  if (entry.action === "lifetime_licenses_granted" || entry.action === "lifetime_licenses_revoked") {
+    return typeof details.quantity === "number" ? `Лицензий: ${details.quantity}` : null;
+  }
+  if (entry.action === "pro_extended") {
+    return typeof details.days === "number" ? `Добавлено дней: ${details.days}` : null;
+  }
+  if (entry.action === "user_access_disabled" && Array.isArray(details.stopped_active_bot_ids)) {
+    return details.stopped_active_bot_ids.length ? `Остановлено ботов: ${details.stopped_active_bot_ids.length}` : "Боты продолжили работу";
+  }
+  if (entry.action === "payment_delivery_retry") {
+    const delivered = details.access_delivered === true;
+    const notified = details.owner_notified === true;
+    return delivered || notified ? "Попытка завершилась успешно" : "Попытка передана в очередь";
+  }
+  return null;
+}
+
 export function AdminStats() {
   const { setToastMessage, setToastType } = useAppState();
   const { showConfirm } = useAlert();
@@ -386,7 +418,7 @@ function OperationsSection({ operations, loading, onRetryOperation, retryingOper
 
 function SystemSection({ entries, systemStatus, loading }: { entries: AdminAuditEntry[]; systemStatus: AdminSystemStatus | null; loading: boolean }) {
   const jobLabel: Record<string, string> = { "bot-reminders": "Дожимы", "pro-renewals": "Продление PRO", "client-payment-fulfillment": "Выдача после оплаты" };
-  return <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]"><Section title="Контур системы" description="Состояние планировщика относится к текущему процессу приложения и не заменяет внешний мониторинг.">{loading ? <RowsSkeleton count={3} /> : systemStatus ? <div className="space-y-3"><SystemRow label="Планировщик" value={systemStatus.running ? "Запущен" : "Не запущен"} tone={systemStatus.running ? "success" : "danger"} />{systemStatus.jobs.map((job) => <SystemRow key={job.id} label={jobLabel[job.id] ?? job.id} value={job.last_error ? `Ошибка: ${job.last_error}` : job.last_finished_at ? `Последний запуск: ${formatDate(job.last_finished_at)}` : job.next_run_at ? `Первый запуск: ${formatDate(job.next_run_at)}` : "Нет данных о запуске"} tone={job.last_error ? "danger" : "neutral"} />)}</div> : <EmptyState icon={<AlertTriangle size={21} />} title="Статус процесса недоступен" description="Нажмите «Обновить», чтобы повторить запрос." />}</Section><Section title="Журнал действий" description="Изменения доступа, статусов и повторные операции записываются здесь.">{loading ? <RowsSkeleton count={4} /> : entries.length ? <ol className="divide-y divide-[var(--color-border)]">{entries.map((entry) => <li key={entry.id} className="py-4 first:pt-0"><p className="font-semibold text-[var(--color-foreground)]">{entry.action}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Администратор {entry.actor_telegram_id} · {entry.target_type}{entry.target_id ? ` #${entry.target_id}` : ""} · {formatDate(entry.created_at)}</p></li>)}</ol> : <EmptyState icon={<ClipboardList size={21} />} title="Журнал пока пуст" description="Он начнёт заполняться, когда будут добавлены административные действия." />}</Section></div>;
+  return <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]"><Section title="Контур системы" description="Состояние планировщика относится к текущему процессу приложения и не заменяет внешний мониторинг.">{loading ? <RowsSkeleton count={3} /> : systemStatus ? <div className="space-y-3"><SystemRow label="Планировщик" value={systemStatus.running ? "Запущен" : "Не запущен"} tone={systemStatus.running ? "success" : "danger"} />{systemStatus.jobs.map((job) => <SystemRow key={job.id} label={jobLabel[job.id] ?? job.id} value={job.last_error ? `Ошибка: ${job.last_error}` : job.last_finished_at ? `Последний запуск: ${formatDate(job.last_finished_at)}` : job.next_run_at ? `Первый запуск: ${formatDate(job.next_run_at)}` : "Нет данных о запуске"} tone={job.last_error ? "danger" : "neutral"} />)}</div> : <EmptyState icon={<AlertTriangle size={21} />} title="Статус процесса недоступен" description="Нажмите «Обновить», чтобы повторить запрос." />}</Section><Section title="Журнал действий" description="Изменения доступа, статусов и повторные операции записываются здесь.">{loading ? <RowsSkeleton count={4} /> : entries.length ? <ol className="divide-y divide-[var(--color-border)]">{entries.map((entry) => <li key={entry.id} className="py-4 first:pt-0"><p className="font-semibold text-[var(--color-foreground)]">{auditActionLabel[entry.action] ?? entry.action}</p>{auditSummary(entry) ? <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">{auditSummary(entry)}</p> : null}<p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Администратор {entry.actor_telegram_id} · {entry.target_type}{entry.target_id ? ` #${entry.target_id}` : ""} · {formatDate(entry.created_at)}</p></li>)}</ol> : <EmptyState icon={<ClipboardList size={21} />} title="Журнал пока пуст" description="Он начнёт заполняться, когда будут добавлены административные действия." />}</Section></div>;
 }
 
 function OperationRow({ operation, expanded = false, onRetry, busy = false }: { operation: AdminOperation; expanded?: boolean; onRetry: (operation: AdminOperation) => void; busy?: boolean }) {
