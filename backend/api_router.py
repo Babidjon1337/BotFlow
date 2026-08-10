@@ -29,7 +29,12 @@ from database.requests.bot_rq import (
     set_media_sync_done,
 )
 from database.requests.user_rq import get_lead, get_leads_by_bot_id, delete_leads_by_bot_id
-from database.requests.client_payment_rq import get_client_payment_stats, get_chart_data
+from database.requests.client_payment_rq import (
+    ClientPaymentDeliveryRetryError,
+    get_chart_data,
+    get_client_payment_stats,
+    requeue_client_payment_delivery,
+)
 from database.requests.billing_rq import cancel_subscription_auto_renew
 from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
 from database.requests.admin_rq import (
@@ -67,6 +72,7 @@ from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active
 from services.funnel_readiness import evaluate_funnel_readiness
 from services.payment_link import validate_payment_credentials
+from services.payment_fulfillment import process_client_payment_fulfillment
 from services.chat_access import ChatAccessError, verify_chat_delivery
 
 api_router = APIRouter()
@@ -481,6 +487,26 @@ async def get_admin_operations_endpoint(
     await get_current_admin(request)
     operations, total = await list_admin_operations(page=page, limit=limit)
     return {"operations": operations, "total": total, "page": page, "limit": limit}
+
+
+@api_router.post("/api/admin/operations/{payment_id}/retry")
+async def retry_admin_operation_endpoint(payment_id: UUID, request: Request):
+    """Retry only unfinished outbox work for an already verified client payment."""
+    admin = await get_current_admin(request)
+    try:
+        requeued = await requeue_client_payment_delivery(payment_id)
+    except ClientPaymentDeliveryRetryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    result = await process_client_payment_fulfillment(payment_id, request.app.state.session)
+    await write_admin_audit_log(
+        actor_telegram_id=admin.telegram_id,
+        action="payment_delivery_retry",
+        target_type="client_payment",
+        target_id=str(payment_id),
+        details={**requeued, **result},
+    )
+    return {"status": "ok", **requeued, **result}
 
 
 @api_router.get("/api/admin/audit-log")

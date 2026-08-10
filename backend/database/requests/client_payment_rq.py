@@ -15,6 +15,10 @@ class ClientPaymentInvariantError(ValueError):
     """A verified provider callback does not match its immutable local order."""
 
 
+class ClientPaymentDeliveryRetryError(ValueError):
+    """A paid order cannot safely be retried at the requested moment."""
+
+
 async def get_client_payment_stats(bot_id: int) -> tuple[int, Decimal]:
     async with async_session() as session:
         result = await session.execute(
@@ -240,6 +244,63 @@ async def claim_owner_payment_notification(payment_id: uuid.UUID) -> ClientPayme
         attempts_field="owner_notification_attempts",
         retry_field="owner_notification_next_retry_at",
     )
+
+
+async def requeue_client_payment_delivery(payment_id: uuid.UUID | str) -> dict[str, bool]:
+    """Make unfinished paid-order delivery eligible for one immediate retry.
+
+    This never changes the provider payment state. A fresh ``processing`` claim is
+    intentionally protected from an administrator retry, so two workers cannot
+    send the same access message concurrently.
+    """
+    try:
+        normalized_id = uuid.UUID(str(payment_id))
+    except ValueError as exc:
+        raise ClientPaymentDeliveryRetryError("Некорректный идентификатор операции") from exc
+
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(ClientPayment.id == normalized_id)
+            .with_for_update(of=ClientPayment)
+        )
+        if not payment or payment.status != "succeeded":
+            raise ClientPaymentDeliveryRetryError(
+                "Можно повторить только подтверждённую оплату."
+            )
+
+        stages = (
+            ("fulfillment_status", "fulfillment_next_retry_at"),
+            ("owner_notification_status", "owner_notification_next_retry_at"),
+        )
+        if any(
+            getattr(payment, status_field) == "processing"
+            and (retry_at := getattr(payment, retry_field))
+            and retry_at > now
+            for status_field, retry_field in stages
+        ):
+            raise ClientPaymentDeliveryRetryError(
+                "Операция уже выполняется. Дождитесь завершения текущей попытки."
+            )
+
+        requeued_fulfillment = payment.fulfillment_status != "succeeded"
+        requeued_notification = payment.owner_notification_status != "succeeded"
+        if not requeued_fulfillment and not requeued_notification:
+            raise ClientPaymentDeliveryRetryError("Операция уже полностью завершена.")
+
+        if requeued_fulfillment:
+            payment.fulfillment_status = "retry"
+            payment.fulfillment_next_retry_at = None
+        if requeued_notification:
+            payment.owner_notification_status = "retry"
+            payment.owner_notification_next_retry_at = None
+        await session.commit()
+
+    return {
+        "fulfillment_requeued": requeued_fulfillment,
+        "owner_notification_requeued": requeued_notification,
+    }
 
 
 async def _finish_delivery_state(

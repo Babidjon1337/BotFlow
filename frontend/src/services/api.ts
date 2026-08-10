@@ -277,6 +277,16 @@ export const apiService = {
     );
   },
 
+  async retryAdminOperation(paymentId: string) {
+    return fetchApi<{
+      status: "ok";
+      fulfillment_requeued: boolean;
+      owner_notification_requeued: boolean;
+      access_delivered: boolean;
+      owner_notified: boolean;
+    }>(`/api/admin/operations/${paymentId}/retry`, { method: "POST" });
+  },
+
   async getAdminAuditLog(page: number = 1, limit: number = 25) {
     return fetchApi<{ entries: AdminAuditEntry[]; total: number; page: number; limit: number }>(
       `/api/admin/audit-log?page=${page}&limit=${limit}`

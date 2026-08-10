@@ -78,6 +78,7 @@ export function AdminStats() {
   const [actionUser, setActionUser] = useState<AdminUser | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [botActionId, setBotActionId] = useState<number | null>(null);
+  const [operationActionId, setOperationActionId] = useState<string | null>(null);
 
   const refreshSection = useCallback(async () => {
     setState("loading");
@@ -227,6 +228,36 @@ export function AdminStats() {
     }
   }, [setToastMessage, setToastType]);
 
+  const retryOperation = useCallback((operation: AdminOperation) => {
+    showConfirm({
+      title: "Повторить выдачу?",
+      message: "Будет повторена только незавершённая выдача доступа или уведомление владельца. Новый счёт и списание не создаются.",
+      type: "warning",
+      confirmText: "Повторить",
+      cancelText: "Отмена",
+      onConfirm: () => {
+        void (async () => {
+          setOperationActionId(operation.payment_id);
+          try {
+            const result = await apiService.retryAdminOperation(operation.payment_id);
+            setToastType("success");
+            setToastMessage(
+              result.access_delivered || result.owner_notified
+                ? "Повторная попытка выполнена. Состояние операции обновлено."
+                : "Повторная попытка поставлена в очередь. Проверьте статус через минуту.",
+            );
+            await refreshSection();
+          } catch (requestError) {
+            setToastType("error");
+            setToastMessage(requestError instanceof Error ? requestError.message : "Не удалось повторить операцию.");
+          } finally {
+            setOperationActionId(null);
+          }
+        })();
+      },
+    });
+  }, [refreshSection, setToastMessage, setToastType, showConfirm]);
+
   return (
     <section className="w-full pb-16" aria-labelledby="admin-title">
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
@@ -278,18 +309,18 @@ export function AdminStats() {
       </header>
 
       {state === "error" ? <ErrorState message={error ?? "Не удалось загрузить данные."} onRetry={refreshSection} /> : null}
-      {state !== "error" && section === "overview" ? <Overview overview={overview} operations={operations} loading={state === "loading"} onNavigate={setSection} /> : null}
+      {state !== "error" && section === "overview" ? <Overview overview={overview} operations={operations} loading={state === "loading"} onNavigate={setSection} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "users" ? <UsersSection users={users} query={usersQuery} onQueryChange={setUsersQuery} loading={state === "loading"} onManage={setActionUser} /> : null}
       {state !== "error" && section === "bots" ? <BotsSection bots={bots} query={botsQuery} onQueryChange={setBotsQuery} status={botsStatus} onStatusChange={setBotsStatus} loading={state === "loading"} busyBotId={botActionId} onAction={requestBotAction} onCheckReadiness={checkBotReadiness} /> : null}
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
-      {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} /> : null}
+      {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
       {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
     </section>
   );
 }
 
-function Overview({ overview, operations, loading, onNavigate }: { overview: AdminOverview | null; operations: AdminOperation[]; loading: boolean; onNavigate: (section: AdminSection) => void }) {
+function Overview({ overview, operations, loading, onNavigate, onRetryOperation, retryingOperationId }: { overview: AdminOverview | null; operations: AdminOperation[]; loading: boolean; onNavigate: (section: AdminSection) => void; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
   const metrics = [
     { label: "Владельцы ботов", value: overview?.users_total, icon: Users, note: "Зарегистрированы в BotFlow" },
     { label: "Активные боты", value: overview ? `${overview.bots_active} / ${overview.bots_total}` : null, icon: Bot, note: "Работают сейчас" },
@@ -309,7 +340,7 @@ function Overview({ overview, operations, loading, onNavigate }: { overview: Adm
         ))}
       </div>
       <Section title="Операции, требующие внимания" description="Оплаченные заказы, где выдача доступа или уведомление ещё не завершены.">
-        {loading ? <RowsSkeleton count={2} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Незавершённых операций нет" description="Когда после оплаты потребуется повторить выдачу доступа или уведомление, запись появится здесь." />}
+        {loading ? <RowsSkeleton count={2} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} onRetry={onRetryOperation} busy={retryingOperationId === operation.payment_id} />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Незавершённых операций нет" description="Когда после оплаты потребуется повторить выдачу доступа или уведомление, запись появится здесь." />}
         {!loading && operations.length ? <button type="button" onClick={() => onNavigate("operations")} className="mt-4 text-sm font-semibold text-[var(--color-primary)] hover:underline">Открыть все операции</button> : null}
       </Section>
     </div>
@@ -349,8 +380,8 @@ function PaymentsSection({ payments, loading }: { payments: AdminSaasPayment[]; 
   return <Section title="Платежи BotFlow" description="История оплаты лицензий и PRO. Статус нельзя изменить вручную — источником истины остаётся провайдер.">{loading ? <RowsSkeleton count={5} /> : payments.length ? <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Продукт</th><th className="pb-3">Сумма</th><th className="pb-3">Статус</th><th className="pb-3">Дата</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{payment.user_telegram_id}</td><td className="py-4 text-[var(--color-foreground)]">{productName[payment.product]}</td><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{formatAmount(payment.amount, payment.currency)}</td><td className="py-4"><StatusBadge tone={payment.status === "succeeded" ? "success" : payment.status === "failed" ? "danger" : "warning"}>{payment.status === "succeeded" ? "Оплачен" : payment.status === "failed" ? "Ошибка" : "Ожидает"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(payment.paid_at ?? payment.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<CreditCard size={21} />} title="Платежей пока нет" description="После создания первого счёта здесь появится реальная история SaaS-платежей." />}</Section>;
 }
 
-function OperationsSection({ operations, loading }: { operations: AdminOperation[]; loading: boolean }) {
-  return <Section title="Операции" description="Оплата уже подтверждена, но выдача доступа или уведомление владельца требует внимания.">{loading ? <RowsSkeleton count={4} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} expanded />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Ничего не требует действий" description="Все подтверждённые платежи обработаны или ожидают штатной очереди." />}</Section>;
+function OperationsSection({ operations, loading, onRetryOperation, retryingOperationId }: { operations: AdminOperation[]; loading: boolean; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
+  return <Section title="Операции" description="Оплата уже подтверждена, но выдача доступа или уведомление владельца требует внимания.">{loading ? <RowsSkeleton count={4} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} expanded onRetry={onRetryOperation} busy={retryingOperationId === operation.payment_id} />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Ничего не требует действий" description="Все подтверждённые платежи обработаны или ожидают штатной очереди." />}</Section>;
 }
 
 function SystemSection({ entries, systemStatus, loading }: { entries: AdminAuditEntry[]; systemStatus: AdminSystemStatus | null; loading: boolean }) {
@@ -358,10 +389,10 @@ function SystemSection({ entries, systemStatus, loading }: { entries: AdminAudit
   return <div className="grid gap-6 xl:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]"><Section title="Контур системы" description="Состояние планировщика относится к текущему процессу приложения и не заменяет внешний мониторинг.">{loading ? <RowsSkeleton count={3} /> : systemStatus ? <div className="space-y-3"><SystemRow label="Планировщик" value={systemStatus.running ? "Запущен" : "Не запущен"} tone={systemStatus.running ? "success" : "danger"} />{systemStatus.jobs.map((job) => <SystemRow key={job.id} label={jobLabel[job.id] ?? job.id} value={job.last_error ? `Ошибка: ${job.last_error}` : job.last_finished_at ? `Последний запуск: ${formatDate(job.last_finished_at)}` : job.next_run_at ? `Первый запуск: ${formatDate(job.next_run_at)}` : "Нет данных о запуске"} tone={job.last_error ? "danger" : "neutral"} />)}</div> : <EmptyState icon={<AlertTriangle size={21} />} title="Статус процесса недоступен" description="Нажмите «Обновить», чтобы повторить запрос." />}</Section><Section title="Журнал действий" description="Изменения доступа, статусов и повторные операции записываются здесь.">{loading ? <RowsSkeleton count={4} /> : entries.length ? <ol className="divide-y divide-[var(--color-border)]">{entries.map((entry) => <li key={entry.id} className="py-4 first:pt-0"><p className="font-semibold text-[var(--color-foreground)]">{entry.action}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Администратор {entry.actor_telegram_id} · {entry.target_type}{entry.target_id ? ` #${entry.target_id}` : ""} · {formatDate(entry.created_at)}</p></li>)}</ol> : <EmptyState icon={<ClipboardList size={21} />} title="Журнал пока пуст" description="Он начнёт заполняться, когда будут добавлены административные действия." />}</Section></div>;
 }
 
-function OperationRow({ operation, expanded = false }: { operation: AdminOperation; expanded?: boolean }) {
+function OperationRow({ operation, expanded = false, onRetry, busy = false }: { operation: AdminOperation; expanded?: boolean; onRetry: (operation: AdminOperation) => void; busy?: boolean }) {
   const issue = operation.fulfillment_status !== "succeeded" ? "Выдача доступа" : "Уведомление владельца";
   const error = operation.fulfillment_status !== "succeeded" ? operation.fulfillment_error : operation.owner_notification_error;
-  return <article className="flex flex-col gap-3 py-4 first:pt-0 md:flex-row md:items-center md:justify-between"><div className="min-w-0"><p className="font-semibold text-[var(--color-foreground)]">{operation.bot_name}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">{issue} · {operation.provider} · {formatAmount(operation.amount, operation.currency)}</p>{expanded && error ? <p className="mt-2 break-words text-xs leading-5 text-[var(--color-danger)]">{error}</p> : null}</div><StatusBadge tone="warning">Требует проверки</StatusBadge></article>;
+  return <article className="flex flex-col gap-3 py-4 first:pt-0 md:flex-row md:items-center md:justify-between"><div className="min-w-0"><p className="font-semibold text-[var(--color-foreground)]">{operation.bot_name}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">{issue} · {operation.provider} · {formatAmount(operation.amount, operation.currency)}</p>{expanded && error ? <p className="mt-2 break-words text-xs leading-5 text-[var(--color-danger)]">{error}</p> : null}</div><div className="flex items-center gap-2"><StatusBadge tone="warning">Требует проверки</StatusBadge><button type="button" onClick={() => onRetry(operation)} disabled={busy} className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60">{busy ? "Повторяем…" : "Повторить"}</button></div></article>;
 }
 
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
