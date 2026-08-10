@@ -35,21 +35,38 @@ async def get_lead(bot_id: int, telegram_id: int) -> Lead | None:
     """Запрашивает лида по bot_id и telegram_id."""
     async with async_session() as session:
         return await session.scalar(
-            select(Lead).where(Lead.bot_id == bot_id, Lead.telegram_id == telegram_id)
+            select(Lead).where(
+                Lead.bot_id == bot_id,
+                Lead.telegram_id == telegram_id,
+                Lead.is_archived.is_(False),
+            )
         )
 
 
-async def delete_leads_by_bot_id(bot_id: int) -> int:
-    """Delete a bot's leads and their scheduled messages, returning the lead count."""
+async def archive_leads_by_bot_id(bot_id: int) -> int:
+    """Hide active leads and cancel their drips without deleting payment history."""
     async with async_session() as session:
-        lead_ids = select(Lead.id).where(Lead.bot_id == bot_id)
-        count = await session.scalar(
-            select(func.count()).select_from(Lead).where(Lead.bot_id == bot_id)
-        )
-        await session.execute(delete(ScheduledTask).where(ScheduledTask.lead_id.in_(lead_ids)))
-        await session.execute(delete(Lead).where(Lead.bot_id == bot_id))
-        await session.commit()
-        return int(count or 0)
+        async with session.begin():
+            lead_ids = list(
+                (
+                    await session.scalars(
+                        select(Lead.id)
+                        .where(Lead.bot_id == bot_id, Lead.is_archived.is_(False))
+                        .with_for_update()
+                    )
+                ).all()
+            )
+            if not lead_ids:
+                return 0
+            await session.execute(
+                delete(ScheduledTask).where(ScheduledTask.lead_id.in_(lead_ids))
+            )
+            await session.execute(
+                update(Lead)
+                .where(Lead.id.in_(lead_ids))
+                .values(is_archived=True, archived_at=datetime.now(timezone.utc))
+            )
+            return len(lead_ids)
 
 
 async def get_funnel_by_bot_id(tg_bot_id: int):
@@ -78,7 +95,11 @@ async def create_lead(
             return None
 
         existing_lead = await session.scalar(
-            select(Lead).where(Lead.bot_id == bot.id, Lead.telegram_id == telegram_id)
+            select(Lead).where(
+                Lead.bot_id == bot.id,
+                Lead.telegram_id == telegram_id,
+                Lead.is_archived.is_(False),
+            )
         )
 
         if existing_lead:
@@ -125,7 +146,11 @@ async def update_lead_agreement(tg_bot_id: int, telegram_id: int, agreed: bool =
             return
 
         lead = await session.scalar(
-            select(Lead).where(Lead.bot_id == bot.id, Lead.telegram_id == telegram_id)
+            select(Lead).where(
+                Lead.bot_id == bot.id,
+                Lead.telegram_id == telegram_id,
+                Lead.is_archived.is_(False),
+            )
         )
 
         if lead and not lead.agreed_to_tos and agreed:
@@ -157,6 +182,7 @@ async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int) -> bool:
                 Lead.bot_id == bot.id,
                 Lead.telegram_id == telegram_id,
                 Lead.has_purchased.is_(False),
+                Lead.is_archived.is_(False),
             )
             .values(current_step_id="node_success", has_purchased=True)
             .returning(Lead.id)
@@ -172,11 +198,17 @@ async def mark_lead_as_successful(tg_bot_id: int, telegram_id: int) -> bool:
 
 
 async def get_leads_by_bot_id(
-    bot_id: int, search: Optional[str] = None, page: int = 1, limit: int = 20
+    bot_id: int,
+    search: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20,
+    include_archived: bool = False,
 ) -> tuple[list[Lead], int]:
     """Возвращает список лидов для CRM с пагинацией и поиском."""
     async with async_session() as session:
         query = select(Lead).where(Lead.bot_id == bot_id)
+        if not include_archived:
+            query = query.where(Lead.is_archived.is_(False))
         if search:
             search_str = f"%{search.lower()}%"
             query = query.where(
@@ -211,7 +243,7 @@ async def create_reminder(
         if not lead:
             return
 
-        if lead.has_purchased or lead.current_step_id == "node_success":
+        if lead.is_archived or lead.has_purchased or lead.current_step_id == "node_success":
             logger.info(f"Лид {lead_id} уже совершил покупку. Игнорируем логику таймеров.")
             return
 
@@ -276,7 +308,11 @@ async def get_reminder_tasks():
         result = await session.scalars(
             select(ScheduledTask)
             .options(selectinload(ScheduledTask.lead).selectinload(Lead.bot))
-            .where(ScheduledTask.execute_at <= datetime.now(timezone.utc))
+            .join(Lead)
+            .where(
+                ScheduledTask.execute_at <= datetime.now(timezone.utc),
+                Lead.is_archived.is_(False),
+            )
         )
 
         return result.all()

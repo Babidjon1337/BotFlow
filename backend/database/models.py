@@ -148,6 +148,10 @@ class Lead(Base):
 
     # Метрика для аналитики (вместо отдельной таблицы Payment)
     has_purchased: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    # Archived leads are hidden from the active CRM but retained for payment
+    # history, analytics and a clean new /start journey in the future.
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

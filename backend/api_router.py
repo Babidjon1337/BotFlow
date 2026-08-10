@@ -28,7 +28,7 @@ from database.requests.bot_rq import (
     update_bot_funnel,
     set_media_sync_done,
 )
-from database.requests.user_rq import get_lead, get_leads_by_bot_id, delete_leads_by_bot_id
+from database.requests.user_rq import archive_leads_by_bot_id, get_lead, get_leads_by_bot_id
 from database.requests.client_payment_rq import (
     ClientPaymentDeliveryRetryError,
     get_chart_data,
@@ -462,6 +462,24 @@ async def admin_bot_readiness_endpoint(bot_id: int, request: Request):
         raise HTTPException(status_code=404, detail="Бот не найден")
     is_ready, reasons = await _readiness_for_bot(bot)
     return {"isReady": is_ready, "reasons": reasons}
+
+
+@api_router.post("/api/admin/bots/{bot_id}/archive-leads")
+async def archive_admin_bot_leads_endpoint(bot_id: int, request: Request):
+    """Archive a bot's active CRM leads without destroying paid-order history."""
+    admin = await get_current_admin(request)
+    bot = await get_bot_by_id(bot_id)
+    if not bot:
+        raise HTTPException(status_code=404, detail="Бот не найден")
+    archived_count = await archive_leads_by_bot_id(bot.id)
+    await write_admin_audit_log(
+        actor_telegram_id=admin.telegram_id,
+        action="bot_leads_archived",
+        target_type="bot",
+        target_id=bot.id,
+        details={"owner_id": bot.owner_id, "archived_count": archived_count},
+    )
+    return {"status": "ok", "archivedCount": archived_count}
 
 
 @api_router.get("/api/admin/payments")
@@ -1141,11 +1159,10 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
 
 @api_router.delete("/api/bots/{bot_id}/leads")
 async def reset_bot_leads(bot_id: int, request: Request):
-    """Clear lead data without resetting the permanent token-lock history."""
+    """Archive CRM leads without resetting history or destroying payments."""
     await get_owned_bot(bot_id, request)
-    deleted_count = await delete_leads_by_bot_id(bot_id)
-    await update_bot_config(bot_id, users_count=0)
-    return {"status": "ok", "deletedCount": deleted_count}
+    archived_count = await archive_leads_by_bot_id(bot_id)
+    return {"status": "ok", "deletedCount": archived_count, "archivedCount": archived_count}
 
 
 @api_router.post("/api/bots/{bot_id}/invoices")
@@ -1222,7 +1239,7 @@ async def get_bot_leads_endpoint(
 @api_router.get("/api/bots/{bot_id}/stats")
 async def get_bot_stats_endpoint(bot_id: int, request: Request):
     await get_owned_bot(bot_id, request)
-    leads, total = await get_leads_by_bot_id(bot_id, limit=10000)
+    leads, total = await get_leads_by_bot_id(bot_id, limit=10000, include_archived=True)
     views = total
     clicks = sum(
         1

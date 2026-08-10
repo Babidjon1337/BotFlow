@@ -263,6 +263,13 @@ export const apiService = {
     );
   },
 
+  async archiveAdminBotLeads(botId: number) {
+    return fetchApi<{ status: "ok"; archivedCount: number }>(
+      `/api/admin/bots/${botId}/archive-leads`,
+      { method: "POST" },
+    );
+  },
+
   async getAdminPayments(status?: AdminSaasPayment["status"], page: number = 1, limit: number = 25) {
     const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (status) params.set("status", status);
