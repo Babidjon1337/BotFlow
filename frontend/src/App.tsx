@@ -308,7 +308,7 @@ export default function App() {
 
           <div 
             className={`flex-1 flex flex-col ${activeTab === 'flow' ? 'flow-padding' : activeTab === 'subscription' ? 'px-3 lg:px-4 py-4 lg:py-8 mobile-padding' : 'px-4 pt-3 pb-4 lg:p-8 mobile-padding'}`} 
-            style={{ maxWidth: activeTab === 'flow' ? '100%' : activeTab === 'build' ? '1240px' : '900px', margin: '0 auto', width: '100%' }}
+            style={{ maxWidth: activeTab === 'flow' ? '100%' : activeTab === 'admin_stats' ? '1440px' : activeTab === 'build' ? '1240px' : '900px', margin: '0 auto', width: '100%' }}
           >
           <Suspense fallback={<TabLoading />}>
           <AnimatePresence mode="wait">

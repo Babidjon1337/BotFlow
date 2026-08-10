@@ -16,7 +16,7 @@ const TAB_TITLES: Record<TabType, string> = {
   profile: 'Профиль',
   subscription: 'Подписка',
   manage: 'Ваши боты',
-  admin_stats: '👑 Аналитика сервиса'
+  admin_stats: 'Управление сервисом'
 };
 
 export const Header = ({ activeTab, appState, setSheet }: HeaderProps) => {

@@ -1,4 +1,4 @@
-import { Home, Layers, User, GitBranch, Crown, Moon, Sun, ChevronDown, Star, Bot, type LucideIcon } from 'lucide-react';
+import { Home, Layers, User, GitBranch, Crown, Moon, Sun, ChevronDown, Star, Bot, ShieldCheck, type LucideIcon } from 'lucide-react';
 import { cn } from '../utils';
 import type { TabType, AppState, SheetType } from '../types';
 import { useAppState } from '../providers/AppStateProvider';
@@ -27,7 +27,7 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
 
   const navItems = [
     ...MAIN_NAV,
-    ...(isAdmin ? [{ id: 'admin_stats' as TabType, icon: Crown, label: 'Аналитика SaaS', activeColor: '#a855f7' }] : []),
+    ...(isAdmin ? [{ id: 'admin_stats' as TabType, icon: ShieldCheck, label: 'Администрирование', activeColor: 'var(--color-primary)' }] : []),
   ];
 
   return (
@@ -150,7 +150,28 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
         </button>
 
         {/* Tariff Card */}
-        {isSubscribed ? (
+        {isAdmin ? (
+          <div className="rounded-[16px] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 shadow-sm">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-foreground-tertiary)]">Панель сервиса</div>
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                <ShieldCheck size={20} aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[15px] font-extrabold text-[var(--color-foreground)]">Доступ администратора</div>
+                <div className="mt-0.5 text-[12px] text-[var(--color-foreground-secondary)]">
+                  Ваших ботов: <span className="font-semibold text-[var(--color-foreground)]">{appState.bots.length}</span>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('admin_stats')}
+              className="flex w-full items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] py-2 text-[13px] font-semibold text-[var(--color-foreground)] transition-colors hover:border-[var(--color-primary-soft)] hover:text-[var(--color-primary)]"
+            >
+              Открыть управление
+            </button>
+          </div>
+        ) : isSubscribed ? (
           <div className="bg-[var(--color-surface-2)] rounded-[16px] p-3 shadow-sm border border-[var(--color-border)]">
             <div className="flex items-center justify-between mb-2">
               <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-foreground-tertiary)', textTransform: 'uppercase' }}>Ваш тариф</div>
@@ -164,17 +185,17 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
                 <Crown size={20} className="text-white" />
               </div>
               <div>
-                <div style={{ fontSize: '15px', fontWeight: 800, color: isAdmin ? '#c084fc' : 'var(--color-foreground)' }}>{isAdmin ? 'АДМИН' : 'PRO'}</div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-foreground)' }}>PRO</div>
                 <div style={{ fontSize: '12px', color: 'var(--color-foreground-secondary)' }}>
-                  <span style={{ color: 'var(--color-foreground)', fontWeight: 700 }}>{appState.bots.length}</span> {isAdmin ? 'ботов (Безлимитно)' : 'из 10 ботов'}
+                  <span style={{ color: 'var(--color-foreground)', fontWeight: 700 }}>{appState.bots.length}</span> из 10 ботов
                 </div>
               </div>
             </div>
             <button
-              onClick={() => setActiveTab(isAdmin ? 'admin_stats' : 'subscription')}
+              onClick={() => setActiveTab('subscription')}
               className="w-full flex items-center justify-center py-2 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] hover:border-[var(--color-primary-soft)] hover:text-[var(--color-primary)] transition-all duration-300 shadow-sm group"
             >
-              <span style={{ fontSize: '13px', fontWeight: 600 }} className="transition-colors">{isAdmin ? '📊 Дашборд' : 'Управление'}</span>
+              <span style={{ fontSize: '13px', fontWeight: 600 }} className="transition-colors">Управление</span>
             </button>
           </div>
         ) : (
