@@ -130,6 +130,22 @@ async def _install_client_bot_webhook(bot, request) -> None:
         ) from exc
 
 
+async def _remove_client_bot_webhook(bot, request) -> None:
+    """Remove the client-bot webhook before reporting the bot as stopped."""
+    try:
+        token = crypto.decrypt(bot.bot_token_enc)
+        from aiogram import Bot
+
+        telegram_bot = Bot(token=token, session=request.app.state.session)
+        await telegram_bot.delete_webhook()
+    except Exception as exc:
+        logger.warning("Не удалось удалить webhook для бота %s: %s", bot.id, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Telegram не подтвердил остановку бота. Повторите попытку.",
+        ) from exc
+
+
 async def _toggle_client_bot(
     bot,
     request: Request,
@@ -166,6 +182,8 @@ async def _toggle_client_bot(
 
     if new_status == "active":
         await _install_client_bot_webhook(bot, request)
+    else:
+        await _remove_client_bot_webhook(bot, request)
 
     updated_bot = await set_bot_status(bot.id, new_status)
     if not updated_bot:
