@@ -24,6 +24,44 @@ def _paginate(page: int, limit: int) -> tuple[int, int]:
     return normalized_page, normalized_limit
 
 
+def _admin_user_payload(user: User, bots_count: int, *, is_platform_admin: bool = False) -> dict[str, Any]:
+    """Serialize a support-safe owner record without credentials or payment data."""
+    return {
+        "id": user.id,
+        "telegram_id": user.telegram_id,
+        "username": user.username,
+        "bots_count": int(bots_count or 0),
+        "lifetime_slots": user.lifetime_slots,
+        "subscription_ends_at": _iso(user.subscription_ends_at),
+        "subscription_auto_renew": user.subscription_auto_renew,
+        "subscription_retry_count": user.subscription_retry_count,
+        "is_disabled": user.is_disabled,
+        "is_platform_admin": is_platform_admin,
+        "created_at": _iso(user.created_at),
+    }
+
+
+def _admin_bot_payload(bot: BotConfig, owner_telegram_id: int) -> dict[str, Any]:
+    """Serialize operational bot state and intentionally omit encrypted secrets."""
+    return {
+        "id": bot.id,
+        "owner_id": bot.owner_id,
+        "owner_telegram_id": owner_telegram_id,
+        "display_name": bot.display_name,
+        "username": bot.username,
+        "tg_bot_id": bot.tg_bot_id,
+        "status": bot.status,
+        "users_count": bot.users_count,
+        "is_token_locked": bot.is_token_locked,
+        "has_lifetime_license": bot.has_lifetime_license,
+        "funnel_complete": bot.funnel_complete,
+        "media_sync_done": bot.media_sync_done,
+        "payment_provider": bot.payment_provider,
+        "has_payment_credentials": bool(bot.payment_creds_enc),
+        "created_at": _iso(bot.created_at),
+    }
+
+
 async def get_admin_overview() -> dict[str, int | float]:
     """Return only dashboard metrics with a trustworthy database source."""
     async with async_session() as session:
@@ -59,7 +97,13 @@ async def get_admin_overview() -> dict[str, int | float]:
     }
 
 
-async def list_admin_users(*, query: str | None, page: int, limit: int) -> tuple[list[dict[str, Any]], int]:
+async def list_admin_users(
+    *,
+    query: str | None,
+    page: int,
+    limit: int,
+    protected_admin_telegram_ids: frozenset[int] = frozenset(),
+) -> tuple[list[dict[str, Any]], int]:
     """List bot owners without exposing their secrets or private payment method."""
     page, limit = _paginate(page, limit)
     bot_count = (
@@ -93,18 +137,11 @@ async def list_admin_users(*, query: str | None, page: int, limit: int) -> tuple
         )
 
     users = [
-        {
-            "id": user.id,
-            "telegram_id": user.telegram_id,
-            "username": user.username,
-            "bots_count": int(bots_count or 0),
-            "lifetime_slots": user.lifetime_slots,
-            "subscription_ends_at": _iso(user.subscription_ends_at),
-            "subscription_auto_renew": user.subscription_auto_renew,
-            "subscription_retry_count": user.subscription_retry_count,
-            "is_disabled": user.is_disabled,
-            "created_at": _iso(user.created_at),
-        }
+        _admin_user_payload(
+            user,
+            bots_count,
+            is_platform_admin=user.telegram_id in protected_admin_telegram_ids,
+        )
         for user, bots_count in rows
     ]
     return users, int(total or 0)
@@ -139,27 +176,33 @@ async def list_admin_bots(*, query: str | None, status: str | None, page: int, l
             .limit(limit)
         )
 
-    bots = [
-        {
-            "id": bot.id,
-            "owner_id": bot.owner_id,
-            "owner_telegram_id": owner_telegram_id,
-            "display_name": bot.display_name,
-            "username": bot.username,
-            "tg_bot_id": bot.tg_bot_id,
-            "status": bot.status,
-            "users_count": bot.users_count,
-            "is_token_locked": bot.is_token_locked,
-            "has_lifetime_license": bot.has_lifetime_license,
-            "funnel_complete": bot.funnel_complete,
-            "media_sync_done": bot.media_sync_done,
-            "payment_provider": bot.payment_provider,
-            "has_payment_credentials": bool(bot.payment_creds_enc),
-            "created_at": _iso(bot.created_at),
-        }
-        for bot, owner_telegram_id in rows
-    ]
+    bots = [_admin_bot_payload(bot, owner_telegram_id) for bot, owner_telegram_id in rows]
     return bots, int(total or 0)
+
+
+async def get_admin_user_detail(
+    *, user_id: int, protected_admin_telegram_ids: frozenset[int]
+) -> dict[str, Any] | None:
+    """Return one owner's support profile and their bots, excluding all secrets."""
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            return None
+        rows = await session.execute(
+            select(BotConfig)
+            .where(BotConfig.owner_id == user.id)
+            .order_by(BotConfig.created_at.desc(), BotConfig.id.desc())
+        )
+        owner_bots = list(rows.scalars())
+
+    return {
+        "user": _admin_user_payload(
+            user,
+            len(owner_bots),
+            is_platform_admin=user.telegram_id in protected_admin_telegram_ids,
+        ),
+        "bots": [_admin_bot_payload(bot, user.telegram_id) for bot in owner_bots],
+    }
 
 
 async def list_admin_saas_payments(*, status: str | None, page: int, limit: int) -> tuple[list[dict[str, Any]], int]:

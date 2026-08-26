@@ -42,7 +42,13 @@ export interface AdminUser {
   subscription_auto_renew: boolean;
   subscription_retry_count: number;
   is_disabled: boolean;
+  is_platform_admin?: boolean;
   created_at: string | null;
+}
+
+export interface AdminUserDetail {
+  user: AdminUser;
+  bots: AdminBot[];
 }
 
 export interface AdminBot {
@@ -206,6 +212,10 @@ export const apiService = {
     return fetchApi<{ users: AdminUser[]; total: number; page: number; limit: number }>(
       `/api/admin/users?${params.toString()}`
     );
+  },
+
+  async getAdminUserDetail(userId: number) {
+    return fetchApi<AdminUserDetail>(`/api/admin/users/${userId}`);
   },
 
   async setAdminUserAccess(

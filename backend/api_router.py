@@ -39,6 +39,7 @@ from database.requests.billing_rq import cancel_subscription_auto_renew
 from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
 from database.requests.admin_rq import (
     get_admin_overview,
+    get_admin_user_detail,
     list_admin_audit_log,
     list_admin_bots,
     list_admin_operations,
@@ -337,8 +338,26 @@ async def get_admin_users_endpoint(
 ):
     """List bot owners for support without returning secret or payment credentials."""
     await get_current_admin(request)
-    users, total = await list_admin_users(query=query, page=page, limit=limit)
+    users, total = await list_admin_users(
+        query=query,
+        page=page,
+        limit=limit,
+        protected_admin_telegram_ids=ADMIN_TELEGRAM_IDS,
+    )
     return {"users": users, "total": total, "page": page, "limit": limit}
+
+
+@api_router.get("/api/admin/users/{user_id}")
+async def get_admin_user_detail_endpoint(user_id: int, request: Request):
+    """Open a support-safe owner profile with only that owner's bots."""
+    await get_current_admin(request)
+    detail = await get_admin_user_detail(
+        user_id=user_id,
+        protected_admin_telegram_ids=ADMIN_TELEGRAM_IDS,
+    )
+    if not detail:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return detail
 
 
 @api_router.post("/api/admin/users/{user_id}/access")
