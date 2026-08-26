@@ -43,3 +43,4 @@ test*
 frontend/.playwright-cli/
 frontend/*.png
 frontend/*.jpg
+graphify-out/
