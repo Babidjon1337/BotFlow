@@ -1,20 +1,32 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Check, MessageCircleMore, RadioTower, Rocket } from 'lucide-react';
+import { ArrowRight, ClipboardList, MessageCircleMore, Rocket, Store } from 'lucide-react';
+import { PlatformGlyph, type PlatformId } from '../common/platform';
 
 interface WelcomeScreenProps {
   onCreateBot: () => void;
 }
 
-const availableNow = [
+const platforms: Array<{ id: PlatformId; label: string }> = [
+  { id: 'telegram', label: 'Telegram' },
+  { id: 'vk', label: 'VK' },
+  { id: 'max', label: 'MAX' },
+];
+
+const scenarios = [
   {
     icon: MessageCircleMore,
     title: 'Воронка продаж',
-    description: 'Сообщения, заявки и предложения в одном сценарии.',
+    description: 'Сообщения, предложения и оплата.',
   },
   {
-    icon: RadioTower,
-    title: 'Telegram',
-    description: 'Единственная доступная платформа в первой версии.',
+    icon: ClipboardList,
+    title: 'Приём заявок',
+    description: 'Заявки от клиентов в одном потоке.',
+  },
+  {
+    icon: Store,
+    title: 'Mini App',
+    description: 'Витрина и интернет-магазин в мессенджере.',
   },
 ];
 
@@ -29,29 +41,40 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
         className="grid overflow-hidden rounded-[var(--radius-sheet)] border border-border bg-card shadow-card lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.72fr)]"
       >
         <div className="flex flex-col items-start p-6 sm:p-8 lg:p-10">
-          <span className="inline-flex items-center gap-2 rounded-full bg-success-soft px-3 py-1.5 text-body-sm font-medium text-success">
-            <Check className="size-4" aria-hidden="true" />
-            Доступно сейчас
-          </span>
           <h2 className="mt-5 max-w-xl text-title-lg font-semibold tracking-tight sm:text-title-xl">
-            Соберите первую воронку продаж
+            Соберите бота под свою задачу
           </h2>
           <p className="mt-3 max-w-xl text-body leading-relaxed text-fg-secondary">
-            Начните с Telegram-бота: настройте сценарий, подготовьте сообщения и подключите оплату, когда будете готовы к публикации.
+            Выберите сценарий, подключите нужные площадки и подготовьте общение с клиентами в одном рабочем пространстве.
           </p>
 
-          <div className="mt-6 w-full divide-y divide-border rounded-[var(--radius-card)] border border-border bg-muted">
-            {availableNow.map(({ icon: Icon, title, description }) => (
-              <div key={title} className="flex items-start gap-3 px-4 py-3.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius-control)] bg-accent text-accent-foreground">
-                  <Icon className="size-4" aria-hidden="true" />
-                </span>
-                <span>
-                  <span className="block text-body-sm font-semibold text-foreground">{title}</span>
-                  <span className="mt-0.5 block text-meta leading-relaxed text-fg-secondary">{description}</span>
-                </span>
+          <div className="mt-6 w-full space-y-5">
+            <div>
+              <p className="text-meta font-medium text-fg-secondary">Площадки</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {platforms.map(({ id, label }) => (
+                  <span key={id} className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-muted px-3 text-body-sm font-medium text-foreground">
+                    <PlatformGlyph platform={id} size={17} className="text-fg-secondary" />
+                    {label}
+                  </span>
+                ))}
               </div>
-            ))}
+            </div>
+
+            <div>
+              <p className="text-meta font-medium text-fg-secondary">Сценарии</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                {scenarios.map(({ icon: Icon, title, description }) => (
+                  <article key={title} className="rounded-[var(--radius-card)] border border-border bg-muted p-3">
+                    <span className="flex size-8 items-center justify-center rounded-[var(--radius-control)] bg-accent text-accent-foreground">
+                      <Icon className="size-4" aria-hidden="true" />
+                    </span>
+                    <h3 className="mt-3 text-body-sm font-semibold text-foreground">{title}</h3>
+                    <p className="mt-1 text-micro leading-relaxed text-fg-secondary">{description}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="mt-7 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
