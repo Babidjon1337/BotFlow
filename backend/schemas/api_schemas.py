@@ -92,7 +92,7 @@ class ChatDeliveryVerifyRequest(BaseModel):
 
 
 class BotCreateApiRequest(BaseModel):
-    token: str = Field(..., description="Токен бота от BotFather")
+    token: Optional[str] = Field(None, description="Токен бота от BotFather; для черновика не обязателен")
     display_name: str = Field(default="Мой бот", alias="displayName")
     offer_url: Optional[str] = Field(None, alias="offerUrl")
     offer_installments: bool = Field(default=False, alias="offerInstallments")

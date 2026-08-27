@@ -167,9 +167,9 @@ async def register_bot_config(
 async def create_bot_config(
     owner_id: int,
     display_name: str,
-    tg_bot_id: int,
-    username: str,
-    bot_token_enc: bytes,
+    tg_bot_id: Optional[int],
+    username: Optional[str],
+    bot_token_enc: Optional[bytes],
     payment_provider: Optional[str] = None,
     payment_creds_enc: Optional[bytes] = None,
     offer_url: Optional[str] = None,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Bot, CheckCircle2, KeyRound, LockKeyhole, MessageCircleMore, WalletCards, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, CheckCircle2, LockKeyhole, MessageCircleMore, WalletCards, X } from 'lucide-react';
 import { useViewportHeight } from '../../hooks';
 import { PlatformGlyph } from '../common/platform';
 
@@ -13,7 +13,7 @@ interface BotCreateSheetProps {
 
 type BotCreateData = {
   displayName: string;
-  token: string;
+  token?: string;
   paymentCreds: Record<string, string>;
   offerUrl: string;
 };
@@ -34,7 +34,6 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
   const [step, setStep] = useState<Step>(1);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
-  const [token, setToken] = useState('');
   const viewportHeight = useViewportHeight();
 
   const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
@@ -65,7 +64,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
     setIsCreating(true);
     onBusyChange?.(true);
     try {
-      await onCreate({ displayName: name.trim(), token: token.trim(), paymentCreds: {}, offerUrl: '' });
+      await onCreate({ displayName: name.trim(), paymentCreds: {}, offerUrl: '' });
       (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     } catch (error) {
       onError?.(error instanceof Error ? error.message : 'Не удалось создать бота.');
@@ -76,7 +75,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
   };
 
   const nextDisabled = step === 1 && !name.trim();
-  const createDisabled = !token.includes(':') || isCreating;
+  const createDisabled = isCreating;
 
   return (
     <>
@@ -120,7 +119,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                 {step === 3 && <motion.div key="draft" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }} className="space-y-5">
                   <div><span className="flex size-11 items-center justify-center rounded-[var(--radius-card)] bg-success-soft text-success"><WalletCards className="size-5" aria-hidden="true" /></span><h3 className="mt-4 text-title font-semibold">Черновик и публикация</h3><p className="mt-2 text-body-sm leading-relaxed text-fg-secondary">Создание черновика бесплатно. Подписка потребуется, когда бот будет готов к публикации.</p></div>
                   <article className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-body-sm font-semibold text-foreground">Воронка продаж · Telegram</p><p className="mt-1 text-meta text-fg-secondary">Базовая подписка бота</p></div><p className="shrink-0 text-title font-semibold text-foreground">990 ₽<span className="text-body-sm font-medium text-fg-secondary">/мес</span></p></div><p className="mt-3 border-t border-border pt-3 text-meta leading-relaxed text-fg-secondary">Оплата не потребуется сейчас. Кассу, оферту и детали сценария можно настроить после создания.</p></article>
-                  <label className="block"><span className="text-body-sm font-medium text-foreground">Токен Telegram</span><span className="mt-1 block text-meta text-fg-secondary">Нужен, чтобы безопасно привязать бота к вашему аккаунту.</span><span className="relative mt-3 block"><KeyRound className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-fg-tertiary" aria-hidden="true" /><input type="password" autoComplete="off" placeholder="1234567890:AAH…" value={token} onChange={(event) => setToken(event.target.value)} onFocus={handleFocus} className="input w-full pl-10" /></span>{token && !token.includes(':') && <p className="mt-2 text-meta text-danger">Проверьте формат токена из @BotFather.</p>}</label>
+                  <div className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><p className="text-body-sm font-semibold text-foreground">Telegram подключите перед публикацией</p><p className="mt-1 text-meta leading-relaxed text-fg-secondary">После создания откройте настройки бота, добавьте токен от @BotFather и завершите чеклист публикации.</p></div>
                   <div className="flex gap-3 rounded-[var(--radius-card)] border border-border bg-muted p-4"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" /><p className="text-meta leading-relaxed text-fg-secondary">После создания вы перейдёте к редактору сценария. Бот не будет опубликован автоматически.</p></div>
                 </motion.div>}
               </AnimatePresence>

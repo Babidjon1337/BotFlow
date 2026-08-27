@@ -730,18 +730,6 @@ async def list_bots(request: Request):
 async def create_bot(request: Request, body: BotCreateApiRequest):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
-    existing_user_bots = await get_user_bots(owner_id=user.id)
-    is_admin = current_user.telegram_id in ADMIN_TELEGRAM_IDS
-    has_pro = is_pro_active(user) or is_admin
-    if has_pro and not is_admin and len(existing_user_bots) >= 10:
-        raise HTTPException(status_code=403, detail="PRO позволяет создать не более 10 ботов.")
-    free_license_available = available_lifetime_licenses(user, existing_user_bots)
-    if not has_pro and existing_user_bots and free_license_available <= 0:
-        raise HTTPException(
-            status_code=403,
-            detail="Для нового бота нужна лицензия или активная PRO-подписка.",
-        )
-    
     if not body.display_name or not body.display_name.strip():
         user_bots = await get_user_bots(owner_id=user.id)
         bot_count = len(user_bots)
@@ -757,32 +745,33 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
         if not is_valid:
             raise HTTPException(status_code=400, detail=validation_message)
 
-    from aiogram import Bot
-    from aiogram.client.default import DefaultBotProperties
+    tg_bot_id = None
+    username = None
+    token_enc = None
+    if body.token:
+        from aiogram import Bot
+        from aiogram.client.default import DefaultBotProperties
 
-    try:
-        temp_bot = Bot(
-            token=body.token,
-            session=request.app.state.session,
-            default=DefaultBotProperties(parse_mode="HTML"),
-        )
-        me = await temp_bot.get_me()
-        tg_bot_id = me.id
-        username = me.username
-    except Exception as e:
-        logger.error(f"Ошибка валидации токена: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail="Неверный токен Telegram бота. Проверьте токен от @BotFather.",
-        )
+        try:
+            temp_bot = Bot(
+                token=body.token,
+                session=request.app.state.session,
+                default=DefaultBotProperties(parse_mode="HTML"),
+            )
+            me = await temp_bot.get_me()
+            tg_bot_id = me.id
+            username = me.username
+        except Exception as e:
+            logger.error(f"Ошибка валидации токена: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail="Неверный токен Telegram бота. Проверьте токен от @BotFather.",
+            )
 
-    existing = await get_bot_by_tg_id(tg_bot_id)
-    if existing:
-        raise HTTPException(
-            status_code=409, detail="Этот бот уже добавлен в систему."
-        )
-
-    token_enc = crypto.encrypt(body.token)
+        existing = await get_bot_by_tg_id(tg_bot_id)
+        if existing:
+            raise HTTPException(status_code=409, detail="Этот бот уже добавлен в систему.")
+        token_enc = crypto.encrypt(body.token)
     creds_enc = (
         crypto.encrypt(json.dumps(body.payment_creds))
         if body.payment_creds
@@ -800,8 +789,9 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
         offer_url=body.offer_url,
         offer_installments=body.offer_installments,
     )
-    if not has_pro and free_license_available > 0:
-        bot = await assign_lifetime_license(bot.id) or bot
+    if not body.token:
+        resp = BotApiResponse.from_orm_bot(bot, TG_WEBHOOK_URL, WEBHOOK_URL)
+        return resp.model_dump(by_alias=True)
 
     try:
         temp_bot = Bot(token=body.token, session=request.app.state.session)

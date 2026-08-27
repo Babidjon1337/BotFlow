@@ -341,7 +341,7 @@ export const apiService = {
   },
 
   async createBot(data: {
-    token: string;
+    token?: string;
     displayName: string;
     paymentProvider?: string;
     paymentCreds?: Record<string, unknown>;
