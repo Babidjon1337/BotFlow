@@ -81,7 +81,7 @@ class TariffSchema(BaseModel):
 
 
 class FunnelNodeSchema(BaseModel):
-    id: str                        # "start" | "push1" | "push2" | "payment"
+    id: str                        # "start" | reminder id | "payment"
     step: str                      # отображаемое название
     subtitle: str = ""
     delay_seconds: int = Field(

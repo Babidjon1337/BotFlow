@@ -14,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 import api_router
 from schemas.api_schemas import BotApiResponse
+from services.funnel_readiness import evaluate_funnel_readiness
 
 
 def _legacy_bot(**overrides):
@@ -96,6 +97,63 @@ def test_quote_endpoint_exposes_only_the_current_sellable_configuration(monkeypa
         "totalMinor": 99_000,
         "checkoutAvailable": False,
     }
+
+
+def _application_funnel(reminder_count: int = 0) -> dict:
+    nodes = [
+        {
+            "id": "start",
+            "kind": "message",
+            "content": "Добро пожаловать",
+            "buttonText": "Оставить заявку",
+        },
+        *[
+            {
+                "id": f"push{index}",
+                "kind": "reminder",
+                "content": f"Напоминание {index}",
+                "buttonText": "Оставить заявку",
+            }
+            for index in range(1, reminder_count + 1)
+        ],
+        {
+            "id": "payment",
+            "kind": "payment",
+            "paymentMode": "application",
+            "managerText": "Хочу узнать подробнее",
+            "managerUrl": "@botflow_manager",
+            "tariffs": [
+                {
+                    "id": "offer-1",
+                    "name": "Консультация",
+                    "price": 1000,
+                    "description": "Созвон с экспертом",
+                    "hasDelivery": False,
+                }
+            ],
+        },
+    ]
+    return {"version": 2, "nodes": nodes}
+
+
+def test_readiness_allows_sales_funnel_without_reminders():
+    readiness = evaluate_funnel_readiness(
+        _application_funnel(),
+        has_payment_provider=False,
+        has_payment_credentials=False,
+    )
+
+    assert readiness.is_ready
+
+
+def test_readiness_rejects_more_than_five_reminders():
+    readiness = evaluate_funnel_readiness(
+        _application_funnel(reminder_count=6),
+        has_payment_provider=False,
+        has_payment_credentials=False,
+    )
+
+    assert "Можно добавить не больше 5 дожимов." in readiness.reasons
 
 
 def test_dedicated_active_subscription_publishes_only_its_bot(monkeypatch):

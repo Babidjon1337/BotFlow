@@ -14,7 +14,9 @@ from typing import Any, Iterable
 from services.manager_link import build_manager_deep_link
 
 
-REQUIRED_MESSAGE_NODE_IDS = ("start", "push1", "push2")
+START_NODE_ID = "start"
+REMINDER_NODE_KIND = "reminder"
+MAX_REMINDER_NODES = 5
 PAYMENT_NODE_ID = "payment"
 MAX_MESSAGE_CHARACTERS = 4096
 MAX_MEDIA_CAPTION_CHARACTERS = 1024
@@ -72,10 +74,17 @@ def evaluate_funnel_readiness(
     if not isinstance(nodes_value, list):
         return FunnelReadiness(("Сохраните воронку в актуальном формате.",))
 
-    nodes = {_as_dict(node).get("id"): _as_dict(node) for node in nodes_value}
-    for node_id in REQUIRED_MESSAGE_NODE_IDS:
-        node = nodes.get(node_id)
-        title = {"start": "Старт", "push1": "Дожим 1", "push2": "Дожим 2"}[node_id]
+    raw_nodes = [_as_dict(node) for node in nodes_value]
+    nodes = {node.get("id"): node for node in raw_nodes}
+    reminder_nodes = [node for node in raw_nodes if node.get("kind") == REMINDER_NODE_KIND]
+    if len(reminder_nodes) > MAX_REMINDER_NODES:
+        reasons.append(f"Можно добавить не больше {MAX_REMINDER_NODES} дожимов.")
+
+    message_nodes: list[tuple[dict[str, Any] | None, str]] = [
+        (nodes.get(START_NODE_ID), "Старт"),
+        *[(node, f"Дожим {index}") for index, node in enumerate(reminder_nodes, start=1)],
+    ]
+    for node, title in message_nodes:
         if not node:
             reasons.append(f"Добавьте блок «{title}».")
             continue
@@ -197,8 +206,7 @@ def evaluate_funnel_readiness(
         elif not manager_url:
             reasons.append("Добавьте ссылку на Telegram менеджера.")
     if mode == "hybrid":
-        for node_id in REQUIRED_MESSAGE_NODE_IDS:
-            node = nodes.get(node_id)
+        for node, _title in message_nodes:
             if node and not _text(_node_value(node, "button_text2", "buttonText2")):
                 reasons.append("В гибридном режиме заполните вторую кнопку каждого сообщения.")
                 break
