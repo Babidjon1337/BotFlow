@@ -80,7 +80,7 @@ Always finish a work session by committing completed changes to git. Do not leav
 Rules:
 
 - Commit after each finished task/feature (backend and frontend may be separate commits).
-- Follow the repo commit style: conventional commits with scope, e.g. `feat(r7): ...`, `fix(r4): ...` (message language may be English or Russian).
+- Follow the repo commit style: conventional commits with scope, e.g. `feat(r7): ...`, `fix(r4): ...` (message language — только русский).
 - Before committing, run `git status` and `git diff`, stage only files related to the work done.
 - Never commit secrets, tokens, or credentials.
 - Run checks (tests / build / lint) before committing when they were part of the task.
