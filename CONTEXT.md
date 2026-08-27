@@ -116,16 +116,16 @@ Account
 
 R2 / Контракты домена и миграционный каркас. R1 gate зелёный: автоматические
 проверки и ручной smoke в авторизованном Telegram WebView на desktop и телефоне
-пройдены. Подготовлен только план совместимой миграции; БД, API и runtime ещё
-не менялись.
+пройдены. Первый малый R2-шаг реализован: contract-тесты, nullable Alembic
+migration и идемпотентный backfill новых lifecycle-полей. Миграция не применялась
+к реальной БД; legacy API и runtime не менялись.
 
 ### Next Step
 
-Реализовать первый малый R2-шаг из `docs/R2_MIGRATION_PLAN.md`: contract-тесты
-текущих bot/funnel/readiness endpoints, затем nullable Alembic migration с
-идемпотентным backfill `scenario_type`, lifecycle и версии payload. Не менять
-legacy `status`, `funnel_schema` или платёжные правила до прохождения migration
-и compatibility tests.
+Перед следующим R2-подшагом выполнить migration round-trip на отдельной тестовой
+PostgreSQL-БД (forward, backfill, downgrade). После подтверждения результата
+вводить `BotLifecycleService` с dual-write к legacy `status`; не менять
+`funnel_schema`, платёжные правила или публичный контракт преждевременно.
 
 ### Important Files
 

@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     Column,
     DateTime,
     ForeignKey,
@@ -85,6 +86,21 @@ class User(Base):
 # ==========================================
 class BotConfig(Base):
     __tablename__ = "bots"
+    __table_args__ = (
+        CheckConstraint(
+            "scenario_type IS NULL OR scenario_type IN ('sales_funnel')",
+            name="ck_bots_scenario_type",
+        ),
+        CheckConstraint(
+            "scenario_payload_version IS NULL OR scenario_payload_version > 0",
+            name="ck_bots_scenario_payload_version",
+        ),
+        CheckConstraint(
+            "lifecycle_status IS NULL OR lifecycle_status IN "
+            "('draft', 'ready', 'published', 'paused', 'archived')",
+            name="ck_bots_lifecycle_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -98,6 +114,14 @@ class BotConfig(Base):
 
     # Статус и статистика
     status: Mapped[str] = mapped_column(String(20), default="draft") # draft, active, archived
+    # R2 is additive: legacy `status` remains the runtime authority until the
+    # lifecycle service is introduced in a later step.
+    scenario_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    scenario_payload_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    lifecycle_status: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, index=True
+    )
+    pause_reason: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     users_count: Mapped[int] = mapped_column(Integer, default=0)
     is_token_locked: Mapped[bool] = mapped_column(Boolean, default=False)
     has_lifetime_license: Mapped[bool] = mapped_column(Boolean, default=False)

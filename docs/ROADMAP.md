@@ -58,8 +58,9 @@ Gate: lint, build, pytest, browser smoke — зелёные. Отдельный 
 
 ## R2. Контракты домена и миграционный каркас
 
-Статус: начат аудит. План совместимой миграции зафиксирован в
-`docs/R2_MIGRATION_PLAN.md`; схема и runtime пока не менялись.
+Статус: первый малый шаг выполнен. План совместимой миграции зафиксирован в
+`docs/R2_MIGRATION_PLAN.md`; добавлены nullable migration и compatibility
+контракты. Runtime-поведение пока не менялось.
 
 ### Backend
 
