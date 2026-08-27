@@ -116,18 +116,21 @@ Account
 
 ### Current Stage
 
-R3 / Черновик, расчёт цены и публикация. R1 и R2 закрыты. Добавлены
-совместимые `GatewayConnection`, `BotSubscription`, boundaries entitlement и
-deterministic pricing contract. В v1 продаётся только Telegram-бот со сценарием
-«Воронка продаж» за 990 ₽/мес; VK/MAX и будущие сценарии остаются «Скоро» и не
-могут попасть в quote. Checkout и runtime billing пока намеренно не переключены.
+R3 / Черновик, расчёт цены и публикация. R1 и R2 закрыты. Подшаги 1–4
+выполнены: совместимые `GatewayConnection` и `BotSubscription`, entitlement
+boundary, deterministic pricing contract и compatible per-bot publication
+switch. В v1 продаётся только Telegram-бот со сценарием «Воронка продаж» за
+990 ₽/мес; VK/MAX и будущие сценарии остаются «Скоро» и не могут попасть в
+quote. Если у бота есть `BotSubscription`, публикацию определяет только она;
+если записи нет — прежний PRO/lifetime маршрут. Checkout и runtime billing пока
+намеренно не переключены.
 
 ### Next Step
 
-Продолжить R3: закрепить API contract quote/readiness и провести переход
-публикации на per-bot entitlement без изменения legacy checkout. R4 UI
-конфигуратор начнётся только после R3 gate; для него уже создан visual карточки
-«Воронка продаж» в `frontend/public/visuals/scenarios/sales-funnel-card.png`.
+Провести финальный R3 review и зафиксировать результат gate. Не переключать
+legacy checkout и не начинать R4 UI до явного закрытия R3; для R4 уже создан
+visual карточки «Воронка продаж» в
+`frontend/public/visuals/scenarios/sales-funnel-card.png`.
 
 ### Important Files
 

@@ -20,6 +20,7 @@ from database.requests.bot_rq import (
     create_user_if_not_exists,
     get_user_by_tg_id,
     get_user_bots,
+    get_bot_subscription,
     create_bot_config,
     update_bot_config,
     delete_bot_config,
@@ -74,6 +75,7 @@ from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active
 from services.funnel_readiness import evaluate_funnel_readiness
 from services.bot_lifecycle import BotLifecycleService
+from services.bot_entitlement import BotEntitlementService
 from services.bot_pricing import BASE_SCENARIO_TYPE, BotPricingService
 from services.payment_link import validate_payment_credentials
 from services.payment_fulfillment import process_client_payment_fulfillment
@@ -141,6 +143,7 @@ bot_lifecycle_service = BotLifecycleService(
     connected_chat_ids_for=_connected_chat_ids_for_bot,
 )
 bot_pricing_service = BotPricingService()
+bot_entitlement_service = BotEntitlementService()
 
 
 async def _install_client_bot_webhook(bot, request) -> None:
@@ -190,9 +193,24 @@ async def _toggle_client_bot(
     """Apply the one shared start/stop policy for owners and administrators."""
     new_status = "active" if action in ["start", "active", "activate", "true", "1"] else "draft"
 
-    if new_status == "active" and not (
+    dedicated_subscription = (
+        await get_bot_subscription(bot.id) if new_status == "active" else None
+    )
+
+    if dedicated_subscription is not None:
+        if not (
+            allow_admin_entitlement_bypass
+            or bot_entitlement_service.can_publish(dedicated_subscription)
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Подписка этого бота неактивна или закончилась.",
+            )
+    elif new_status == "active" and not (
         is_pro_active(bot.owner) or allow_admin_entitlement_bypass
     ):
+        # Bots that predate BotSubscription retain the legacy account-level
+        # checkout semantics until their subscription is explicitly migrated.
         owner_bots = await get_user_bots(bot.owner_id)
         if not bot.has_lifetime_license:
             available = available_lifetime_licenses(bot.owner, owner_bots)

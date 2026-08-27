@@ -1,7 +1,7 @@
 from typing import Optional, Any
 from sqlalchemy import select, delete, update
 from sqlalchemy.orm import joinedload, selectinload
-from database.models import BotConfig, User, async_session
+from database.models import BotConfig, BotSubscription, User, async_session
 from services.bot_lifecycle import LEGACY_STATUS_BY_LIFECYCLE
 
 
@@ -69,6 +69,14 @@ async def get_user_bots(owner_id: int) -> list[BotConfig]:
             select(BotConfig).where(BotConfig.owner_id == owner_id).order_by(BotConfig.id)
         )
         return list(result.all())
+
+
+async def get_bot_subscription(bot_id: int) -> BotSubscription | None:
+    """Return the dedicated publication subscription for one bot, if migrated."""
+    async with async_session() as session:
+        return await session.scalar(
+            select(BotSubscription).where(BotSubscription.bot_id == bot_id)
+        )
 
 
 async def register_bot_config(

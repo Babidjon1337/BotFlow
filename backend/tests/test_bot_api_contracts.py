@@ -2,10 +2,12 @@
 
 import asyncio
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
@@ -94,3 +96,97 @@ def test_quote_endpoint_exposes_only_the_current_sellable_configuration(monkeypa
         "totalMinor": 99_000,
         "checkoutAvailable": False,
     }
+
+
+def test_dedicated_active_subscription_publishes_only_its_bot(monkeypatch):
+    bot = _legacy_bot(
+        status="draft",
+        lifecycle_status="ready",
+        pause_reason=None,
+        owner_id=9,
+        owner=SimpleNamespace(),
+    )
+    subscription = SimpleNamespace(
+        status="active",
+        ends_at=datetime.now(timezone.utc) + timedelta(days=30),
+    )
+    persisted_bot = _legacy_bot(
+        lifecycle_status="published", pause_reason=None, username="legacy_funnel_bot"
+    )
+
+    get_user_bots = AsyncMock()
+    monkeypatch.setattr(
+        api_router, "get_bot_subscription", AsyncMock(return_value=subscription)
+    )
+    monkeypatch.setattr(api_router, "get_user_bots", get_user_bots)
+    monkeypatch.setattr(api_router, "is_pro_active", lambda _owner: False)
+    monkeypatch.setattr(api_router.bot_lifecycle_service, "transition", AsyncMock())
+    monkeypatch.setattr(api_router, "_install_client_bot_webhook", AsyncMock())
+    monkeypatch.setattr(
+        api_router,
+        "set_bot_lifecycle_state",
+        AsyncMock(return_value=persisted_bot),
+    )
+
+    response = asyncio.run(
+        api_router._toggle_client_bot(
+            bot,
+            object(),
+            action="start",
+            allow_admin_entitlement_bypass=False,
+        )
+    )
+
+    assert response["botStatus"] == "active"
+    get_user_bots.assert_not_awaited()
+
+
+def test_inactive_dedicated_subscription_does_not_fall_back_to_legacy_pro(monkeypatch):
+    bot = _legacy_bot(owner=SimpleNamespace())
+    subscription = SimpleNamespace(status="inactive", ends_at=None)
+
+    monkeypatch.setattr(
+        api_router, "get_bot_subscription", AsyncMock(return_value=subscription)
+    )
+    monkeypatch.setattr(api_router, "is_pro_active", lambda _owner: True)
+
+    with pytest.raises(api_router.HTTPException) as error:
+        asyncio.run(
+            api_router._toggle_client_bot(
+                bot,
+                object(),
+                action="start",
+                allow_admin_entitlement_bypass=False,
+            )
+        )
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "Подписка этого бота неактивна или закончилась."
+
+
+def test_stopping_a_bot_does_not_read_the_r3_subscription_table(monkeypatch):
+    bot = _legacy_bot(
+        owner=SimpleNamespace(), lifecycle_status="published", pause_reason=None
+    )
+    get_subscription = AsyncMock()
+
+    monkeypatch.setattr(api_router, "get_bot_subscription", get_subscription)
+    monkeypatch.setattr(api_router.bot_lifecycle_service, "transition", AsyncMock())
+    monkeypatch.setattr(api_router, "_remove_client_bot_webhook", AsyncMock())
+    monkeypatch.setattr(
+        api_router,
+        "set_bot_lifecycle_state",
+        AsyncMock(return_value=_legacy_bot(lifecycle_status="paused", pause_reason="manual")),
+    )
+
+    response = asyncio.run(
+        api_router._toggle_client_bot(
+            bot,
+            object(),
+            action="stop",
+            allow_admin_entitlement_bypass=False,
+        )
+    )
+
+    assert response["botStatus"] == "draft"
+    get_subscription.assert_not_awaited()
