@@ -177,6 +177,29 @@ async def set_bot_status(bot_id: int, status: str) -> BotConfig | None:
         return bot
 
 
+async def set_bot_lifecycle_state(
+    bot_id: int, lifecycle_status: str, pause_reason: str | None = None
+) -> BotConfig | None:
+    """Persist an already-validated lifecycle transition with legacy dual-write."""
+    legacy_statuses = {
+        "draft": "draft",
+        "ready": "draft",
+        "published": "active",
+        "paused": "draft",
+        "archived": "archived",
+    }
+    async with async_session() as session:
+        bot = await session.get(BotConfig, bot_id)
+        if not bot:
+            return None
+        bot.lifecycle_status = lifecycle_status
+        bot.pause_reason = pause_reason
+        bot.status = legacy_statuses[lifecycle_status]
+        await session.commit()
+        await session.refresh(bot)
+        return bot
+
+
 async def assign_lifetime_license(bot_id: int) -> BotConfig | None:
     async with async_session() as session:
         bot = await session.get(BotConfig, bot_id)

@@ -125,10 +125,10 @@ migration и идемпотентный backfill новых lifecycle-полей
 
 ### Next Step
 
-Реализовать следующий R2-подшаг: перевести первый узкий legacy write-path
-`/toggle` на `BotLifecycleService`, сохраняя текущие entitlement- и Telegram
-проверки. Не менять `funnel_schema`, платёжные правила или публичный контракт;
-добавить compatibility-тесты до подключения внешних эффектов.
+Реализовать следующий R2-подшаг: аддитивно расширить DTO и readiness-ответы
+`scenarioType`, `scenarioVersion`, `lifecycleStatus`, `pauseReason` и стабильными
+машиночитаемыми кодами. Сохранить legacy `status`, user-facing reasons и запрет
+на раскрытие секретов.
 
 ### Important Files
 

@@ -24,6 +24,7 @@ from database.requests.bot_rq import (
     update_bot_config,
     delete_bot_config,
     set_bot_status,
+    set_bot_lifecycle_state,
     assign_lifetime_license,
     update_bot_funnel,
     set_media_sync_done,
@@ -72,6 +73,7 @@ from schemas.api_schemas import (
 from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active
 from services.funnel_readiness import evaluate_funnel_readiness
+from services.bot_lifecycle import BotLifecycleService
 from services.payment_link import validate_payment_credentials
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.chat_access import ChatAccessError, verify_chat_delivery
@@ -107,6 +109,16 @@ async def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
         connected_chat_ids={chat.chat_id for chat in connected_chats},
     )
     return readiness.is_ready, list(readiness.reasons)
+
+
+async def _connected_chat_ids_for_bot(bot) -> set[str]:
+    connected_chats = await list_connected_chats(bot.id)
+    return {chat.chat_id for chat in connected_chats}
+
+
+bot_lifecycle_service = BotLifecycleService(
+    connected_chat_ids_for=_connected_chat_ids_for_bot,
+)
 
 
 async def _install_client_bot_webhook(bot, request) -> None:
@@ -156,14 +168,6 @@ async def _toggle_client_bot(
     """Apply the one shared start/stop policy for owners and administrators."""
     new_status = "active" if action in ["start", "active", "activate", "true", "1"] else "draft"
 
-    if new_status == "active":
-        is_ready, reasons = await _readiness_for_bot(bot)
-        if not is_ready:
-            raise HTTPException(
-                status_code=422,
-                detail="Бот нельзя запустить: " + " ".join(reasons),
-            )
-
     if new_status == "active" and not (
         is_pro_active(bot.owner) or allow_admin_entitlement_bypass
     ):
@@ -180,12 +184,22 @@ async def _toggle_client_bot(
             if owner_bot.id != bot.id and owner_bot.status == "active":
                 await set_bot_status(owner_bot.id, "draft")
 
+    try:
+        if new_status == "active":
+            await bot_lifecycle_service.transition(bot, "published")
+        else:
+            await bot_lifecycle_service.transition(bot, "paused", reason="manual")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Бот нельзя запустить: " + str(exc)) from exc
+
     if new_status == "active":
         await _install_client_bot_webhook(bot, request)
     else:
         await _remove_client_bot_webhook(bot, request)
 
-    updated_bot = await set_bot_status(bot.id, new_status)
+    updated_bot = await set_bot_lifecycle_state(
+        bot.id, bot.lifecycle_status, bot.pause_reason
+    )
     if not updated_bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
     bot_url = f"https://t.me/{updated_bot.username}" if updated_bot.username else None
