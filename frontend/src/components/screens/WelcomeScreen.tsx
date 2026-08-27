@@ -41,7 +41,7 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
 
       <main className="mx-auto w-full max-w-6xl flex-1 px-5 pb-16 sm:px-8 lg:px-12">
         {/* ── Hero ── */}
-        <div className="grid items-center gap-14 py-10 sm:py-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)] lg:gap-16 lg:py-20">
+        <div className="grid items-center gap-14 py-10 sm:py-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)] lg:gap-16 lg:py-20 lg:pb-28">
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
@@ -284,7 +284,7 @@ function ChatPreview() {
   return (
     <motion.aside
       initial={false}
-      className="relative z-[3] -mt-14 ml-4 w-[min(330px,92%)] overflow-hidden rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-float)] sm:-mt-10 lg:absolute lg:bottom-0 lg:-left-2 lg:mt-0"
+      className="relative z-[3] -mt-14 ml-4 w-[min(330px,92%)] overflow-hidden rounded-[var(--radius-card)] border border-border bg-card shadow-[var(--shadow-float)] sm:-mt-10 lg:-bottom-20 lg:-left-2 lg:absolute lg:mt-0"
       aria-label="Как выглядит бот для клиента в Telegram"
     >
       <header className="flex items-center gap-2 border-b border-border bg-muted px-3.5 py-2.5 text-micro font-semibold text-fg-secondary">
@@ -561,15 +561,17 @@ const includedItems = [
 
 function IncludedCard() {
   return (
-    <article className="rounded-[20px] border border-border bg-card p-6 shadow-[var(--shadow-card)] sm:col-span-2">
-      <span aria-hidden className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-        <Check className="size-5" />
-      </span>
-      <p className="mt-3.5 text-micro font-semibold uppercase tracking-wide text-fg-tertiary">Уже включено</p>
-      <h3 className="mt-1.5 text-body font-semibold tracking-tight text-foreground">
-        Всё для работы с клиентами — без доплат
-      </h3>
-      <ul className="mt-3.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <article className="rounded-[20px] border border-border bg-card p-6 shadow-[var(--shadow-card)] sm:col-span-2 lg:col-span-4 lg:flex lg:items-center lg:gap-8">
+      <div className="lg:shrink-0 lg:max-w-[260px]">
+        <span aria-hidden className="flex size-10 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+          <Check className="size-5" />
+        </span>
+        <p className="mt-3.5 text-micro font-semibold uppercase tracking-wide text-fg-tertiary">Уже включено</p>
+        <h3 className="mt-1.5 text-body font-semibold tracking-tight text-foreground">
+          Всё для работы с клиентами — без доплат
+        </h3>
+      </div>
+      <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:mt-0 lg:flex-1 lg:grid-cols-3">
         {includedItems.map((item) => (
           <li key={item} className="inline-flex items-center gap-2 text-body-sm font-medium text-fg-secondary">
             <Check className="size-3.5 shrink-0 text-success" aria-hidden="true" />
