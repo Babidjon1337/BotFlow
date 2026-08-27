@@ -116,20 +116,25 @@ Account
 
 ### Current Stage
 
-R3 / Черновик, расчёт цены и публикация. R1 и R2 закрыты. Подшаги 1–4
+R3: CLOSED. R1 и R2 закрыты. Подшаги 1–4
 выполнены: совместимые `GatewayConnection` и `BotSubscription`, entitlement
 boundary, deterministic pricing contract и compatible per-bot publication
 switch. В v1 продаётся только Telegram-бот со сценарием «Воронка продаж» за
 990 ₽/мес; VK/MAX и будущие сценарии остаются «Скоро» и не могут попасть в
 quote. Если у бота есть `BotSubscription`, публикацию определяет только она;
-если записи нет — прежний PRO/lifetime маршрут. Checkout и runtime billing пока
-намеренно не переключены.
+если записи нет — прежний PRO/lifetime маршрут. Expiry job атомарно резервирует
+истёкшую подписку, снимает webhook только связанного бота и переводит его в
+`paused/subscription`; legacy PRO-expiry не трогает мигрированные боты.
+Checkout и runtime billing намеренно не переключены. Финальная проверка: 75
+backend tests passed, Alembic head `a4d2e7f93c01`, code/spec review без
+незакрытых findings.
 
 ### Next Step
 
-Провести финальный R3 review и зафиксировать результат gate. Не переключать
-legacy checkout и не начинать R4 UI до явного закрытия R3; для R4 уже создан
-visual карточки «Воронка продаж» в
+Перейти к R4 / подшагу 1: реализовать first-entry Account Workspace и честное
+отображение текущей Telegram «Воронки продаж» с заранее созданной карточкой;
+VK/MAX и будущие сценарии показывать только как disabled «Скоро». Не
+переключать legacy checkout; visual лежит в
 `frontend/public/visuals/scenarios/sales-funnel-card.png`.
 
 ### Important Files

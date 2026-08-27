@@ -84,7 +84,7 @@ Gate: миграции вперёд/назад в тестовом контур�
 
 ## R3. Черновик, расчёт цены и публикация
 
-Статус: в работе. Совместимые модели `GatewayConnection` и
+Статус: CLOSED. Совместимые модели `GatewayConnection` и
 `BotSubscription`, entitlement boundary, deterministic v1 quote и
 per-bot publication switch уже добавлены. Если у бота есть
 `BotSubscription`, публикацию определяет только она; если записи нет,
@@ -92,6 +92,11 @@ per-bot publication switch уже добавлены. Если у бота ес�
 конфигурация пока ровно одна: Telegram + «Воронка продаж» за 990 ₽/мес.
 VK, MAX и будущие сценарии отклоняются серверным pricing contract и
 показываются клиенту только как «Скоро»; checkout ещё не переключён.
+
+R3 gate закрыт: `alembic heads` указывает на `a4d2e7f93c01`, полный backend
+suite — 75 passed. Expiry job берёт подписку в атомарный lease, чтобы не
+остановить только что продлённый бот; legacy PRO-expiry исключает ботов с
+`BotSubscription`.
 
 ### Поведение
 
