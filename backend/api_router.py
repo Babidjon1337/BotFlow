@@ -74,6 +74,7 @@ from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active
 from services.funnel_readiness import evaluate_funnel_readiness
 from services.bot_lifecycle import BotLifecycleService
+from services.bot_pricing import BASE_SCENARIO_TYPE, BotPricingService
 from services.payment_link import validate_payment_credentials
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.chat_access import ChatAccessError, verify_chat_delivery
@@ -139,6 +140,7 @@ async def _connected_chat_ids_for_bot(bot) -> set[str]:
 bot_lifecycle_service = BotLifecycleService(
     connected_chat_ids_for=_connected_chat_ids_for_bot,
 )
+bot_pricing_service = BotPricingService()
 
 
 async def _install_client_bot_webhook(bot, request) -> None:
@@ -969,6 +971,26 @@ async def get_bot_readiness(bot_id: int, request: Request):
         "isReady": is_ready,
         "reasons": reasons,
         "reasonDetails": _readiness_reason_details(reasons),
+    }
+
+
+@api_router.get("/api/bots/{bot_id}/quote")
+async def get_bot_quote(bot_id: int, request: Request):
+    """Return the server-authoritative v1 quote without enabling checkout."""
+    bot = await get_owned_bot(bot_id, request)
+    scenario_type = getattr(bot, "scenario_type", None) or BASE_SCENARIO_TYPE
+    quote = bot_pricing_service.quote(scenario_type, {"telegram"})
+    return {
+        "scenarioType": quote.scenario_type,
+        "platforms": list(quote.platforms),
+        "currency": quote.currency,
+        "lineItems": [
+            {"code": item.code, "amountMinor": item.amount_minor}
+            for item in quote.line_items
+        ],
+        "subtotalMinor": quote.subtotal_minor,
+        "totalMinor": quote.total_minor,
+        "checkoutAvailable": quote.checkout_available,
     }
 
 
