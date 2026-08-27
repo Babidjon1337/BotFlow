@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -23,13 +23,13 @@
   --n-800: #1d2939;
   --n-900: #101828;
 
-  /* ── Primitive: акцент Индиго ── */
-  --p-100: #efeefe;
-  --p-200: #dcd9fd;
-  --p-300: #bdb6fa;
-  --p-500: #6c59f6;
-  --p-600: #5a45ea;
-  --p-700: #4c37d8;
+  /* ── Primitive: акцент Blue ── */
+  --p-100: #eff6ff;
+  --p-200: #dbeafe;
+  --p-300: #93c5fd;
+  --p-500: #2563eb;
+  --p-600: #1d4ed8;
+  --p-700: #1e40af;
 
   /* ── Semantic: Light theme ── */
   --background: var(--n-0);
@@ -51,7 +51,7 @@
   --primary-hover: var(--p-600);
   --primary-active: var(--p-700);
 
-  --accent: rgb(108 89 246 / 0.1);
+  --accent: rgb(37 99 235 / 0.1);
   --accent-foreground: var(--p-700);
   --ring: var(--p-300);
 
@@ -103,12 +103,12 @@
   --n-800: #e4e7ec;
   --n-900: #f4f5f7;
 
-  --p-100: #232046;
-  --p-200: #2e2a5c;
-  --p-300: #4a44a8;
-  --p-500: #8577ff;
-  --p-600: #968bff;
-  --p-700: #a99fff;
+  --p-100: #172554;
+  --p-200: #1e3a8a;
+  --p-300: #315ca8;
+  --p-500: #4d8dff;
+  --p-600: #6ba1ff;
+  --p-700: #93baff;
 
   --background: var(--n-0);
   --foreground: var(--n-900);
@@ -129,7 +129,7 @@
   --primary-hover: var(--p-600);
   --primary-active: var(--p-300);
 
-  --accent: rgb(133 119 255 / 0.16);
+  --accent: rgb(77 141 255 / 0.14);
   --accent-foreground: var(--p-600);
   --ring: var(--p-500);
 
@@ -229,7 +229,7 @@
   --color-info-soft: var(--info-soft);
   --color-overlay: var(--overlay);
 
-  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
+  --font-sans: "Onest", -apple-system, BlinkMacSystemFont,
     system-ui, sans-serif;
 
   --text-micro: 0.75rem;

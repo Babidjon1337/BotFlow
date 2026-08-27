@@ -87,8 +87,7 @@ export const Profile = () => {
                 className="transition-transform duration-1000 group-hover:scale-105"
                 style={{
                   height: "88px",
-                  background:
-                    "linear-gradient(135deg, var(--color-primary) 0%, #A855F7 100%)",
+                  background: "var(--color-primary)",
                   opacity: 0.9,
                 }}
               />
@@ -271,8 +270,7 @@ export const Profile = () => {
                   className="relative overflow-hidden transition-shadow group-hover:shadow-[0_8px_24px_-6px_rgba(124,58,237,0.4)]"
                   style={{
                     borderRadius: 20,
-                    background:
-                      "linear-gradient(135deg, #4F46E5 0%, #7C3AED 55%, #C026D3 100%)",
+                      background: "var(--color-primary)",
                   }}
                 >
                   {/* Background Effects */}
@@ -474,7 +472,7 @@ export const Profile = () => {
                     className="badge"
                     style={{
                       fontSize: "11px",
-                      background: isAdmin ? "linear-gradient(135deg, #4F46E5, #C026D3)" : undefined,
+                      background: isAdmin ? "var(--color-primary)" : undefined,
                       color: isAdmin ? "#fff" : undefined,
                     }}
                   >

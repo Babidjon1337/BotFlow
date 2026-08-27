@@ -181,7 +181,7 @@ export const Sidebar = ({ activeTab, setActiveTab, appState, setSheet, theme, to
               </div>
             </div>
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#4F46E5] to-[#C026D3] flex items-center justify-center shrink-0 shadow-md">
+              <div className="w-10 h-10 rounded-xl bg-[var(--color-primary)] flex items-center justify-center shrink-0 shadow-md">
                 <Crown size={20} className="text-white" />
               </div>
               <div>
