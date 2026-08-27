@@ -51,11 +51,7 @@ export const BotManagement = () => {
 
   if (!hasBots) {
     return (
-      <EmptyBotState
-        onCreateBot={onCreateBot}
-        title="Список ботов пуст"
-        description="Создайте своего первого Telegram-бота, чтобы начать управлять ими здесь."
-      />
+      <EmptyBotState onCreateBot={onCreateBot} />
     );
   }
 
