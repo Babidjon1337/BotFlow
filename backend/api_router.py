@@ -1058,8 +1058,16 @@ async def save_bot_funnel_endpoint(
     saved_bot = await update_bot_funnel(bot_id, schema_to_save, readiness.is_ready)
     stopped = False
     if saved_bot and saved_bot.status == "active" and not readiness.is_ready:
-        await set_bot_status(bot_id, "draft")
+        await bot_lifecycle_service.transition(saved_bot, "paused", reason="readiness")
+        await set_bot_lifecycle_state(
+            bot_id, saved_bot.lifecycle_status, saved_bot.pause_reason
+        )
         stopped = True
+    elif saved_bot and saved_bot.status == "draft" and readiness.is_ready:
+        await bot_lifecycle_service.transition(saved_bot, "ready")
+        saved_bot = await set_bot_lifecycle_state(
+            bot_id, saved_bot.lifecycle_status, saved_bot.pause_reason
+        )
     logger.info(
         "Воронка сохранена: bot_id=%s, ready=%s, stopped=%s, reasons=%s",
         bot_id,
