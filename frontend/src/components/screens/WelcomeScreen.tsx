@@ -77,9 +77,6 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
         </div>
       </motion.div>
 
-      <p className="px-1 text-meta leading-relaxed text-fg-tertiary">
-        VK, MAX, приём заявок как отдельный сценарий и Mini App появятся позже.
-      </p>
     </section>
   );
 }
