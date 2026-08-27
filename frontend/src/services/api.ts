@@ -32,6 +32,46 @@ export interface GatewayConnection {
   createdAt: string;
 }
 
+export type AudienceFilter = "all" | "paid" | "unpaid";
+
+export interface AudienceSummary {
+  all: number;
+  paid: number;
+  unpaid: number;
+}
+
+export interface AudienceLead {
+  id: number;
+  telegramId: number;
+  username: string | null;
+  firstName: string | null;
+  currentStep: string;
+  hasPurchased: boolean;
+  createdAt: string | null;
+}
+
+export type BroadcastStatus =
+  | "draft"
+  | "queued"
+  | "sending"
+  | "sent"
+  | "failed"
+  | "cancelled";
+
+export interface Broadcast {
+  id: string;
+  status: BroadcastStatus;
+  audience: AudienceFilter;
+  text: string;
+  platform: string;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  createdAt: string | null;
+  completedAt: string | null;
+  lastError: string | null;
+}
+
 export interface AdminOverview {
   users_total: number;
   bots_total: number;
@@ -546,6 +586,56 @@ export const apiService = {
         body: JSON.stringify({ leadTelegramId, tariffIds }),
       }
     );
+  },
+
+  async getAudienceSummary(botId: string | number) {
+    return fetchApi<AudienceSummary>(
+      `/api/bots/${botId}/audience/summary`
+    );
+  },
+
+  async getAudience(
+    botId: string | number,
+    audience: AudienceFilter,
+    page: number = 1,
+    limit: number = 20
+  ) {
+    const params = new URLSearchParams({
+      audience,
+      page: str(page),
+      limit: str(limit),
+    });
+    return fetchApi<{ leads: AudienceLead[]; total: number }>(
+      `/api/bots/${botId}/audience?${params.toString()}`
+    );
+  },
+
+  async getBroadcasts(botId: string | number) {
+    return fetchApi<{ broadcasts: Broadcast[] }>(
+      `/api/bots/${botId}/broadcasts`
+    );
+  },
+
+  async createBroadcast(
+    botId: string | number,
+    text: string,
+    audience: AudienceFilter
+  ) {
+    return fetchApi<Broadcast>(`/api/bots/${botId}/broadcasts`, {
+      method: "POST",
+      body: JSON.stringify({ text, audience }),
+    });
+  },
+
+  async getBroadcast(broadcastId: string) {
+    return fetchApi<Broadcast>(`/api/broadcasts/${broadcastId}`);
+  },
+
+  async retryBroadcast(broadcastId: string) {
+    return fetchApi<Broadcast>(`/api/broadcasts/${broadcastId}/retry`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
   },
 
   async createBillingCheckout(product: "basic" | "pro", email?: string) {

@@ -39,7 +39,7 @@ export const BOT_VIEWS: Array<{
   { id: 'scenario', label: 'Сценарий' },
   { id: 'platforms', label: 'Платформы' },
   { id: 'monetization', label: 'Монетизация' },
-  { id: 'broadcasts', label: 'Рассылки', comingSoon: true },
+  { id: 'broadcasts', label: 'Рассылки' },
 ];
 
 const ROUTE_KEY = 'botflow_route_v1';
@@ -107,7 +107,7 @@ export function resolveRoute(route: AppRoute, hasActiveBot: boolean, isAdmin = f
   }
   if (
     route.level === 'bot' &&
-    (route.view === 'broadcasts' || route.view === 'clients' || route.view === 'analytics')
+    (route.view === 'clients' || route.view === 'analytics')
   ) {
     return { level: 'bot', view: 'overview' };
   }

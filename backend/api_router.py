@@ -31,6 +31,14 @@ from database.requests.bot_rq import (
     set_media_sync_done,
 )
 from database.requests.user_rq import archive_leads_by_bot_id, get_lead, get_leads_by_bot_id
+from database.requests.broadcast_rq import (
+    create_broadcast,
+    get_audience_summary,
+    get_broadcast,
+    list_audience_leads,
+    list_broadcasts,
+    requeue_failed_recipients,
+)
 from database.requests.client_payment_rq import (
     ClientPaymentDeliveryRetryError,
     get_chart_data,
@@ -72,6 +80,11 @@ from schemas.api_schemas import (
     FunnelApiResponse,
     FunnelUpdateApiRequest,
     LeadApiResponse,
+    AudienceSummaryResponse,
+    AudienceListResponse,
+    BroadcastApiResponse,
+    BroadcastCreateRequest,
+    BroadcastListResponse,
 )
 from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active
@@ -1440,3 +1453,88 @@ async def get_bot_chart_endpoint(
         period = "week"
     points = await get_chart_data(bot_id, period)
     return {"points": points}
+
+
+# ── R7: аудитория и рассылки ─────────────────────────────────
+
+
+@api_router.get("/api/bots/{bot_id}/audience/summary", response_model=AudienceSummaryResponse)
+async def get_audience_summary_endpoint(bot_id: int, request: Request):
+    """Честные счётчики активной аудитории бота по фильтрам рассылок."""
+    await get_owned_bot(bot_id, request)
+    return await get_audience_summary(bot_id)
+
+
+@api_router.get("/api/bots/{bot_id}/audience", response_model=AudienceListResponse)
+async def list_audience_endpoint(
+    bot_id: int,
+    request: Request,
+    audience: str = "all",
+    search: str = None,
+    page: int = 1,
+    limit: int = 20,
+):
+    """Страница аудитории с фильтром все/оплатившие/неоплатившие."""
+    await get_owned_bot(bot_id, request)
+    leads, total = await list_audience_leads(
+        bot_id, audience=audience, page=page, limit=limit, search=search
+    )
+    return {
+        "leads": [
+            LeadApiResponse.from_orm_lead(l).model_dump(by_alias=True) for l in leads
+        ],
+        "total": total,
+    }
+
+
+@api_router.post("/api/bots/{bot_id}/broadcasts", response_model=BroadcastApiResponse)
+async def create_broadcast_endpoint(
+    bot_id: int, request: Request, body: BroadcastCreateRequest
+):
+    """Создаёт рассылку со снимком получателей и ставит в очередь отправки."""
+    bot = await get_owned_bot(bot_id, request)
+    try:
+        broadcast = await create_broadcast(bot.id, body.text, body.audience)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
+
+
+@api_router.get("/api/bots/{bot_id}/broadcasts", response_model=BroadcastListResponse)
+async def list_broadcasts_endpoint(bot_id: int, request: Request):
+    await get_owned_bot(bot_id, request)
+    broadcasts = await list_broadcasts(bot_id)
+    return {
+        "broadcasts": [
+            BroadcastApiResponse.from_orm_broadcast(b).model_dump(by_alias=True)
+            for b in broadcasts
+        ]
+    }
+
+
+async def _get_owned_broadcast(broadcast_id: UUID, request: Request):
+    """Загружает рассылку только когда её бот принадлежит пользователю."""
+    broadcast = await get_broadcast(broadcast_id)
+    if broadcast is None:
+        raise HTTPException(status_code=404, detail="Рассылка не найдена")
+    await get_owned_bot(broadcast.bot_id, request)
+    return broadcast
+
+
+@api_router.get("/api/broadcasts/{broadcast_id}", response_model=BroadcastApiResponse)
+async def get_broadcast_endpoint(broadcast_id: UUID, request: Request):
+    broadcast = await _get_owned_broadcast(broadcast_id, request)
+    return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
+
+
+@api_router.post("/api/broadcasts/{broadcast_id}/retry", response_model=BroadcastApiResponse)
+async def retry_broadcast_endpoint(broadcast_id: UUID, request: Request):
+    """Повторяет только неудачные доставки; успешные не дублируются."""
+    try:
+        broadcast = await _get_owned_broadcast(broadcast_id, request)
+        requeued = await requeue_failed_recipients(broadcast.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if requeued == 0:
+        raise HTTPException(status_code=400, detail="Нет неудачных доставок для повтора")
+    return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)

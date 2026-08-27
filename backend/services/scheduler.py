@@ -36,6 +36,11 @@ from database.models import Lead, ClientPayment
 from config import PROXY_URL
 from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
 from services.payment_fulfillment import process_client_payment_fulfillment
+from services.broadcast import run_broadcast_sending
+from database.requests.broadcast_rq import (
+    claim_queued_broadcast,
+    requeue_stale_sending_broadcasts,
+)
 
 scheduler = AsyncIOScheduler()
 shared_scheduler_session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else AiohttpSession()
@@ -131,6 +136,24 @@ async def retry_client_payment_fulfillments_job():
         await process_client_payment_fulfillment(
             payment_id, shared_scheduler_session
         )
+
+
+MAX_BROADCASTS_PER_TICK = 20
+
+
+async def process_broadcasts_job():
+    """Дозирует очередь рассылок: одна заявка за раз, чтобы не душить Telegram."""
+    try:
+        await requeue_stale_sending_broadcasts()
+        for _ in range(MAX_BROADCASTS_PER_TICK):
+            broadcast = await claim_queued_broadcast()
+            if broadcast is None:
+                return
+            await run_broadcast_sending(
+                broadcast.id, bot_session=shared_scheduler_session
+            )
+    except Exception as exc:
+        logger.error("❌ Ошибка обработки очереди рассылок: %s", exc)
 
 
 async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[dict]:
@@ -267,6 +290,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="client-payment-fulfillment",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        process_broadcasts_job,
+        trigger="interval",
+        seconds=10,
+        max_instances=1,
+        coalesce=True,
+        id="broadcast-queue",
         replace_existing=True,
     )
     scheduler.start()

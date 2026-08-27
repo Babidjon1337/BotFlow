@@ -25,6 +25,7 @@ import { AppShell } from './components/shell/AppShell';
 import { BotPlatformsScreen } from './components/screens/BotPlatformsScreen';
 import { BotMonetizationScreen } from './components/screens/BotMonetizationScreen';
 import { BotOverviewScreen } from './components/screens/BotOverviewScreen';
+import { BroadcastsScreen } from './components/screens/BroadcastsScreen';
 
 type TelegramWebApp = {
   ready?: () => void; expand?: () => void;
@@ -384,6 +385,9 @@ export default function App() {
                 bot={appState.activeBot}
                 onOpenSettings={() => setSheet('bot_settings')}
               />
+            )}
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'broadcasts' && appState.activeBot && (
+              <BroadcastsScreen key="broadcasts" bot={appState.activeBot} />
             )}
           </AnimatePresence>
         </Suspense>

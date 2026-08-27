@@ -392,6 +392,78 @@ class ScheduledTask(Base):
     lead: Mapped["Lead"] = relationship(back_populates="tasks")
 
 
+# ==========================================
+# 5. BROADCASTS (mass messages to a bot audience)
+# ==========================================
+class Broadcast(Base):
+    """A mass message from one client bot to a filtered slice of its leads.
+
+    Recipients are snapshotted at creation time, so audience changes never
+    alter an already created broadcast and counting stays deterministic.
+    """
+
+    __tablename__ = "broadcasts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+
+    # draft -> queued -> sending -> sent | failed | cancelled (scheduled comes in R7.3)
+    status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
+
+    # Аудитория: all | paid | unpaid
+    audience: Mapped[str] = mapped_column(String(16), default="all")
+
+    # Обычный текст без разметки; лимит Telegram — 4096 символов
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    platform: Mapped[str] = mapped_column(String(16), default="telegram")
+
+    total_recipients: Mapped[int] = mapped_column(Integer, default=0)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Защита от параллельной обработки двумя воркерами
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+    bot: Mapped["BotConfig"] = relationship()
+    recipients: Mapped[list["BroadcastRecipient"]] = relationship(
+        back_populates="broadcast", cascade="all, delete-orphan"
+    )
+
+
+class BroadcastRecipient(Base):
+    """Delivery state for one lead inside one broadcast (dedup guarantee)."""
+
+    __tablename__ = "broadcast_recipients"
+    __table_args__ = (
+        UniqueConstraint("broadcast_id", "lead_id", name="uq_broadcast_recipient"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    broadcast_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("broadcasts.id", ondelete="CASCADE"), index=True
+    )
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+
+    # pending -> sent | failed
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    broadcast: Mapped["Broadcast"] = relationship(back_populates="recipients")
+    lead: Mapped["Lead"] = relationship()
+
+
 engine = create_async_engine(url=DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 async def init_models():

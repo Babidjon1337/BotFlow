@@ -265,3 +265,63 @@ class LeadApiResponse(BaseModel):
 class LeadListApiResponse(BaseModel):
     leads: List[LeadApiResponse]
     total: int
+
+
+# ── R7: рассылки ─────────────────────────────────────────────
+AudienceFilter = Literal["all", "paid", "unpaid"]
+
+
+class AudienceSummaryResponse(BaseModel):
+    all: int
+    paid: int
+    unpaid: int
+
+
+class AudienceListResponse(BaseModel):
+    leads: List[LeadApiResponse]
+    total: int
+
+
+class BroadcastCreateRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=4096)
+    audience: AudienceFilter = "all"
+
+
+class BroadcastApiResponse(BaseModel):
+    id: str
+    status: str
+    audience: str
+    text: str
+    platform: str = "telegram"
+    total_recipients: int = Field(..., alias="totalRecipients")
+    sent_count: int = Field(..., alias="sentCount")
+    failed_count: int = Field(..., alias="failedCount")
+    created_at: Optional[str] = Field(None, alias="createdAt")
+    completed_at: Optional[str] = Field(None, alias="completedAt")
+    last_error: Optional[str] = Field(None, alias="lastError")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @classmethod
+    def from_orm_broadcast(cls, broadcast) -> "BroadcastApiResponse":
+        return cls(
+            id=str(broadcast.id),
+            status=broadcast.status,
+            audience=broadcast.audience,
+            text=broadcast.text,
+            platform=broadcast.platform,
+            total_recipients=broadcast.total_recipients,
+            sent_count=broadcast.sent_count,
+            failed_count=broadcast.failed_count,
+            created_at=(
+                broadcast.created_at.isoformat() if broadcast.created_at else None
+            ),
+            completed_at=(
+                broadcast.completed_at.isoformat() if broadcast.completed_at else None
+            ),
+            last_error=broadcast.last_error,
+        )
+
+
+class BroadcastListResponse(BaseModel):
+    broadcasts: List[BroadcastApiResponse]
