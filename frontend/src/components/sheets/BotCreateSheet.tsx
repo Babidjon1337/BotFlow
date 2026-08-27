@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bot, KeyRound, ExternalLink, ArrowRight, ArrowLeft, CheckCircle2, Info, CreditCard, AlertTriangle, LockKeyhole } from 'lucide-react';
-import { PAYMENT_PROVIDERS } from '../../constants';
-import type { PaymentProvider } from '../../types';
+import { useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowLeft, ArrowRight, Bot, CheckCircle2, KeyRound, LockKeyhole, MessageCircleMore, WalletCards, X } from 'lucide-react';
 import { useViewportHeight } from '../../hooks';
+import { PlatformGlyph } from '../common/platform';
 
 interface BotCreateSheetProps {
   onClose: () => void;
@@ -15,7 +14,6 @@ interface BotCreateSheetProps {
 type BotCreateData = {
   displayName: string;
   token: string;
-  paymentProvider?: PaymentProvider;
   paymentCreds: Record<string, string>;
   offerUrl: string;
 };
@@ -25,49 +23,26 @@ type TelegramWebApp = {
   HapticFeedback?: { notificationOccurred: (type: 'success' | 'error' | 'warning') => void };
 };
 
-const previousStep = (current: 1 | 2 | 3): 1 | 2 | 3 => current === 1 ? 1 : current === 2 ? 1 : 2;
-const nextStep = (current: 1 | 2 | 3): 1 | 2 | 3 => current === 3 ? 3 : current === 1 ? 2 : 3;
+type Step = 1 | 2 | 3;
 
-const PROVIDER_INFO: Record<PaymentProvider, { label: string, logo: string, color: string }> = {
-  yookassa: { label: 'ЮKassa', logo: '/yookassa.png', color: '#3390ec' },
-  robokassa: { label: 'Robokassa', logo: '/robokassa.png', color: '#af52de' },
-  prodamus: { label: 'Prodamus', logo: '/prodamus.png', color: '#ff9500' }
-};
+const stepLabels = ['Сценарий', 'Площадки', 'Черновик'];
+const previousStep = (current: Step): Step => current === 1 ? 1 : current === 2 ? 1 : 2;
+const nextStep = (current: Step): Step => current === 3 ? 3 : current === 1 ? 2 : 3;
 
-const PROVIDER_INSTRUCTIONS: Record<PaymentProvider, string> = {
-  yookassa: "Ключи API находятся в кабинете ЮKassa: раздел Интеграция -> Ключи API.",
-  robokassa: "Технические данные (логин и пароли) находятся в настройках магазина Robokassa.",
-  prodamus: "Секретный токен выдается технической поддержкой Продамуса при интеграции."
-};
-
+/** Последовательное создание черновика. Оплата и публикация остаются отдельными действиями. */
 export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: BotCreateSheetProps) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<Step>(1);
   const [isCreating, setIsCreating] = useState(false);
-  const vh = useViewportHeight();
-
-  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-    // Wait for the keyboard to slide up and layout to resize
-    setTimeout(() => {
-      e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 400);
-  };
-
-  // Step 1: Basic
   const [name, setName] = useState('');
   const [token, setToken] = useState('');
+  const viewportHeight = useViewportHeight();
 
-  // Step 2: Payment
-  const [skipPayment, setSkipPayment] = useState(false);
-  const [provider, setProvider] = useState<PaymentProvider>('yookassa');
-  const [keys, setKeys] = useState<Record<string, string>>({});
+  const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
+    window.setTimeout(() => event.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
+  };
 
-  // Step 3: Offer
-  const [offerUrl, setOfferUrl] = useState('');
-
-  // TG BackButton wiring
   useEffect(() => {
-    const tg = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
-    const backButton = tg?.BackButton;
+    const backButton = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp?.BackButton;
     if (!backButton) return;
     backButton.show();
     const handler = () => {
@@ -80,364 +55,84 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
       backButton.offClick(handler);
       backButton.hide();
     };
-  }, [isCreating, step, onClose]);
+  }, [isCreating, onClose, step]);
 
-
-
-  const canGoNext1 = name.trim().length > 0;
-  
-  const currentFields = useMemo(() => PAYMENT_PROVIDERS[provider], [provider]);
-  
-  const canGoNext2 = skipPayment || currentFields.every(f => (keys[f.key] || '').trim() !== '');
-  
-  const handleCreate = async () => {
+  const createBot = async () => {
     if (!navigator.onLine) {
       onError?.('Отсутствует подключение к интернету. Проверьте сеть.');
       return;
     }
-
     setIsCreating(true);
     onBusyChange?.(true);
     try {
-      await onCreate({
-        displayName: name.trim(),
-        token: token.trim(),
-        paymentProvider: skipPayment ? undefined : provider,
-        paymentCreds: skipPayment ? {} : keys,
-        offerUrl: offerUrl.trim(),
-      });
-      const tg = (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
-      tg?.HapticFeedback?.notificationOccurred('success');
+      await onCreate({ displayName: name.trim(), token: token.trim(), paymentCreds: {}, offerUrl: '' });
+      (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     } catch (error) {
-      onError?.(error instanceof Error ? error.message : 'Ошибка при создании бота');
+      onError?.(error instanceof Error ? error.message : 'Не удалось создать бота.');
     } finally {
       setIsCreating(false);
       onBusyChange?.(false);
     }
   };
 
+  const nextDisabled = step === 1 && !name.trim();
+  const createDisabled = !token.includes(':') || isCreating;
+
   return (
     <>
-      {/* Dim backdrop */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={isCreating ? undefined : onClose}
-        className="fixed inset-0 bg-black/40 backdrop-blur-md z-[100]"
-      />
-      
-      {/* Centering wrapper */}
-      <div 
-        className="fixed inset-x-0 top-0 z-[101] flex flex-col justify-end lg:justify-center items-center pointer-events-none p-0 lg:p-4"
-        style={{ height: vh ? `${vh}px` : '100dvh' }}
-      >
-        <motion.div
-          initial={{ y: '100%', opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: '100%', opacity: 0 }}
-          transition={{ type: 'spring', damping: 30, stiffness: 200 }}
-          className="w-full h-full lg:h-auto lg:max-w-[500px] bg-[var(--color-surface)] lg:rounded-[32px] shadow-2xl pointer-events-auto flex flex-col border border-transparent lg:border-[var(--color-border)] overflow-hidden"
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={isCreating ? undefined : onClose} className="fixed inset-0 z-[100] bg-[color:var(--overlay)]" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-[101] flex h-full items-end justify-center lg:items-center lg:p-4" style={{ height: viewportHeight ? `${viewportHeight}px` : '100dvh' }}>
+        <motion.section
+          role="dialog" aria-modal="true" aria-labelledby="bot-create-title"
+          initial={{ opacity: 0, y: '100%' }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: '100%' }} transition={{ type: 'spring', damping: 30, stiffness: 240 }}
+          className="pointer-events-auto flex h-full w-full flex-col overflow-hidden bg-card lg:h-auto lg:max-h-[min(760px,calc(100dvh-32px))] lg:max-w-[560px] lg:rounded-[var(--radius-sheet)] lg:border lg:border-border lg:shadow-float"
         >
-          {/* Header */}
-          <div className="flex flex-col items-center justify-center px-6 pb-4 border-b border-[var(--color-border)] shrink-0 bg-[var(--color-surface)] relative z-10 gap-2 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:pt-5">
-            <h2 className="text-[18px] md:text-[20px] font-bold text-[var(--color-foreground)] tracking-tight">Создание бота</h2>
-            <div className="flex items-center gap-1.5 mt-1">
-              {[1, 2, 3].map((s) => (
-                <div 
-                  key={s} 
-                  className="h-1.5 rounded-full transition-all duration-300" 
-                  style={{ 
-                    width: s === step ? '24px' : '12px', 
-                    background: s <= step ? 'var(--color-primary)' : 'var(--color-border)' 
-                  }} 
-                />
-              ))}
-            </div>
-            {/* Desktop Close Button (hidden on mobile) */}
-            <motion.button 
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              onClick={onClose}
-              disabled={isCreating}
-              className="absolute right-4 top-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:top-1/2 lg:-translate-y-1/2 w-8 h-8 hidden lg:flex items-center justify-center rounded-full hover:bg-[var(--color-surface-2)] transition-colors text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
-            >
-              <X size={18} />
-            </motion.button>
-          </div>
+          <header className="relative shrink-0 border-b border-border bg-card px-5 pb-4 pt-[max(20px,calc(env(safe-area-inset-top,0px)+16px))] lg:px-6 lg:pt-5">
+            <div className="pr-11"><p className="text-meta font-medium text-fg-secondary">Новый бот</p><h2 id="bot-create-title" className="mt-1 text-title font-semibold">Создание бота</h2></div>
+            <button type="button" onClick={onClose} disabled={isCreating} aria-label="Закрыть создание бота" className="absolute right-4 top-[max(16px,calc(env(safe-area-inset-top,0px)+12px))] inline-flex size-11 items-center justify-center rounded-[var(--radius-control)] text-fg-secondary transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50 lg:right-5 lg:top-4"><X className="size-5" aria-hidden="true" /></button>
+            <ol className="mt-5 grid grid-cols-3 gap-2" aria-label="Шаги создания бота">
+              {stepLabels.map((label, index) => {
+                const number = index + 1;
+                const current = step === number;
+                const done = step > number;
+                return <li key={label} className="min-w-0"><div className="flex items-center gap-2"><span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-micro font-semibold ${done || current ? 'bg-primary text-primary-foreground' : 'bg-muted text-fg-tertiary'}`}>{done ? <CheckCircle2 className="size-3.5" aria-hidden="true" /> : number}</span><span className={`truncate text-micro font-medium ${current ? 'text-foreground' : 'text-fg-tertiary'}`}>{label}</span></div></li>;
+              })}
+            </ol>
+          </header>
 
-          {/* Content Container */}
-          <div className="overflow-y-auto flex-1 relative bg-[var(--color-surface)] hide-scrollbar">
-            <div className="p-5 md:p-8 pb-10 min-h-full flex flex-col justify-center">
-              <AnimatePresence mode="popLayout" initial={false}>
-            {step === 1 && (
-              <motion.div
-                key="step1"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
-                className="flex flex-col gap-5"
-              >
-                <div className="text-center mb-2">
-                  <div className="w-16 h-16 mx-auto rounded-2xl bg-[var(--color-primary-soft)] flex items-center justify-center mb-4">
-                    <Bot size={32} className="text-[var(--color-primary)]" />
-                  </div>
-                  <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">Выберите сценарий и назовите будущего бота. Токен понадобится только на следующем шаге.</p>
-                </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="mx-auto flex min-h-full w-full max-w-lg flex-col justify-center p-5 pb-8 sm:p-6">
+              <AnimatePresence mode="wait" initial={false}>
+                {step === 1 && <motion.div key="scenario" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }} className="space-y-5">
+                  <div><span className="flex size-11 items-center justify-center rounded-[var(--radius-card)] bg-accent text-accent-foreground"><Bot className="size-5" aria-hidden="true" /></span><h3 className="mt-4 text-title font-semibold">Название и сценарий</h3><p className="mt-2 text-body-sm leading-relaxed text-fg-secondary">Сначала создайте основу. Сценарий можно будет настроить подробнее в редакторе.</p></div>
+                  <label className="block"><span className="text-body-sm font-medium text-foreground">Название бота</span><span className="mt-1 block text-meta text-fg-secondary">Его видите только вы в BotFlow.</span><input type="text" autoFocus placeholder="Например, Магазин одежды" value={name} onChange={(event) => setName(event.target.value)} onFocus={handleFocus} className="input mt-3 w-full" /></label>
+                  <article className="rounded-[var(--radius-card)] border border-primary/20 bg-accent p-4"><div className="flex gap-3"><img src="/visuals/scenarios/sales-funnel-card.png" alt="Воронка продаж" className="size-14 shrink-0 rounded-[var(--radius-control)] object-cover" /><div className="min-w-0"><p className="text-body-sm font-semibold text-foreground">Воронка продаж</p><p className="mt-1 text-meta leading-relaxed text-fg-secondary">Сообщения, заявки и рассылки для общения с клиентами.</p></div></div></article>
+                  <div className="grid grid-cols-2 gap-3"><article aria-disabled="true" className="rounded-[var(--radius-card)] border border-dashed border-border bg-muted p-3 text-fg-tertiary"><LockKeyhole className="size-4" aria-hidden="true" /><p className="mt-2 text-meta font-medium">Приём заявок</p><p className="mt-1 text-micro">Скоро добавим</p></article><article aria-disabled="true" className="rounded-[var(--radius-card)] border border-dashed border-border bg-muted p-3 text-fg-tertiary"><LockKeyhole className="size-4" aria-hidden="true" /><p className="mt-2 text-meta font-medium">Mini App</p><p className="mt-1 text-micro">Скоро добавим</p></article></div>
+                </motion.div>}
 
-                <div>
-                  <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
-                    Внутреннее название (для себя)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Например: Мой магазин"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onFocus={handleFocus}
-                    className="input w-full"
-                  />
-                </div>
-                <div className="rounded-2xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-soft)] p-3 text-left">
-                  <div className="flex gap-3"><img src="/visuals/scenarios/sales-funnel-card.png" alt="Воронка продаж" className="size-14 rounded-xl object-cover" /><div><p className="text-sm font-semibold text-[var(--color-foreground)]">Воронка продаж</p><p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">Сообщения, заявки и рассылки в Telegram. 990 ₽ в месяц после публикации.</p></div></div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-[var(--color-foreground-tertiary)]"><span aria-disabled className="rounded-xl border border-dashed border-[var(--color-border)] p-2"><img src="/visuals/scenarios/applications-card.png" alt="" className="mb-1 size-10 object-contain" /><span className="flex items-center gap-1"><LockKeyhole size={14} />Приём заявок</span><span className="block mt-1">Скоро добавим</span></span><span aria-disabled className="rounded-xl border border-dashed border-[var(--color-border)] p-2"><img src="/visuals/scenarios/mini-app-card.png" alt="" className="mb-1 size-10 object-contain" /><span className="flex items-center gap-1"><LockKeyhole size={14} />Mini App</span><span className="block mt-1">Скоро добавим</span></span></div>
-              </motion.div>
-            )}
+                {step === 2 && <motion.div key="platforms" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }} className="space-y-5">
+                  <div><span className="flex size-11 items-center justify-center rounded-[var(--radius-card)] bg-accent text-accent-foreground"><MessageCircleMore className="size-5" aria-hidden="true" /></span><h3 className="mt-4 text-title font-semibold">Где будет работать бот</h3><p className="mt-2 text-body-sm leading-relaxed text-fg-secondary">Одна площадка включена в базовую подписку. Вы сможете расширить конфигурацию, когда это появится в BotFlow.</p></div>
+                  <article className="flex items-center gap-3 rounded-[var(--radius-card)] border border-primary/20 bg-accent p-4"><PlatformGlyph platform="telegram" size={22} className="text-accent-foreground" /><div className="min-w-0 flex-1"><p className="text-body-sm font-semibold text-foreground">Telegram</p><p className="mt-0.5 text-meta text-fg-secondary">Включён в базовую подписку</p></div><CheckCircle2 className="size-5 text-primary" aria-label="Выбрано" /></article>
+                  <div className="grid grid-cols-2 gap-3">{(['vk', 'max'] as const).map(platform => <article key={platform} aria-disabled="true" className="rounded-[var(--radius-card)] border border-dashed border-border bg-muted p-4 text-fg-tertiary"><PlatformGlyph platform={platform} size={20} className="text-fg-tertiary" /><p className="mt-3 text-body-sm font-medium">{platform === 'vk' ? 'VK' : 'MAX'}</p><p className="mt-1 text-meta">Скоро добавим</p></article>)}</div>
+                  <div className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><p className="text-body-sm font-semibold text-foreground">Рассылки и заявки включены</p><p className="mt-1 text-meta leading-relaxed text-fg-secondary">Отдельных доплат за сообщения, заявки или количество лидов нет.</p></div>
+                </motion.div>}
 
-            {step === 2 && (
-              <motion.div
-                key="step2"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
-                className="flex flex-col gap-5"
-              >
-                <div className="text-center mb-2">
-                  <div className="w-16 h-16 mx-auto rounded-2xl bg-[var(--color-success-soft)] flex items-center justify-center mb-4">
-                    <CreditCard size={32} className="text-[var(--color-success)]" />
-                  </div>
-                  <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">
-                    Как вы хотите принимать оплату от пользователей?
-                  </p>
-                </div>
-
-                <div>
-                  <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">Telegram Token <span className="text-[var(--color-danger)]">*</span></label>
-                  <div className="relative"><KeyRound size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" /><input type="text" placeholder="1234567890:AAH..." value={token} onChange={(e) => setToken(e.target.value)} onFocus={handleFocus} className="input w-full" style={{ paddingLeft: '40px' }} /></div>
-                  {token && !token.includes(':') ? <p className="mt-1.5 text-[12px] text-[var(--color-danger)]">Некорректный формат токена</p> : <p className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">Telegram доступен сейчас. VK и MAX появятся позже.</p>}
-                </div>
-
-                <label className="flex items-center justify-between cursor-pointer bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-all">
-                  <div className="flex flex-col">
-                    <span className="text-[14px] font-medium text-[var(--color-foreground)]">Пропустить настройку платежей</span>
-                    <span className="text-[12px] text-[var(--color-foreground-secondary)] mt-0.5">Вы сможете настроить кассу позже</span>
-                  </div>
-                  <div 
-                    className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-300" 
-                    style={{ backgroundColor: skipPayment ? 'var(--color-primary)' : 'var(--color-border-strong)' }}
-                  >
-                    <span 
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 shadow-sm ${skipPayment ? 'translate-x-6' : 'translate-x-1'}`} 
-                    />
-                  </div>
-                  {/* Скрытый инпут для логики */}
-                  <input 
-                    type="checkbox" 
-                    checked={skipPayment} 
-                    onChange={(e) => setSkipPayment(e.target.checked)}
-                    className="hidden"
-                  />
-                </label>
-
-                <div 
-                  className={`flex flex-col gap-5 transition-all duration-300 ${skipPayment ? 'opacity-30 pointer-events-none grayscale select-none' : ''}`}
-                >
-                  <div>
-                    <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-2.5">Выберите провайдера</label>
-                    <div className="grid grid-cols-3 gap-3">
-                      {(Object.keys(PAYMENT_PROVIDERS) as PaymentProvider[]).map(p => {
-                        const info = PROVIDER_INFO[p];
-                        const isSelected = provider === p;
-                        
-                        return (
-                          <motion.button
-                            key={p}
-                            whileHover={{ scale: 1.02 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => { setProvider(p); setKeys({}); }}
-                            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-colors cursor-pointer hover:bg-[var(--color-surface-2)]`}
-                            style={{
-                              borderColor: isSelected ? info.color : 'var(--color-border)',
-                              background: isSelected ? `${info.color}10` : 'var(--color-surface)',
-                              boxShadow: isSelected ? `0 0 0 1px ${info.color}20, var(--shadow-card)` : 'none'
-                            }}
-                          >
-                            <img src={info.logo} alt={info.label} className="w-8 h-8 rounded mb-2 object-contain" />
-                            <span style={{ fontSize: '12px', fontWeight: isSelected ? 600 : 500, color: isSelected ? 'var(--color-foreground)' : 'var(--color-foreground-secondary)' }}>
-                              {info.label}
-                            </span>
-                          </motion.button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                    className="flex items-start gap-3 p-3 rounded-xl"
-                    style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}
-                  >
-                    <Info size={16} className="mt-0.5" style={{ color: PROVIDER_INFO[provider].color, flexShrink: 0 }} />
-                    <p className="text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
-                      {PROVIDER_INSTRUCTIONS[provider]}
-                    </p>
-                  </motion.div>
-
-                  <div className="space-y-4">
-                    {currentFields.map((f) => (
-                      <div key={f.key}>
-                        <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">{f.label}</label>
-                        <input
-                          type="text"
-                          placeholder={f.hint}
-                          value={keys[f.key] || ''}
-                          onChange={(e) => setKeys(prev => ({ ...prev, [f.key]: e.target.value }))}
-                          onFocus={handleFocus}
-                          className="input w-full"
-                          disabled={skipPayment}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {step === 3 && (
-              <motion.div
-                key="step3"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
-                className="flex flex-col gap-5"
-              >
-                {skipPayment ? (
-                  <div className="text-center mb-2 flex flex-col items-center">
-                    <div className="w-16 h-16 rounded-2xl bg-[var(--color-warning-soft)] flex items-center justify-center mb-4">
-                      <AlertTriangle size={32} className="text-[var(--color-warning)]" />
-                    </div>
-                    <h3 className="text-[18px] font-bold text-[var(--color-foreground)] mb-2">Без платежной системы</h3>
-                    <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">
-                      Вы пропустили настройку платежей. Пользователи не смогут оплачивать доступ. Вы можете настроить кассу позже в разделе "Настройки бота".
-                    </p>
-                    <div className="mt-6 bg-[var(--color-primary-soft)] p-4 rounded-2xl border border-[var(--color-primary)]/20 w-full text-left">
-                      <h4 className="text-[14px] font-semibold text-[var(--color-primary)] flex items-center gap-2 mb-2">
-                        <CheckCircle2 size={16} />
-                        Всё готово!
-                      </h4>
-                      <p className="text-[13px] text-[var(--color-primary)]/80 leading-relaxed">
-                        Нажмите кнопку ниже, чтобы завершить настройку и перейти к визуальному редактору сообщений.
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="text-center mb-2">
-                      <div className="w-16 h-16 mx-auto rounded-2xl bg-[var(--color-success-soft)] flex items-center justify-center mb-4">
-                        <ExternalLink size={32} className="text-[var(--color-success)]" />
-                      </div>
-                      <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">
-                        Последний шаг: укажите ссылку на публичную оферту или условия использования, чтобы соблюдать правила платёжных систем.
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
-                        Ссылка на оферту
-                      </label>
-                      <input
-                        type="url"
-                        placeholder="https://mysite.com/offer"
-                        value={offerUrl}
-                        onChange={(e) => setOfferUrl(e.target.value)}
-                        onFocus={handleFocus}
-                        className="input w-full"
-                      />
-                      <p className="text-[12px] text-[var(--color-foreground-tertiary)] mt-2">
-                        Можно настроить позже в разделе "Главные настройки".
-                      </p>
-                    </div>
-
-                    <div className="mt-4 bg-[var(--color-primary-soft)] p-4 rounded-2xl border border-[var(--color-primary)]/20">
-                      <h4 className="text-[14px] font-semibold text-[var(--color-primary)] flex items-center gap-2 mb-2">
-                        <CheckCircle2 size={16} />
-                        Всё готово!
-                      </h4>
-                      <p className="text-[13px] text-[var(--color-primary)]/80 leading-relaxed">
-                        Нажмите кнопку ниже, чтобы завершить настройку и перейти к визуальному редактору сообщений.
-                      </p>
-                    </div>
-                  </>
-                )}
-              </motion.div>
-            )}
-            </AnimatePresence>
+                {step === 3 && <motion.div key="draft" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }} className="space-y-5">
+                  <div><span className="flex size-11 items-center justify-center rounded-[var(--radius-card)] bg-success-soft text-success"><WalletCards className="size-5" aria-hidden="true" /></span><h3 className="mt-4 text-title font-semibold">Черновик и публикация</h3><p className="mt-2 text-body-sm leading-relaxed text-fg-secondary">Создание черновика бесплатно. Подписка потребуется, когда бот будет готов к публикации.</p></div>
+                  <article className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-body-sm font-semibold text-foreground">Воронка продаж · Telegram</p><p className="mt-1 text-meta text-fg-secondary">Базовая подписка бота</p></div><p className="shrink-0 text-title font-semibold text-foreground">990 ₽<span className="text-body-sm font-medium text-fg-secondary">/мес</span></p></div><p className="mt-3 border-t border-border pt-3 text-meta leading-relaxed text-fg-secondary">Оплата не потребуется сейчас. Кассу, оферту и детали сценария можно настроить после создания.</p></article>
+                  <label className="block"><span className="text-body-sm font-medium text-foreground">Токен Telegram</span><span className="mt-1 block text-meta text-fg-secondary">Нужен, чтобы безопасно привязать бота к вашему аккаунту.</span><span className="relative mt-3 block"><KeyRound className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-fg-tertiary" aria-hidden="true" /><input type="password" autoComplete="off" placeholder="1234567890:AAH…" value={token} onChange={(event) => setToken(event.target.value)} onFocus={handleFocus} className="input w-full pl-10" /></span>{token && !token.includes(':') && <p className="mt-2 text-meta text-danger">Проверьте формат токена из @BotFather.</p>}</label>
+                  <div className="flex gap-3 rounded-[var(--radius-card)] border border-border bg-muted p-4"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" /><p className="text-meta leading-relaxed text-fg-secondary">После создания вы перейдёте к редактору сценария. Бот не будет опубликован автоматически.</p></div>
+                </motion.div>}
+              </AnimatePresence>
             </div>
           </div>
 
-        {/* Footer */}
-        <div className="p-5 border-t border-[var(--color-border)] flex gap-3 shrink-0 bg-[var(--color-surface)] relative z-10">
-          {step > 1 && (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={() => setStep(previousStep)}
-              className="h-[52px] px-6 rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[1]"
-              style={{ background: 'var(--color-surface-2)', color: 'var(--color-foreground)', border: '1px solid var(--color-border)' }}
-            >
-              <ArrowLeft size={20} />
-            </motion.button>
-          )}
-
-          {step < 3 ? (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={() => setStep(nextStep)}
-              disabled={(step === 1 && !canGoNext1) || (step === 2 && (!token.includes(':') || !canGoNext2))}
-              className="h-[52px] rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[2] text-white disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))', boxShadow: '0 8px 16px -6px rgba(99,102,241,0.4)' }}
-            >
-              Далее
-              <ArrowRight size={18} className="ml-2" />
-            </motion.button>
-          ) : (
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={handleCreate}
-              disabled={isCreating}
-              className="h-[52px] rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[2] text-white disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, var(--color-success), #10B981)', boxShadow: '0 8px 16px -6px rgba(16,185,129,0.4)' }}
-            >
-              {isCreating ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  Создать бота
-                  <CheckCircle2 size={18} className="ml-2" />
-                </>
-              )}
-            </motion.button>
-          )}
-        </div>
-      </motion.div>
+          <footer className="flex shrink-0 gap-3 border-t border-border bg-card px-5 pb-[max(20px,calc(env(safe-area-inset-bottom,0px)+12px))] pt-4 lg:px-6 lg:pb-5">
+            {step > 1 && <button type="button" onClick={() => setStep(previousStep)} disabled={isCreating} aria-label="Назад" className="inline-flex min-h-12 items-center justify-center rounded-[var(--radius-control)] border border-border bg-muted px-4 text-fg-secondary transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50"><ArrowLeft className="size-5" aria-hidden="true" /></button>}
+            {step < 3 ? <button type="button" onClick={() => setStep(nextStep)} disabled={nextDisabled} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary px-5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">Далее<ArrowRight className="size-4" aria-hidden="true" /></button> : <button type="button" onClick={createBot} disabled={createDisabled} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary px-5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">{isCreating ? <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/35 border-t-primary-foreground" aria-label="Создаём бота" /> : <><Bot className="size-4" aria-hidden="true" />Создать черновик</>}</button>}
+          </footer>
+        </motion.section>
       </div>
     </>
   );
 };
-
