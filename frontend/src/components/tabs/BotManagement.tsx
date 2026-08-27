@@ -13,7 +13,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { EmptyBotState } from "../EmptyBotState";
+import { WelcomeScreen } from "../screens/WelcomeScreen";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useBotSelectionGuard } from "../../hooks/useBotSelectionGuard";
@@ -50,9 +50,7 @@ export const BotManagement = () => {
   const userId = tg?.initDataUnsafe?.user?.id || 123456;
 
   if (!hasBots) {
-    return (
-      <EmptyBotState onCreateBot={onCreateBot} />
-    );
+    return <WelcomeScreen onCreateBot={onCreateBot} />;
   }
 
   const activeBots = bots.filter((b) => b.status === "active").length;
