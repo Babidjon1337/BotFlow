@@ -889,6 +889,9 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         # Keep the webhook only for the owner's /start synchronization, but do
         # not leave the replacement bot publicly serving an incomplete funnel.
         update_data["status"] = "draft"
+        if getattr(bot, "lifecycle_status", None) != "archived" and bot.status != "archived":
+            update_data["lifecycle_status"] = "paused"
+            update_data["pause_reason"] = "integration"
         # Telegram file_id values belong to a particular bot token.  Never let
         # a new token reuse files uploaded through the previous bot.
         schema = dict(bot.funnel_schema or {})
