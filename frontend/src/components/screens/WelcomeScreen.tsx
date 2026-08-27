@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Bot, CheckCircle2, Megaphone, Rocket } from 'lucide-react';
+import { ArrowRight, Megaphone, MessageCircleMore, Rocket, Store } from 'lucide-react';
 import { PlatformGlyph, type PlatformId } from '../common/platform';
 
 interface WelcomeScreenProps {
@@ -12,10 +12,10 @@ const platforms: Array<{ id: PlatformId; label: string }> = [
   { id: 'max', label: 'MAX' },
 ];
 
-const benefits = [
-  { icon: Bot, title: 'Воронка продаж', text: 'Ведите клиента от первого сообщения до оплаты.' },
-  { icon: Megaphone, title: 'Рассылки включены', text: 'Общайтесь с аудиторией без отдельного модуля.' },
-  { icon: CheckCircle2, title: 'Начните с черновика', text: 'Соберите сценарий и публикуйте, когда будете готовы.' },
+const scenarios = [
+  { icon: MessageCircleMore, title: 'Воронка продаж', text: 'Знакомит с предложением и ведёт клиента к оплате.' },
+  { icon: Megaphone, title: 'Приём заявок', text: 'Собирает обращения и помогает не потерять клиента.' },
+  { icon: Store, title: 'Mini App', text: 'Показывает каталог и помогает оформить заказ.' },
 ];
 
 /** Полноэкранный первый вход: объясняет ценность продукта до перехода к созданию бота. */
@@ -23,57 +23,62 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
   return (
     <section className="flex min-h-full w-full flex-col bg-background">
       <header className="flex min-h-16 items-center justify-between border-b border-border px-5 sm:px-8 lg:px-12">
-        <div className="inline-flex items-center gap-2 text-body-sm font-semibold text-foreground">
-          <span className="flex size-8 items-center justify-center rounded-[var(--radius-control)] bg-primary text-primary-foreground">
-            <Bot className="size-4" aria-hidden="true" />
-          </span>
+        <div className="inline-flex items-center gap-2.5 text-body-sm font-semibold text-foreground">
+          <img src="/logo_BotFlow.png" alt="Логотип BotFlow" className="size-9 rounded-[var(--radius-control)] object-cover" />
           BotFlow
         </div>
-        <span className="text-meta text-fg-secondary">Продажи в мессенджерах</span>
+        <span className="hidden text-meta text-fg-secondary sm:inline">Продажи в мессенджерах</span>
       </header>
 
-      <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-10 px-5 py-10 sm:px-8 sm:py-14 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)] lg:gap-16 lg:px-12">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="max-w-2xl">
-          <p className="text-body-sm font-medium text-primary">Конструктор ботов для бизнеса</p>
-          <h1 className="mt-4 text-display font-semibold tracking-tight text-foreground sm:text-display-xl">
-            Продавайте в мессенджерах — без сложной настройки
-          </h1>
-          <p className="mt-5 max-w-xl text-body leading-relaxed text-fg-secondary">
-            BotFlow помогает собрать воронку, вести диалог с клиентом и принимать оплату в одном рабочем пространстве.
-          </p>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-5 py-9 sm:px-8 sm:py-12 lg:px-12 lg:py-16">
+        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(360px,0.9fr)] lg:gap-16">
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }} className="max-w-2xl">
+            <p className="text-body-sm font-medium text-primary">BotFlow для бизнеса</p>
+            <h1 className="mt-4 text-display font-semibold tracking-tight text-foreground sm:text-display-xl">
+              Диалоги, которые приводят к заявке и оплате
+            </h1>
+            <p className="mt-5 max-w-xl text-body leading-relaxed text-fg-secondary">
+              Создайте бота для продаж без кода: он познакомит с предложением, проведёт клиента по сценарию и поможет не терять обращения.
+            </p>
+            <p className="mt-3 max-w-xl text-body-sm leading-relaxed text-fg-secondary">
+              Начните с готовой основы, а затем спокойно настройте сообщения, площадку и оплату в рабочем пространстве.
+            </p>
 
-          <button type="button" onClick={onCreateBot} className="mt-8 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary px-5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto">
-            <Rocket className="size-4" aria-hidden="true" />
-            Создать бота бесплатно
-            <ArrowRight className="size-4" aria-hidden="true" />
-          </button>
-          <p className="mt-3 text-meta text-fg-secondary">Создание черновика бесплатно. Оплата — перед публикацией.</p>
+            <button type="button" onClick={onCreateBot} className="mt-8 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary px-5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto">
+              <Rocket className="size-4" aria-hidden="true" />
+              Создать бота бесплатно
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </button>
+            <p className="mt-3 text-meta text-fg-secondary">Черновик бесплатен. Оплата потребуется только перед публикацией.</p>
 
-          <div className="mt-9 flex flex-wrap gap-3" aria-label="Платформы BotFlow">
-            {platforms.map(({ id, label }) => (
-              <span key={id} className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-card px-3 text-body-sm font-medium text-foreground">
-                <PlatformGlyph platform={id} size={18} className="text-fg-secondary" />
-                {label}
-              </span>
+            <div className="mt-8 flex flex-wrap gap-3" aria-label="Платформы BotFlow">
+              {platforms.map(({ id, label }) => (
+                <span key={id} className="inline-flex min-h-10 items-center gap-2 rounded-[var(--radius-control)] border border-border bg-card px-3 text-body-sm font-medium text-foreground">
+                  <PlatformGlyph platform={id} size={18} className="text-fg-secondary" />
+                  {label}
+                </span>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.24, delay: 0.04 }} className="flex min-h-64 items-center justify-center rounded-[var(--radius-sheet)] border border-border bg-muted p-5 sm:min-h-80 sm:p-8">
+            <img src="/visuals/welcome/sales-journey-hero.png" alt="Путь клиента от сообщения к подтверждённой оплате" className="w-full max-w-xl object-contain" />
+          </motion.div>
+        </div>
+
+        <section className="mt-12 border-t border-border pt-8 sm:mt-16" aria-labelledby="welcome-scenarios-title">
+          <div className="max-w-xl"><p className="text-body-sm font-medium text-primary">Сценарии</p><h2 id="welcome-scenarios-title" className="mt-2 text-title-lg font-semibold text-foreground">Выберите путь под вашу задачу</h2></div>
+          <div className="mt-6 grid gap-3 md:grid-cols-3">
+            {scenarios.map(({ icon: Icon, title, text }) => (
+              <article key={title} className="min-h-32 rounded-[var(--radius-card)] border border-border bg-card p-5">
+                <Icon className="size-5 text-primary" aria-hidden="true" />
+                <h3 className="mt-5 text-body-sm font-semibold text-foreground">{title}</h3>
+                <p className="mt-1 text-meta leading-relaxed text-fg-secondary">{text}</p>
+              </article>
             ))}
           </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.24, delay: 0.04 }} className="flex min-h-72 items-center justify-center rounded-[var(--radius-sheet)] border border-border bg-muted p-7 sm:min-h-80">
-          <img src="/visuals/scenarios/sales-funnel-card.png" alt="Иллюстрация пути клиента по воронке продаж" className="h-64 w-full max-w-sm object-contain sm:h-72" />
-        </motion.div>
+        </section>
       </main>
-
-      <div className="border-t border-border bg-card">
-        <div className="mx-auto grid w-full max-w-6xl px-5 sm:grid-cols-3 sm:px-8 lg:px-12">
-          {benefits.map(({ icon: Icon, title, text }) => (
-            <article key={title} className="flex gap-3 border-b border-border py-5 last:border-b-0 sm:border-b-0 sm:px-5 sm:first:pl-0 sm:last:pr-0">
-              <Icon className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
-              <div><h2 className="text-body-sm font-semibold text-foreground">{title}</h2><p className="mt-1 text-meta leading-relaxed text-fg-secondary">{text}</p></div>
-            </article>
-          ))}
-        </div>
-      </div>
     </section>
   );
 }
