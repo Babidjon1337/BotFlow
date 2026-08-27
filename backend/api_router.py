@@ -198,10 +198,7 @@ async def _toggle_client_bot(
     )
 
     if dedicated_subscription is not None:
-        if not (
-            allow_admin_entitlement_bypass
-            or bot_entitlement_service.can_publish(dedicated_subscription)
-        ):
+        if not bot_entitlement_service.can_publish(dedicated_subscription):
             raise HTTPException(
                 status_code=403,
                 detail="Подписка этого бота неактивна или закончилась.",

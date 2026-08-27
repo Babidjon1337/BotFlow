@@ -4,6 +4,7 @@ import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from services.bot_lifecycle import BotLifecycleService, LifecycleTransitionError
 from services.funnel_readiness import FunnelReadiness
+from services import scheduler
 
 
 def _bot(**overrides):
@@ -77,3 +79,35 @@ def test_archived_bot_has_no_runtime_transition():
 
     with pytest.raises(LifecycleTransitionError, match="archived"):
         asyncio.run(_service().transition(bot, "draft"))
+
+
+def test_expired_bot_subscription_pauses_only_the_linked_published_bot(monkeypatch):
+    expired_bot = _bot(
+        id=71,
+        status="active",
+        lifecycle_status="published",
+        pause_reason=None,
+        bot_token_enc=b"encrypted",
+    )
+    persisted = AsyncMock()
+    marked_expired = AsyncMock()
+
+    class TelegramBot:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def delete_webhook(self):
+            return None
+
+    monkeypatch.setattr(scheduler, "get_expired_published_bots", AsyncMock(return_value=[expired_bot]))
+    monkeypatch.setattr(scheduler, "set_bot_lifecycle_state", persisted)
+    monkeypatch.setattr(scheduler, "mark_bot_subscription_expired", marked_expired)
+    monkeypatch.setattr(scheduler.crypto, "decrypt", lambda _value: "123456:token")
+    monkeypatch.setattr(scheduler, "Bot", TelegramBot)
+
+    asyncio.run(scheduler.expire_bot_subscriptions_job())
+
+    assert expired_bot.lifecycle_status == "paused"
+    assert expired_bot.pause_reason == "subscription"
+    persisted.assert_awaited_once_with(71, "paused", "subscription")
+    marked_expired.assert_awaited_once_with(71)

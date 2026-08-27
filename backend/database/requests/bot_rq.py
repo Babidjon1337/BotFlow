@@ -1,4 +1,6 @@
 from typing import Optional, Any
+from datetime import datetime, timezone
+
 from sqlalchemy import select, delete, update
 from sqlalchemy.orm import joinedload, selectinload
 from database.models import BotConfig, BotSubscription, User, async_session
@@ -77,6 +79,36 @@ async def get_bot_subscription(bot_id: int) -> BotSubscription | None:
         return await session.scalar(
             select(BotSubscription).where(BotSubscription.bot_id == bot_id)
         )
+
+
+async def get_expired_published_bots(
+    now: datetime | None = None,
+) -> list[BotConfig]:
+    """Return only published bots whose dedicated subscription has ended."""
+    effective_now = now or datetime.now(timezone.utc)
+    async with async_session() as session:
+        result = await session.scalars(
+            select(BotConfig)
+            .join(BotSubscription, BotSubscription.bot_id == BotConfig.id)
+            .where(
+                BotConfig.status == "active",
+                BotSubscription.status == "active",
+                BotSubscription.ends_at.is_not(None),
+                BotSubscription.ends_at <= effective_now,
+            )
+        )
+        return list(result.all())
+
+
+async def mark_bot_subscription_expired(bot_id: int) -> None:
+    """Record expiry only after the bot has safely stopped accepting traffic."""
+    async with async_session() as session:
+        await session.execute(
+            update(BotSubscription)
+            .where(BotSubscription.bot_id == bot_id, BotSubscription.status == "active")
+            .values(status="expired")
+        )
+        await session.commit()
 
 
 async def register_bot_config(

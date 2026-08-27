@@ -23,7 +23,13 @@ from services.manager_link import build_manager_deep_link
 from database.requests.billing_rq import get_users_due_for_subscription_renewal
 from services.billing_notifications import notify_billing_user
 from services.saas_billing import BillingError, create_recurring_payment
-from database.requests.bot_rq import enforce_non_pro_bot_limits
+from database.requests.bot_rq import (
+    enforce_non_pro_bot_limits,
+    get_expired_published_bots,
+    mark_bot_subscription_expired,
+    set_bot_lifecycle_state,
+)
+from services.bot_lifecycle import BotLifecycleService
 from database.models import Lead, ClientPayment
 from config import PROXY_URL
 from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
@@ -32,6 +38,7 @@ from services.payment_fulfillment import process_client_payment_fulfillment
 scheduler = AsyncIOScheduler()
 shared_scheduler_session = AiohttpSession(proxy=PROXY_URL) if PROXY_URL else AiohttpSession()
 scheduler_runtime: dict[str, dict[str, str | None]] = {}
+bot_lifecycle_service = BotLifecycleService()
 
 
 async def check_reminders_job():
@@ -86,6 +93,30 @@ async def renew_pro_subscriptions_job():
                     user.telegram_id,
                     "⚠️ Не удалось автоматически продлить <b>PRO</b>. Мы повторим попытку завтра.",
                 )
+
+
+async def expire_bot_subscriptions_job():
+    """Pause only the published bot whose dedicated subscription has ended."""
+    for bot_config in await get_expired_published_bots():
+        try:
+            token = crypto.decrypt(bot_config.bot_token_enc)
+            bot = Bot(token=token, session=shared_scheduler_session)
+            await bot.delete_webhook()
+            await bot_lifecycle_service.transition(
+                bot_config, "paused", reason="subscription"
+            )
+            await set_bot_lifecycle_state(
+                bot_config.id,
+                bot_config.lifecycle_status,
+                bot_config.pause_reason,
+            )
+            await mark_bot_subscription_expired(bot_config.id)
+        except Exception as exc:
+            logger.warning(
+                "Не удалось остановить бота %s после окончания подписки: %s",
+                bot_config.id,
+                exc,
+            )
 
 
 async def retry_client_payment_fulfillments_job():
@@ -213,6 +244,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="pro-renewals",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        expire_bot_subscriptions_job,
+        trigger="interval",
+        minutes=5,
+        max_instances=1,
+        coalesce=True,
+        id="bot-subscription-expiry",
         replace_existing=True,
     )
     scheduler.add_job(
