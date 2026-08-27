@@ -118,6 +118,10 @@ class BotApiResponse(BaseModel):
     display_name: str = Field(..., alias="displayName")
     username: Optional[str] = None
     status: str
+    scenario_type: Optional[str] = Field(None, alias="scenarioType")
+    scenario_version: Optional[int] = Field(None, alias="scenarioVersion")
+    lifecycle_status: Optional[str] = Field(None, alias="lifecycleStatus")
+    pause_reason: Optional[str] = Field(None, alias="pauseReason")
     users_count: int = Field(default=0, alias="usersCount")
     offer_url: Optional[str] = Field(None, alias="offerUrl")
     offer_installments: bool = Field(default=False, alias="offerInstallments")
@@ -168,6 +172,10 @@ class BotApiResponse(BaseModel):
             display_name=getattr(bot, "display_name", "Мой бот") or "Мой бот",
             username=bot.username,
             status=bot.status,
+            scenario_type=getattr(bot, "scenario_type", None),
+            scenario_version=getattr(bot, "scenario_payload_version", None),
+            lifecycle_status=getattr(bot, "lifecycle_status", None),
+            pause_reason=getattr(bot, "pause_reason", None),
             users_count=bot.users_count,
             offer_url=getattr(bot, "offer_url", None),
             offer_installments=getattr(bot, "offer_installments", False),

@@ -111,6 +111,26 @@ async def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
     return readiness.is_ready, list(readiness.reasons)
 
 
+def _readiness_reason_details(reasons: list[str]) -> list[dict[str, str]]:
+    """Add stable machine codes without changing legacy user-facing reasons."""
+    codes = (
+        ("Сохраните воронку", "funnel_format_invalid"),
+        ("Добавьте блок", "required_node_missing"),
+        ("Заполните текст", "message_content_missing"),
+        ("Заполните кнопку", "button_missing"),
+        ("платёжную систему", "payment_provider_missing"),
+        ("реквизиты платёжной системы", "payment_credentials_missing"),
+        ("тариф", "tariff_invalid"),
+    )
+    return [
+        {
+            "code": next((code for phrase, code in codes if phrase in reason), "configuration_invalid"),
+            "message": reason,
+        }
+        for reason in reasons
+    ]
+
+
 async def _connected_chat_ids_for_bot(bot) -> set[str]:
     connected_chats = await list_connected_chats(bot.id)
     return {chat.chat_id for chat in connected_chats}
@@ -941,7 +961,11 @@ async def get_bot_readiness(bot_id: int, request: Request):
     """Expose the same launch decision used by the activation endpoint."""
     bot = await get_owned_bot(bot_id, request)
     is_ready, reasons = await _readiness_for_bot(bot)
-    return {"isReady": is_ready, "reasons": reasons}
+    return {
+        "isReady": is_ready,
+        "reasons": reasons,
+        "reasonDetails": _readiness_reason_details(reasons),
+    }
 
 
 @api_router.post("/api/bots/{bot_id}/chat-delivery/verify")
