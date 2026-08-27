@@ -33,6 +33,7 @@ type TelegramWebApp = {
   requestFullscreen?: () => void; disableVerticalSwipes?: () => void;
   setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
+  isVersionAtLeast?: (version: string) => boolean;
   close?: () => void;
   safeAreaInset?: { top?: number; bottom?: number; left?: number; right?: number };
   contentSafeAreaInset?: { top?: number; bottom?: number; left?: number; right?: number };
@@ -136,7 +137,7 @@ export default function App() {
       } else {
         tg.disableClosingConfirmation?.();
       }
-      if (tg.requestFullscreen) {
+      if (tg.requestFullscreen && tg.isVersionAtLeast?.('8.0')) {
         try {
           tg.requestFullscreen();
         } catch (error) {
