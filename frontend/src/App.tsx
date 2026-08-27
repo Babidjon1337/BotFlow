@@ -332,6 +332,7 @@ export default function App() {
         theme={theme}
         toggleTheme={toggleTheme}
         bottomNavHidden={isKeyboardOpen || hasFocusedTextField}
+        isFirstEntry={resolvedRoute.level === 'account' && resolvedRoute.tab === 'bots' && appState.bots.length === 0}
       >
         <Suspense fallback={<TabLoading />}>
           <AnimatePresence mode="wait">

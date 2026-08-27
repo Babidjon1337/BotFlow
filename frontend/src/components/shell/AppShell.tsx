@@ -22,6 +22,7 @@ interface AppShellProps {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   bottomNavHidden?: boolean;
+  isFirstEntry?: boolean;
   children: ReactNode;
 }
 
@@ -40,29 +41,34 @@ export function AppShell({
   theme,
   toggleTheme,
   bottomNavHidden,
+  isFirstEntry = false,
   children,
 }: AppShellProps) {
   return (
     <div className="flex h-full w-full overflow-hidden bg-background text-foreground">
-      <Sidebar
-        route={route}
-        onAccountTab={onAccountTab}
-        isAdmin={isAdmin}
-        subscriptionStatus={subscriptionStatus}
-        subscriptionUntil={subscriptionUntil}
-        theme={theme}
-        toggleTheme={toggleTheme}
-      />
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col lg:ml-[248px]">
-        <TopBar
+      {!isFirstEntry && (
+        <Sidebar
           route={route}
-          activeBot={activeBot}
-          onBackToBots={onBackToBots}
-          onCreateBot={onCreateBot}
-          onOpenBotSettings={onOpenBotSettings}
-          onOpenBotSwitcher={onOpenBotSwitcher}
+          onAccountTab={onAccountTab}
+          isAdmin={isAdmin}
+          subscriptionStatus={subscriptionStatus}
+          subscriptionUntil={subscriptionUntil}
+          theme={theme}
+          toggleTheme={toggleTheme}
         />
+      )}
+
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', !isFirstEntry && 'lg:ml-[248px]')}>
+        {!isFirstEntry && (
+          <TopBar
+            route={route}
+            activeBot={activeBot}
+            onBackToBots={onBackToBots}
+            onCreateBot={onCreateBot}
+            onOpenBotSettings={onOpenBotSettings}
+            onOpenBotSwitcher={onOpenBotSwitcher}
+          />
+        )}
 
         {route.level === 'bot' && (
           <nav
@@ -102,19 +108,23 @@ export function AppShell({
           className="min-h-0 min-w-0 flex-1 overflow-y-auto"
         >
           <div className={cn(
-            'mx-auto w-full px-4 pb-24 pt-4 lg:px-8 lg:pb-10 lg:pt-6',
-            route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-[1120px]',
+            isFirstEntry
+              ? 'min-h-full w-full'
+              : 'mx-auto w-full px-4 pb-24 pt-4 lg:px-8 lg:pb-10 lg:pt-6',
+            !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-[1120px]'),
           )}>
             {children}
           </div>
         </main>
       </div>
 
-      <BottomNav
-        activeTab={route.level === 'account' ? route.tab : 'bots'}
-        onAccountTab={onAccountTab}
-        hidden={bottomNavHidden}
-      />
+      {!isFirstEntry && (
+        <BottomNav
+          activeTab={route.level === 'account' ? route.tab : 'bots'}
+          onAccountTab={onAccountTab}
+          hidden={bottomNavHidden}
+        />
+      )}
     </div>
   );
 }
