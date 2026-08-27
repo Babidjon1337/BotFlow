@@ -78,6 +78,10 @@ Backfill должен быть идемпотентным и выполнять�
 7. После наблюдаемого периода и подтверждения backfill удалить legacy write-paths
    отдельным релизом. Удаление `status` и `funnel_complete` не входит в R2.
 
+На 27.08.2026 выполнены пункты 1–3 до первого безопасного seam: migration,
+compatibility-контракты и внутренний `BotLifecycleService` с unit-тестами. Роуты
+и внешние Telegram-эффекты пока продолжают использовать legacy write-path.
+
 ## Инварианты и тесты gate
 
 - Существующий клиент, читающий только `status` и `funnelComplete`, продолжает

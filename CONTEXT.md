@@ -119,14 +119,16 @@ R2 / Контракты домена и миграционный каркас. R
 пройдены. Первый малый R2-шаг реализован: contract-тесты, nullable Alembic
 migration и идемпотентный backfill новых lifecycle-полей. Migration round-trip
 (forward/backfill/downgrade) пройден на изолированной PostgreSQL. К реальной БД
-миграция не применялась; legacy API и runtime не менялись.
+миграция не применялась. Добавлен внутренний `BotLifecycleService`: он валидирует
+разрешённые переходы, серверную readiness и dual-write к legacy `status`; роуты
+пока не переведены, поэтому runtime не менялся.
 
 ### Next Step
 
-Реализовать следующий R2-подшаг: `BotLifecycleService` с явными разрешёнными
-переходами и dual-write к legacy `status`. Не менять `funnel_schema`, платёжные
-правила или публичный контракт преждевременно; к API и внешним эффектам перейти
-только после unit-тестов сервиса.
+Реализовать следующий R2-подшаг: перевести первый узкий legacy write-path
+`/toggle` на `BotLifecycleService`, сохраняя текущие entitlement- и Telegram
+проверки. Не менять `funnel_schema`, платёжные правила или публичный контракт;
+добавить compatibility-тесты до подключения внешних эффектов.
 
 ### Important Files
 
