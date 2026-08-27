@@ -5,12 +5,15 @@
 ему; `GatewayConnection` принадлежит аккаунту, а бот хранит только ссылку на
 активную кассу. Старые payment credentials в `BotConfig` остаются до отдельного
 наблюдаемого переноса. Цены и checkout не вводятся без утверждённого каталога.
+На текущем шаге утверждён только v1 quote: Telegram + `sales_funnel` за
+990 ₽/мес. Он возвращается детерминированно, но `checkout_available=false`
+сохраняется, пока не реализованы invoice, provider flow и account billing anchor.
 
 Инварианты: черновик бесплатен, публикация проверяет readiness и entitlement,
 а окончание подписки ставит на паузу только связанный бот.
 
-До утверждения каталога `BotPricingService` возвращает детерминированный состав
-конфигурации и `checkout_available=false`; он не изобретает цену и не меняет
-существующий checkout. `BotEntitlementService` допускает публикацию только при
+Текущий `BotPricingService` возвращает единственную коммерчески доступную
+конфигурацию и `checkout_available=false`; он не меняет существующий checkout.
+`BotEntitlementService` допускает публикацию только при
 активной подписке бота или подходящем Gift Grant; legacy PRO остаётся текущим
 runtime-правилом до отдельного перевода.

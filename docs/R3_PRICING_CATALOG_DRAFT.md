@@ -116,6 +116,20 @@ monthly_bot_price = base_bot_package
 
 Пока реализован только Telegram, коммерчески доступна только первая строка. VK/MAX показываются как `Soon` и не попадают в quote.
 
+### 4.1 Visibility contract до появления будущих возможностей
+
+В выборе конфигурации пользователь видит только:
+
+- доступную карточку «Воронка продаж» для Telegram, с visual asset
+  `/visuals/scenarios/sales-funnel-card.png`;
+- Telegram как доступную платформу;
+- VK и MAX как disabled «Скоро» без цены, checkout или обещания даты;
+- «Запись на услугу» и Mini App как disabled сценарии «Скоро».
+
+AI Knowledge Base, integration pack, High-load/SLA, provider usage и их цены
+остаются внутренними планами. До реализации capability они не выводятся ни в
+конфигураторе, ни в upgrade/promo surfaces, ни в публичном pricing.
+
 ## 5. Единый день списания аккаунта
 
 Подписки остаются **независимыми на уровне bot_id**, но их регулярная оплата должна быть удобна на уровне аккаунта. Для этого нужен будущий billing concept: **Account Billing Anchor**.

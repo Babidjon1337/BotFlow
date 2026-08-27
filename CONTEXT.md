@@ -116,21 +116,18 @@ Account
 
 ### Current Stage
 
-R2 / Контракты домена и миграционный каркас. R1 gate зелёный: автоматические
-проверки и ручной smoke в авторизованном Telegram WebView на desktop и телефоне
-пройдены. Первый малый R2-шаг реализован: contract-тесты, nullable Alembic
-migration и идемпотентный backfill новых lifecycle-полей. Migration round-trip
-(forward/backfill/downgrade) пройден на изолированной PostgreSQL. К реальной БД
-миграция не применялась. Добавлен внутренний `BotLifecycleService`: он валидирует
-разрешённые переходы, серверную readiness и dual-write к legacy `status`; роуты
-пока не переведены, поэтому runtime не менялся.
+R3 / Черновик, расчёт цены и публикация. R1 и R2 закрыты. Добавлены
+совместимые `GatewayConnection`, `BotSubscription`, boundaries entitlement и
+deterministic pricing contract. В v1 продаётся только Telegram-бот со сценарием
+«Воронка продаж» за 990 ₽/мес; VK/MAX и будущие сценарии остаются «Скоро» и не
+могут попасть в quote. Checkout и runtime billing пока намеренно не переключены.
 
 ### Next Step
 
-Реализовать следующий R2-подшаг: аддитивно расширить DTO и readiness-ответы
-`scenarioType`, `scenarioVersion`, `lifecycleStatus`, `pauseReason` и стабильными
-машиночитаемыми кодами. Сохранить legacy `status`, user-facing reasons и запрет
-на раскрытие секретов.
+Продолжить R3: закрепить API contract quote/readiness и провести переход
+публикации на per-bot entitlement без изменения legacy checkout. R4 UI
+конфигуратор начнётся только после R3 gate; для него уже создан visual карточки
+«Воронка продаж» в `frontend/public/visuals/scenarios/sales-funnel-card.png`.
 
 ### Important Files
 
