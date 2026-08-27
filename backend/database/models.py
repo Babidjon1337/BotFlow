@@ -104,6 +104,9 @@ class BotConfig(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    active_gateway_connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("gateway_connections.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Настройки Telegram бота Зашифрованный Fernet токен
     bot_token_enc: Mapped[Optional[bytes]] = mapped_column(nullable=True)
@@ -319,6 +322,31 @@ class SaasPayment(Base):
     )
 
     user: Mapped["User"] = relationship(back_populates="saas_payments")
+
+
+class GatewayConnection(Base):
+    """Account-owned payment credentials; never returned decrypted."""
+    __tablename__ = "gateway_connections"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    display_name: Mapped[str] = mapped_column(String(128))
+    credentials_enc: Mapped[bytes] = mapped_column()
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    verified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+
+class BotSubscription(Base):
+    """Publication entitlement scoped to exactly one bot."""
+    __tablename__ = "bot_subscriptions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), unique=True)
+    status: Mapped[str] = mapped_column(String(20), default="inactive", index=True)
+    product_code: Mapped[Optional[str]] = mapped_column(String(64))
+    starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class AdminAuditLog(Base):
