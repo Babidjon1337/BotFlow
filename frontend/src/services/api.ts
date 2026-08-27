@@ -23,6 +23,15 @@ export interface BillingProduct {
   period: "lifetime" | "month";
 }
 
+export interface GatewayConnection {
+  id: string;
+  provider: 'yookassa' | 'robokassa' | 'prodamus';
+  displayName: string;
+  status: string;
+  verifiedAt: string | null;
+  createdAt: string;
+}
+
 export interface AdminOverview {
   users_total: number;
   bots_total: number;
@@ -338,6 +347,10 @@ export const apiService = {
 
   async getBots() {
     return fetchApi<{ bots: ApiBot[] }>("/api/bots");
+  },
+
+  async getGatewayConnections() {
+    return fetchApi<{ connections: GatewayConnection[] }>("/api/gateway-connections");
   },
 
   async createBot(data: {

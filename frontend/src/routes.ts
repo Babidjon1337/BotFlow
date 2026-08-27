@@ -114,8 +114,5 @@ export function resolveRoute(route: AppRoute, hasActiveBot: boolean, isAdmin = f
   if (route.level === 'account' && route.tab === 'admin' && !isAdmin) {
     return { level: 'account', tab: 'bots' };
   }
-  if (route.level === 'account' && route.tab === 'gateways') {
-    return { level: 'account', tab: 'bots' };
-  }
   return route;
 }

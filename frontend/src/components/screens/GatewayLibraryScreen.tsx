@@ -1,0 +1,12 @@
+import { useEffect, useState } from 'react';
+import { CreditCard, Plus } from 'lucide-react';
+import { apiService, type GatewayConnection } from '../../services/api';
+
+const providerNames: Record<GatewayConnection['provider'], string> = { yookassa: 'ЮKassa', robokassa: 'Robokassa', prodamus: 'Prodamus' };
+
+export function GatewayLibraryScreen() {
+  const [connections, setConnections] = useState<GatewayConnection[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { apiService.getGatewayConnections().then(({ connections }) => setConnections(connections)).catch(error => setError(error instanceof Error ? error.message : 'Не удалось загрузить кассы.')); }, []);
+  return <section className="mx-auto w-full max-w-3xl"><header className="flex items-start justify-between gap-4"><div><h2 className="text-title-lg font-semibold">Платёжные системы</h2><p className="mt-2 text-body-sm text-fg-secondary">Сохранённые кассы аккаунта. Реквизиты не отображаются в BotFlow.</p></div><button type="button" disabled className="inline-flex min-h-11 items-center gap-2 rounded-[var(--radius-control)] bg-primary px-4 text-body-sm font-semibold text-primary-foreground opacity-50"><Plus className="size-4" />Добавить кассу</button></header>{error ? <p className="mt-6 rounded-[var(--radius-card)] border border-danger/25 bg-danger-soft p-4 text-body-sm text-danger">{error}</p> : connections === null ? <p className="mt-6 text-body-sm text-fg-secondary">Загружаем подключения…</p> : connections.length ? <div className="mt-6 space-y-3">{connections.map(connection => <article key={connection.id} className="flex items-center gap-3 rounded-[var(--radius-card)] border border-border bg-card p-4"><span className="flex size-10 items-center justify-center rounded-[var(--radius-control)] bg-accent text-accent-foreground"><CreditCard className="size-5" /></span><div><p className="text-body-sm font-semibold">{connection.displayName}</p><p className="mt-1 text-meta text-fg-secondary">{providerNames[connection.provider]} · {connection.status === 'verified' ? 'Проверена' : 'Ожидает проверки'}</p></div></article>)}</div> : <div className="mt-6 rounded-[var(--radius-card)] border border-border bg-muted p-6"><p className="text-body-sm font-semibold">Касс пока нет</p><p className="mt-1 text-meta text-fg-secondary">Добавление подключений появится в этом разделе после включения проверки реквизитов.</p></div>}</section>;
+}

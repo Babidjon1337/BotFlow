@@ -38,6 +38,7 @@ from database.requests.client_payment_rq import (
     requeue_client_payment_delivery,
 )
 from database.requests.billing_rq import cancel_subscription_auto_renew
+from database.requests.gateway_rq import create_gateway_connection, list_gateway_connections
 from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
 from database.requests.admin_rq import (
     get_admin_overview,
@@ -57,6 +58,7 @@ from database.requests.admin_rq import (
 from schemas.api_schemas import (
     BotCreateApiRequest,
     BotUpdateApiRequest,
+    GatewayConnectionCreateRequest,
     BotApiResponse,
     BillingCheckoutRequest,
     BillingCheckoutResponse,
@@ -707,6 +709,47 @@ async def cancel_billing(request: Request):
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     updated = await cancel_subscription_auto_renew(user.id)
     return _user_payload(updated or user, current_user.telegram_id)
+
+
+@api_router.get("/api/gateway-connections")
+async def list_gateway_connections_api(request: Request):
+    current_user = await get_current_user(request)
+    user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    connections = await list_gateway_connections(user.id)
+    return {"connections": [
+        {
+            "id": str(connection.id),
+            "provider": connection.provider,
+            "displayName": connection.display_name,
+            "status": connection.status,
+            "verifiedAt": connection.verified_at.isoformat() if connection.verified_at else None,
+            "createdAt": connection.created_at.isoformat(),
+        }
+        for connection in connections
+    ]}
+
+
+@api_router.post("/api/gateway-connections")
+async def create_gateway_connection_api(request: Request, body: GatewayConnectionCreateRequest):
+    current_user = await get_current_user(request)
+    user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    is_valid, message = await validate_payment_credentials(body.provider, body.credentials)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=message)
+    connection = await create_gateway_connection(
+        owner_id=user.id,
+        provider=body.provider,
+        display_name=body.display_name.strip(),
+        credentials_enc=crypto.encrypt(json.dumps(body.credentials)),
+    )
+    return {
+        "id": str(connection.id),
+        "provider": connection.provider,
+        "displayName": connection.display_name,
+        "status": connection.status,
+        "verifiedAt": None,
+        "createdAt": connection.created_at.isoformat(),
+    }
 
 
 @api_router.get("/api/bots")

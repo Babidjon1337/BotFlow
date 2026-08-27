@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, Bot, CheckCircle2, LockKeyhole, MessageCircleMore, WalletCards, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Bot, CheckCircle2, CreditCard, LockKeyhole, MessageCircleMore, WalletCards, X } from 'lucide-react';
+import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
 import { PlatformGlyph } from '../common/platform';
 
@@ -14,6 +15,7 @@ interface BotCreateSheetProps {
 type BotCreateData = {
   displayName: string;
   token?: string;
+  paymentProvider?: PaymentProvider;
   paymentCreds: Record<string, string>;
   offerUrl: string;
 };
@@ -34,6 +36,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
   const [step, setStep] = useState<Step>(1);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
+  const [paymentProvider, setPaymentProvider] = useState<PaymentProvider | undefined>();
   const viewportHeight = useViewportHeight();
 
   const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
@@ -64,7 +67,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
     setIsCreating(true);
     onBusyChange?.(true);
     try {
-      await onCreate({ displayName: name.trim(), paymentCreds: {}, offerUrl: '' });
+      await onCreate({ displayName: name.trim(), paymentProvider, paymentCreds: {}, offerUrl: '' });
       (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     } catch (error) {
       onError?.(error instanceof Error ? error.message : 'Не удалось создать бота.');
@@ -114,11 +117,12 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   <article className="flex items-center gap-3 rounded-[var(--radius-card)] border border-primary/20 bg-accent p-4"><PlatformGlyph platform="telegram" size={22} className="text-accent-foreground" /><div className="min-w-0 flex-1"><p className="text-body-sm font-semibold text-foreground">Telegram</p><p className="mt-0.5 text-meta text-fg-secondary">Включён в базовую подписку</p></div><CheckCircle2 className="size-5 text-primary" aria-label="Выбрано" /></article>
                   <div className="grid grid-cols-2 gap-3">{(['vk', 'max'] as const).map(platform => <article key={platform} aria-disabled="true" className="rounded-[var(--radius-card)] border border-dashed border-border bg-muted p-4 text-fg-tertiary"><PlatformGlyph platform={platform} size={20} className="text-fg-tertiary" /><p className="mt-3 text-body-sm font-medium">{platform === 'vk' ? 'VK' : 'MAX'}</p><p className="mt-1 text-meta">Скоро добавим</p></article>)}</div>
                   <div className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><p className="text-body-sm font-semibold text-foreground">Рассылки и заявки включены</p><p className="mt-1 text-meta leading-relaxed text-fg-secondary">Отдельных доплат за сообщения, заявки или количество лидов нет.</p></div>
+                  <fieldset><legend className="text-body-sm font-semibold text-foreground">Касса для будущих оплат</legend><p className="mt-1 text-meta leading-relaxed text-fg-secondary">Выберите сервис сейчас, а реквизиты добавите позже в настройках бота.</p><div className="mt-3 grid grid-cols-3 gap-2">{(['yookassa', 'robokassa', 'prodamus'] as const).map(provider => <button key={provider} type="button" aria-pressed={paymentProvider === provider} onClick={() => setPaymentProvider(current => current === provider ? undefined : provider)} className={`flex min-h-12 flex-col items-center justify-center rounded-[var(--radius-control)] border px-2 text-micro font-medium transition-colors ${paymentProvider === provider ? 'border-primary bg-accent text-accent-foreground' : 'border-border bg-card text-fg-secondary hover:bg-muted'}`}><CreditCard className="size-4" aria-hidden="true" />{provider === 'yookassa' ? 'ЮKassa' : provider === 'robokassa' ? 'Robokassa' : 'Prodamus'}</button>)}</div></fieldset>
                 </motion.div>}
 
                 {step === 3 && <motion.div key="draft" initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }} transition={{ duration: 0.18 }} className="space-y-5">
                   <div><span className="flex size-11 items-center justify-center rounded-[var(--radius-card)] bg-success-soft text-success"><WalletCards className="size-5" aria-hidden="true" /></span><h3 className="mt-4 text-title font-semibold">Черновик и публикация</h3><p className="mt-2 text-body-sm leading-relaxed text-fg-secondary">Создание черновика бесплатно. Подписка потребуется, когда бот будет готов к публикации.</p></div>
-                  <article className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-body-sm font-semibold text-foreground">Воронка продаж · Telegram</p><p className="mt-1 text-meta text-fg-secondary">Базовая подписка бота</p></div><p className="shrink-0 text-title font-semibold text-foreground">990 ₽<span className="text-body-sm font-medium text-fg-secondary">/мес</span></p></div><p className="mt-3 border-t border-border pt-3 text-meta leading-relaxed text-fg-secondary">Оплата не потребуется сейчас. Кассу, оферту и детали сценария можно настроить после создания.</p></article>
+                  <article className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-body-sm font-semibold text-foreground">Воронка продаж · Telegram</p><p className="mt-1 text-meta text-fg-secondary">Базовая подписка бота</p></div><p className="shrink-0 text-title font-semibold text-foreground">990 ₽<span className="text-body-sm font-medium text-fg-secondary">/мес</span></p></div><p className="mt-3 border-t border-border pt-3 text-meta leading-relaxed text-fg-secondary">{paymentProvider ? `Касса: ${paymentProvider === 'yookassa' ? 'ЮKassa' : paymentProvider === 'robokassa' ? 'Robokassa' : 'Prodamus'}. ` : ''}Оплата не потребуется сейчас. Реквизиты, оферту и сценарий можно настроить после создания.</p></article>
                   <div className="rounded-[var(--radius-card)] border border-border bg-muted p-4"><p className="text-body-sm font-semibold text-foreground">Telegram подключите перед публикацией</p><p className="mt-1 text-meta leading-relaxed text-fg-secondary">После создания откройте настройки бота, добавьте токен от @BotFather и завершите чеклист публикации.</p></div>
                   <div className="flex gap-3 rounded-[var(--radius-card)] border border-border bg-muted p-4"><CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" /><p className="text-meta leading-relaxed text-fg-secondary">После создания вы перейдёте к редактору сценария. Бот не будет опубликован автоматически.</p></div>
                 </motion.div>}
