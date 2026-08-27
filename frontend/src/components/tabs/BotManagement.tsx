@@ -12,7 +12,6 @@ import {
   Power,
   RefreshCw,
   Trash2,
-  Lock,
 } from "lucide-react";
 import { EmptyBotState } from "../EmptyBotState";
 import { useAppState } from "../../providers/AppStateProvider";
@@ -27,13 +26,11 @@ export const BotManagement = () => {
     setSheet,
     setActiveTab,
     handleCreateBotClick: onCreateBot,
-    isAdmin,
   } = useAppState();
-  const { bots, subscriptionStatus } = appState;
+  const { bots } = appState;
   const { toggleBot, isToggling } = useBotToggle();
   const { requestBotSelection } = useBotSelectionGuard();
   const hasBots = bots.length > 0;
-  const isPro = subscriptionStatus === "active" || isAdmin;
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -153,13 +150,7 @@ export const BotManagement = () => {
             </p>
           </div>
           <button
-            onClick={() => {
-              if (!isPro && bots.length >= 1) {
-                setActiveTab("subscription");
-              } else {
-                onCreateBot();
-              }
-            }}
+            onClick={onCreateBot}
             className="btn-primary-saas whitespace-nowrap"
             style={{
               height: "44px",
@@ -168,12 +159,8 @@ export const BotManagement = () => {
               fontSize: "14px",
             }}
           >
-            {!isPro && bots.length >= 1 ? (
-              <Lock size={16} className="mr-2" />
-            ) : (
-              <Plus size={16} className="mr-2" />
-            )}
-            {!isPro && bots.length >= 1 ? "Доступно в PRO" : "Создать бота"}
+            <Plus size={16} className="mr-2" />
+            Создать бота
           </button>
         </div>
 

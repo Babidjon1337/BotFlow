@@ -361,16 +361,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setToastMessage('Дождитесь загрузки текущей воронки.');
       return;
     }
-    if (isAdmin) {
-      setSheet('bot_create');
-      return;
-    }
-    const isPro = appState.subscriptionStatus === 'active';
-    const hasSlots = isPro ? appState.bots.length < 10 : appState.bots.length < 1;
-    if (!hasSlots) {
-      setActiveTab('subscription');
-      return;
-    }
     setSheet('bot_create');
   };
 

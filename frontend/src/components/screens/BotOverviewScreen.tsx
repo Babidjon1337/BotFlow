@@ -117,7 +117,7 @@ function LaunchChecklist({
             ? undefined
             : subscriptionStatus === 'active' || Boolean(bot.offerUrl)
               ? 'Бот начнёт отвечать клиентам сразу'
-              : 'Для публикации нужна подписка — первые 7 дней бесплатно',
+              : 'Перед публикацией проверьте подписку этого бота.',
         state:
           !bot.funnelComplete || !platformDone
             ? 'locked'
@@ -316,6 +316,7 @@ function IdentityCard({ bot }: { bot: BotConfig }) {
       <div className="min-w-0">
         <p className="truncate text-body-lg font-semibold">{bot.name}</p>
         <p className="truncate text-meta text-fg-tertiary">@{(bot.username ?? '').replace(/^@/, '') || 'без username'}</p>
+        <p className="mt-1 text-micro font-medium text-fg-secondary">Воронка продаж · Telegram</p>
       </div>
       <StatusBadge
         tone={bot.status === 'active' ? 'success' : 'warning'}

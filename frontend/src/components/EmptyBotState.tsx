@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Plus, LayoutGrid } from 'lucide-react';
+import { ArrowRight, Check, Plus } from 'lucide-react';
 
 interface EmptyBotStateProps {
   onCreateBot: () => void;
@@ -9,8 +9,8 @@ interface EmptyBotStateProps {
 
 export const EmptyBotState = ({ 
   onCreateBot,
-  title = 'Добро пожаловать!',
-  description = 'Создайте своего первого бота, чтобы автоматизировать процессы общения с клиентами и начать принимать платежи прямо в Telegram.'
+  title = 'Создайте первую воронку',
+  description = 'Telegram-бот с сообщениями, приёмом заявок и рассылками. Черновик создаётся бесплатно.'
 }: EmptyBotStateProps) => {
   return (
     <div style={{
@@ -40,11 +40,10 @@ export const EmptyBotState = ({
           border: '1px solid var(--color-border)',
           borderRadius: '24px',
           textAlign: 'center',
-          background: 'linear-gradient(180deg, var(--color-surface) 0%, var(--color-surface-2) 100%)'
+          background: 'var(--color-surface)'
         }}
       >
-        {/* Badge */}
-        <div style={{ 
+        <div style={{
           position: 'relative', 
           zIndex: 1,
           display: 'inline-flex', 
@@ -58,13 +57,12 @@ export const EmptyBotState = ({
           fontSize: '13px',
           fontWeight: 600,
           marginBottom: '16px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+          boxShadow: 'var(--shadow-card)'
         }}>
-          <LayoutGrid size={15} />
-          <span>BotFlow</span>
+          <Check size={15} aria-hidden="true" />
+          <span>Доступно сейчас</span>
         </div>
 
-        {/* Image — smaller on mobile */}
         <div style={{
           position: 'relative',
           zIndex: 1,
@@ -76,17 +74,16 @@ export const EmptyBotState = ({
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.2, duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-            src="/empty_state_robot.png" 
-            alt="New Bot" 
+            src="/visuals/scenarios/sales-funnel-card.png"
+            alt="Иллюстрация воронки продаж"
             style={{ 
               // Adaptive height: smaller on small screens
-              height: 'clamp(140px, 25vh, 240px)',
+              height: 'clamp(132px, 23vh, 200px)',
               objectFit: 'contain'
             }} 
           />
         </div>
 
-        {/* Text Content */}
         <h2 style={{
           fontSize: 'clamp(18px, 4vw, 24px)',
           fontWeight: 800,
@@ -128,8 +125,9 @@ export const EmptyBotState = ({
             borderRadius: '14px'
           }}
         >
-          <Plus size={20} strokeWidth={2.5} />
-          Создать первого бота
+          <Plus size={20} aria-hidden="true" />
+          Создать Telegram-бота
+          <ArrowRight size={18} aria-hidden="true" />
         </button>
       </motion.div>
     </div>

@@ -469,7 +469,6 @@ export default function App() {
             key="bot_switcher"
             bots={appState.bots}
             activeBotId={appState.activeBot?.id}
-            subscriptionStatus={appState.subscriptionStatus}
             switchingBotId={switchingBotId}
             selectionDisabled={Boolean(
               appState.activeBot &&

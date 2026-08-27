@@ -1,12 +1,10 @@
 import { motion } from 'framer-motion';
-import { Check, Plus, X, Lock, RefreshCw } from 'lucide-react';
+import { Check, Plus, X, RefreshCw } from 'lucide-react';
 import type { BotConfig } from '../../types';
-import { useAppState } from '../../providers/AppStateProvider';
 
 interface BotSwitcherProps {
   bots: BotConfig[];
   activeBotId: string | undefined;
-  subscriptionStatus: 'none' | 'active' | 'expired';
   switchingBotId?: string | null;
   selectionDisabled?: boolean;
   onSelect: (id: string) => void;
@@ -15,10 +13,7 @@ interface BotSwitcherProps {
   onToggleStatus?: (botId: string, newStatus: 'active' | 'inactive') => Promise<void>;
 }
 
-export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, switchingBotId, selectionDisabled = false, onSelect, onAddBot, onClose, onToggleStatus }: BotSwitcherProps) => {
-  const { isAdmin } = useAppState();
-  const isPro = subscriptionStatus === 'active' || isAdmin;
-
+export const BotSwitcher = ({ bots, activeBotId, switchingBotId, selectionDisabled = false, onSelect, onAddBot, onClose, onToggleStatus }: BotSwitcherProps) => {
   return (
     <>
       <motion.div
@@ -138,21 +133,17 @@ export const BotSwitcher = ({ bots, activeBotId, subscriptionStatus, switchingBo
               width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
               padding: '10px 12px', borderRadius: 'var(--radius-xs)', border: 'none',
               background: 'transparent', transition: 'background 150ms ease',
-              color: (!isPro && bots.length >= 1) ? 'var(--color-foreground-tertiary)' : 'var(--color-foreground-secondary)',
-              opacity: (!isPro && bots.length >= 1) || selectionDisabled ? 0.6 : 1,
+              color: selectionDisabled ? 'var(--color-foreground-tertiary)' : 'var(--color-foreground-secondary)',
+              opacity: selectionDisabled ? 0.6 : 1,
               cursor: switchingBotId || selectionDisabled ? 'not-allowed' : 'pointer',
             }}
           >
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1.5px dashed var(--color-border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              {(!isPro && bots.length >= 1) ? <Lock size={14} /> : <Plus size={14} />}
+              <Plus size={14} />
             </div>
             <div style={{ textAlign: 'left' }}>
               <div style={{ fontSize: '14px' }}>Добавить бота</div>
-              {!isPro && bots.length >= 1 ? (
-                <div style={{ fontSize: '11px', color: 'var(--color-warning)' }}>Доступно по PRO подписке</div>
-              ) : (
-                <div style={{ fontSize: '11px', color: 'var(--color-foreground-tertiary)' }}>Сборка бесплатно</div>
-              )}
+              <div style={{ fontSize: '11px', color: 'var(--color-foreground-tertiary)' }}>Черновик создаётся бесплатно</div>
             </div>
           </button>
           {(switchingBotId || selectionDisabled) && (
