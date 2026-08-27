@@ -202,7 +202,7 @@ async def _toggle_client_bot(
             bot = await assign_lifetime_license(bot.id) or bot
         for owner_bot in owner_bots:
             if owner_bot.id != bot.id and owner_bot.status == "active":
-                await set_bot_status(owner_bot.id, "draft")
+                await set_bot_lifecycle_state(owner_bot.id, "paused", "subscription")
 
     try:
         if new_status == "active":
@@ -888,10 +888,11 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         update_data["media_sync_done"] = False
         # Keep the webhook only for the owner's /start synchronization, but do
         # not leave the replacement bot publicly serving an incomplete funnel.
-        update_data["status"] = "draft"
         if getattr(bot, "lifecycle_status", None) != "archived" and bot.status != "archived":
-            update_data["lifecycle_status"] = "paused"
-            update_data["pause_reason"] = "integration"
+            await bot_lifecycle_service.transition(bot, "paused", reason="integration")
+            update_data["status"] = bot.status
+            update_data["lifecycle_status"] = bot.lifecycle_status
+            update_data["pause_reason"] = bot.pause_reason
         # Telegram file_id values belong to a particular bot token.  Never let
         # a new token reuse files uploaded through the previous bot.
         schema = dict(bot.funnel_schema or {})

@@ -2,6 +2,7 @@ from typing import Optional, Any
 from sqlalchemy import select, delete, update
 from sqlalchemy.orm import joinedload, selectinload
 from database.models import BotConfig, User, async_session
+from services.bot_lifecycle import LEGACY_STATUS_BY_LIFECYCLE
 
 
 async def get_bot_by_id(id: int) -> BotConfig | None:
@@ -181,20 +182,13 @@ async def set_bot_lifecycle_state(
     bot_id: int, lifecycle_status: str, pause_reason: str | None = None
 ) -> BotConfig | None:
     """Persist an already-validated lifecycle transition with legacy dual-write."""
-    legacy_statuses = {
-        "draft": "draft",
-        "ready": "draft",
-        "published": "active",
-        "paused": "draft",
-        "archived": "archived",
-    }
     async with async_session() as session:
         bot = await session.get(BotConfig, bot_id)
         if not bot:
             return None
         bot.lifecycle_status = lifecycle_status
         bot.pause_reason = pause_reason
-        bot.status = legacy_statuses[lifecycle_status]
+        bot.status = LEGACY_STATUS_BY_LIFECYCLE[lifecycle_status]
         await session.commit()
         await session.refresh(bot)
         return bot
