@@ -267,7 +267,7 @@ export const Profile = () => {
               >
                 {/* PRO Subscription CTA — selling banner if not subscribed */}
                 <div
-                  className="relative overflow-hidden transition-shadow group-hover:shadow-[0_8px_24px_-6px_rgba(124,58,237,0.4)]"
+                  className="relative overflow-hidden transition-shadow group-hover:shadow-[var(--shadow-float)]"
                   style={{
                     borderRadius: 20,
                       background: "var(--color-primary)",
