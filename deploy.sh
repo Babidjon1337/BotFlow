@@ -98,6 +98,14 @@ deploy_frontend() {
 
     cd "$PROJECT_DIR/frontend" || fail "Не удалось перейти в frontend"
 
+    info "Устанавливаю frontend-зависимости из lockfile..."
+
+    if npm ci; then
+        success "Frontend-зависимости установлены"
+    else
+        fail "Ошибка установки frontend-зависимостей"
+    fi
+
     if npm run build; then
         success "Frontend успешно собран"
     else
