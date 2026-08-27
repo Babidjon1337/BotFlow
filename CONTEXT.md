@@ -78,6 +78,10 @@ Account
   экраны клиентов/аналитики.
 - Добавлена совместимая проверка Telegram WebApp перед `requestFullscreen`
   (`f684af4`); старые клиенты больше не получают эту console-ошибку.
+- R1 manual smoke в авторизованном Telegram WebView на desktop и телефоне
+  пройден 27.08.2026. После R1 также закреплены воспроизводимая frontend-сборка
+  и соответствие базовой light/dark темы актуальным токенам Design System
+  (`c13ce0a`, `0681546`, `705e17d`, `9f22344`).
 - Проверки: `npm run lint`, `npm run build`, backend pytest — `53 passed`.
 
 ### Findings
@@ -110,17 +114,18 @@ Account
 
 ### Current Stage
 
-R1 / Этап 0.3 реализован и закоммичен. Gate частично ожидает только ручной
-smoke в авторизованном Telegram WebView на desktop и телефоне; новый продуктовый
-этап начинать до фиксации результата этой проверки не следует.
+R2 / Контракты домена и миграционный каркас. R1 gate зелёный: автоматические
+проверки и ручной smoke в авторизованном Telegram WebView на desktop и телефоне
+пройдены. Подготовлен только план совместимой миграции; БД, API и runtime ещё
+не менялись.
 
 ### Next Step
 
-Первым действием новой сессии выполнить ручной R1 smoke после deploy:
-«Мои боты → открыть → Сценарий → назад → настройки → смена бота», оба варианта
-dirty-state, non-admin admin-route, mobile safe-area/keyboard/scroll. Если gate
-зелёный, начать R2 с аудита текущих схем и API для обратноссовместимого контракта
-`scenario_type` и lifecycle — сначала план миграции, без немедленного изменения БД.
+Реализовать первый малый R2-шаг из `docs/R2_MIGRATION_PLAN.md`: contract-тесты
+текущих bot/funnel/readiness endpoints, затем nullable Alembic migration с
+идемпотентным backfill `scenario_type`, lifecycle и версии payload. Не менять
+legacy `status`, `funnel_schema` или платёжные правила до прохождения migration
+и compatibility tests.
 
 ### Important Files
 
