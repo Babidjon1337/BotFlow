@@ -25,8 +25,10 @@ from services.billing_notifications import notify_billing_user
 from services.saas_billing import BillingError, create_recurring_payment
 from database.requests.bot_rq import (
     enforce_non_pro_bot_limits,
+    claim_expired_bot_subscription,
+    finalize_bot_subscription_expiry,
     get_expired_published_bots,
-    mark_bot_subscription_expired,
+    release_bot_subscription_expiry_claim,
     set_bot_lifecycle_state,
 )
 from services.bot_lifecycle import BotLifecycleService
@@ -98,6 +100,8 @@ async def renew_pro_subscriptions_job():
 async def expire_bot_subscriptions_job():
     """Pause only the published bot whose dedicated subscription has ended."""
     for bot_config in await get_expired_published_bots():
+        if not await claim_expired_bot_subscription(bot_config.id):
+            continue
         try:
             token = crypto.decrypt(bot_config.bot_token_enc)
             bot = Bot(token=token, session=shared_scheduler_session)
@@ -110,8 +114,9 @@ async def expire_bot_subscriptions_job():
                 bot_config.lifecycle_status,
                 bot_config.pause_reason,
             )
-            await mark_bot_subscription_expired(bot_config.id)
+            await finalize_bot_subscription_expiry(bot_config.id)
         except Exception as exc:
+            await release_bot_subscription_expiry_claim(bot_config.id)
             logger.warning(
                 "Не удалось остановить бота %s после окончания подписки: %s",
                 bot_config.id,

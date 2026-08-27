@@ -100,13 +100,44 @@ async def get_expired_published_bots(
         return list(result.all())
 
 
-async def mark_bot_subscription_expired(bot_id: int) -> None:
-    """Record expiry only after the bot has safely stopped accepting traffic."""
+async def claim_expired_bot_subscription(
+    bot_id: int, now: datetime | None = None
+) -> bool:
+    """Lease an expired subscription so a concurrent renewal wins before stop."""
+    effective_now = now or datetime.now(timezone.utc)
+    async with async_session() as session:
+        result = await session.execute(
+            update(BotSubscription)
+            .where(
+                BotSubscription.bot_id == bot_id,
+                BotSubscription.status == "active",
+                BotSubscription.ends_at.is_not(None),
+                BotSubscription.ends_at <= effective_now,
+            )
+            .values(status="expiring")
+        )
+        await session.commit()
+        return result.rowcount == 1
+
+
+async def finalize_bot_subscription_expiry(bot_id: int) -> None:
+    """Finish a claimed expiry after the linked bot has safely stopped."""
     async with async_session() as session:
         await session.execute(
             update(BotSubscription)
-            .where(BotSubscription.bot_id == bot_id, BotSubscription.status == "active")
+            .where(BotSubscription.bot_id == bot_id, BotSubscription.status == "expiring")
             .values(status="expired")
+        )
+        await session.commit()
+
+
+async def release_bot_subscription_expiry_claim(bot_id: int) -> None:
+    """Make a failed expiry attempt retryable without changing its end date."""
+    async with async_session() as session:
+        await session.execute(
+            update(BotSubscription)
+            .where(BotSubscription.bot_id == bot_id, BotSubscription.status == "expiring")
+            .values(status="active")
         )
         await session.commit()
 
@@ -252,7 +283,11 @@ async def enforce_non_pro_bot_limits(owner_id: int) -> None:
             (
                 await session.scalars(
                     select(BotConfig)
-                    .where(BotConfig.owner_id == owner_id, BotConfig.status == "active")
+                    .where(
+                        BotConfig.owner_id == owner_id,
+                        BotConfig.status == "active",
+                        ~BotConfig.id.in_(select(BotSubscription.bot_id)),
+                    )
                     .order_by(BotConfig.id)
                 )
             ).all()

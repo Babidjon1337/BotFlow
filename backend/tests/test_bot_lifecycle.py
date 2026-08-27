@@ -2,6 +2,7 @@
 
 import asyncio
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -13,6 +14,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from services.bot_lifecycle import BotLifecycleService, LifecycleTransitionError
+from services.bot_entitlement import BotEntitlementService
 from services.funnel_readiness import FunnelReadiness
 from services import scheduler
 
@@ -90,7 +92,8 @@ def test_expired_bot_subscription_pauses_only_the_linked_published_bot(monkeypat
         bot_token_enc=b"encrypted",
     )
     persisted = AsyncMock()
-    marked_expired = AsyncMock()
+    claimed_expiry = AsyncMock(return_value=True)
+    finalized_expiry = AsyncMock()
 
     class TelegramBot:
         def __init__(self, **_kwargs):
@@ -101,7 +104,8 @@ def test_expired_bot_subscription_pauses_only_the_linked_published_bot(monkeypat
 
     monkeypatch.setattr(scheduler, "get_expired_published_bots", AsyncMock(return_value=[expired_bot]))
     monkeypatch.setattr(scheduler, "set_bot_lifecycle_state", persisted)
-    monkeypatch.setattr(scheduler, "mark_bot_subscription_expired", marked_expired)
+    monkeypatch.setattr(scheduler, "claim_expired_bot_subscription", claimed_expiry)
+    monkeypatch.setattr(scheduler, "finalize_bot_subscription_expiry", finalized_expiry)
     monkeypatch.setattr(scheduler.crypto, "decrypt", lambda _value: "123456:token")
     monkeypatch.setattr(scheduler, "Bot", TelegramBot)
 
@@ -110,4 +114,35 @@ def test_expired_bot_subscription_pauses_only_the_linked_published_bot(monkeypat
     assert expired_bot.lifecycle_status == "paused"
     assert expired_bot.pause_reason == "subscription"
     persisted.assert_awaited_once_with(71, "paused", "subscription")
-    marked_expired.assert_awaited_once_with(71)
+    claimed_expiry.assert_awaited_once_with(71)
+    finalized_expiry.assert_awaited_once_with(71)
+
+
+def test_renewed_subscription_is_not_paused_by_an_old_expiry_scan(monkeypatch):
+    expired_bot = _bot(
+        id=71,
+        status="active",
+        lifecycle_status="published",
+        pause_reason=None,
+    )
+    persisted = AsyncMock()
+
+    monkeypatch.setattr(scheduler, "get_expired_published_bots", AsyncMock(return_value=[expired_bot]))
+    monkeypatch.setattr(scheduler, "claim_expired_bot_subscription", AsyncMock(return_value=False))
+    monkeypatch.setattr(scheduler, "set_bot_lifecycle_state", persisted)
+
+    asyncio.run(scheduler.expire_bot_subscriptions_job())
+
+    assert expired_bot.lifecycle_status == "published"
+    persisted.assert_not_awaited()
+
+
+def test_future_dedicated_subscription_cannot_publish_early():
+    now = datetime.now(timezone.utc)
+    subscription = SimpleNamespace(
+        status="active",
+        starts_at=now + timedelta(minutes=1),
+        ends_at=now + timedelta(days=30),
+    )
+
+    assert not BotEntitlementService().can_publish(subscription, now=now)
