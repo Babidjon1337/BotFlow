@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bot, KeyRound, ExternalLink, ArrowRight, ArrowLeft, CheckCircle2, Info, CreditCard, AlertTriangle } from 'lucide-react';
+import { X, Bot, KeyRound, ExternalLink, ArrowRight, ArrowLeft, CheckCircle2, Info, CreditCard, AlertTriangle, LockKeyhole } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../../constants';
 import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
@@ -84,7 +84,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
 
 
 
-  const canGoNext1 = token.trim().length > 0 && token.includes(':');
+  const canGoNext1 = name.trim().length > 0;
   
   const currentFields = useMemo(() => PAYMENT_PROVIDERS[provider], [provider]);
   
@@ -183,10 +183,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   <div className="w-16 h-16 mx-auto rounded-2xl bg-[var(--color-primary-soft)] flex items-center justify-center mb-4">
                     <Bot size={32} className="text-[var(--color-primary)]" />
                   </div>
-                  <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">
-                    Для начала нам потребуется токен от <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-[var(--color-primary)] hover:underline">@BotFather</a>.<br />
-                    Создайте нового бота там и скопируйте HTTP API Token.
-                  </p>
+                  <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">Выберите сценарий и назовите будущего бота. Токен понадобится только на следующем шаге.</p>
                 </div>
 
                 <div>
@@ -202,33 +199,10 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                     className="input w-full"
                   />
                 </div>
-
-
-
-                <div>
-                  <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">
-                    Telegram Token <span className="text-[var(--color-danger)]">*</span>
-                  </label>
-                  <div className="relative">
-                    <KeyRound size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" />
-                    <input
-                      type="text"
-                      placeholder="1234567890:AAH..."
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      onFocus={handleFocus}
-                      className="input w-full"
-                      style={{ paddingLeft: '40px' }}
-                    />
-                  </div>
-                   <AnimatePresence>
-                  {token && !token.includes(':') && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-                      <p className="text-[12px] text-[var(--color-danger)] mt-1.5">Некорректный формат токена</p>
-                    </motion.div>
-                  )}
-                  </AnimatePresence>
+                <div className="rounded-2xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-soft)] p-3 text-left">
+                  <div className="flex gap-3"><img src="/visuals/scenarios/sales-funnel-card.png" alt="Воронка продаж" className="size-14 rounded-xl object-cover" /><div><p className="text-sm font-semibold text-[var(--color-foreground)]">Воронка продаж</p><p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">Сообщения, заявки и рассылки в Telegram. 990 ₽ в месяц после публикации.</p></div></div>
                 </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-[var(--color-foreground-tertiary)]"><span className="flex items-center gap-1 rounded-xl border border-dashed border-[var(--color-border)] p-3"><LockKeyhole size={14} />Запись · скоро</span><span className="flex items-center gap-1 rounded-xl border border-dashed border-[var(--color-border)] p-3"><LockKeyhole size={14} />Mini App · скоро</span></div>
               </motion.div>
             )}
 
@@ -248,6 +222,12 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed">
                     Как вы хотите принимать оплату от пользователей?
                   </p>
+                </div>
+
+                <div>
+                  <label className="text-[13px] font-medium text-[var(--color-foreground-secondary)] block mb-1.5">Telegram Token <span className="text-[var(--color-danger)]">*</span></label>
+                  <div className="relative"><KeyRound size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" /><input type="text" placeholder="1234567890:AAH..." value={token} onChange={(e) => setToken(e.target.value)} onFocus={handleFocus} className="input w-full" style={{ paddingLeft: '40px' }} /></div>
+                  {token && !token.includes(':') ? <p className="mt-1.5 text-[12px] text-[var(--color-danger)]">Некорректный формат токена</p> : <p className="mt-1.5 text-[12px] text-[var(--color-foreground-tertiary)]">Telegram доступен сейчас. VK и MAX появятся позже.</p>}
                 </div>
 
                 <label className="flex items-center justify-between cursor-pointer bg-[var(--color-surface-2)] p-4 rounded-xl border border-[var(--color-border)] hover:border-[var(--color-border-strong)] transition-all">
@@ -428,7 +408,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.96 }}
               onClick={() => setStep(nextStep)}
-              disabled={(step === 1 && !canGoNext1) || (step === 2 && !canGoNext2)}
+              disabled={(step === 1 && !canGoNext1) || (step === 2 && (!token.includes(':') || !canGoNext2))}
               className="h-[52px] rounded-2xl flex items-center justify-center font-semibold transition-colors flex-[2] text-white disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))', boxShadow: '0 8px 16px -6px rgba(99,102,241,0.4)' }}
             >
@@ -460,3 +440,4 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
     </>
   );
 };
+
