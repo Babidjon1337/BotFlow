@@ -353,6 +353,10 @@ export const apiService = {
     return fetchApi<{ connections: GatewayConnection[] }>("/api/gateway-connections");
   },
 
+  async createGatewayConnection(data: { provider: GatewayConnection['provider']; displayName: string; credentials: Record<string, string> }) {
+    return fetchApi<GatewayConnection>("/api/gateway-connections", { method: "POST", body: JSON.stringify(data) });
+  },
+
   async createBot(data: {
     token?: string;
     displayName: string;
