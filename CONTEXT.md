@@ -1,5 +1,5 @@
 # BotFlow — глоссарий предметной области
-Статус: актуально с 26.08.2026.
+Статус: актуально с 27.08.2026.
 
 Этот файл определяет только язык продукта. Поведение и пользовательские сценарии описаны в `docs/PRODUCT_MODEL.md`.
 
@@ -60,3 +60,85 @@ Account
 - общий PRO на 10 ботов;
 - лимит сообщений, лидов или подписчиков как основа тарификации;
 - триал на полноценную публикацию.
+
+## SESSION HANDOFF
+
+### Completed
+
+- Проведён product discovery и зафиксирована целевая модель: один аккаунт содержит
+  несколько независимых ботов; подписка и возможности относятся к конкретному
+  боту, а не к общему лимиту аккаунта.
+- Обновлены SSOT-документы и roadmap (`7ec4ca0`, `7c183fd`).
+- Зафиксирована текущая frontend-база (`6fd7179`): shell, маршруты Account/Bot
+  Workspace, header Bot Context Switcher, возврат в «Мои боты», mobile navigation,
+  административный guard и переиспользуемые UI-компоненты.
+- Исправлены подтверждённые проблемы стабилизации: двойной mobile safe-area,
+  нижний CTA под Telegram bar, ложный статус подключения платформы, сохранение
+  admin-маршрута до завершения авторизации, циклические CSS-тени и ложные
+  экраны клиентов/аналитики.
+- Добавлена совместимая проверка Telegram WebApp перед `requestFullscreen`
+  (`f684af4`); старые клиенты больше не получают эту console-ошибку.
+- Проверки: `npm run lint`, `npm run build`, backend pytest — `53 passed`.
+
+### Findings
+
+- Реальный авторизованный browser smoke не выполнен локально: Vite возвращает
+  `502` на `/api/auth`, а локальный browser не получает валидный Telegram `initData`.
+  Нельзя подменять это фейковой авторизацией; нужен ручной прогон в Telegram после deploy.
+- Vite предупреждает о крупном chunk `Home` (~394 kB minified). Это не блокер R1,
+  но его нужно оценить при отдельной работе над производительностью.
+- Рассылки пока не имеют ни реализованного экрана, ни API. Они не должны
+  маскироваться пустой вкладкой; честно оставлены задачей R7.
+- Локальный graphify-graph устарел и всё ещё содержит удалённый `BotsListScreen`.
+  `graphify . --update --no-viz` заблокирован без LLM API key для changed docs;
+  до успешного update не использовать graph как единственный источник истины.
+
+### Approved Decisions
+
+- v1 — Telegram и сценарий «Воронка продаж»; VK/MAX, «Запись на услугу» и Mini App
+  показываются только как «Скоро».
+- У одного бота ровно один сценарий; режимы `autopay`, `application`, `hybrid`
+  входят в сценарий и не тарифицируются отдельно.
+- Черновик бесплатен для тестирования владельцем; полноценная публикация требует
+  оплаты конкретного бота или подходящего Gift Grant. Trial отсутствует.
+- У аккаунта может быть несколько Gateway Connection одного провайдера, но у
+  конкретного бота — одна активная касса. Старые счета должны работать со своим snapshot.
+- Рассылки в будущем выбирают аудиторию конкретного бота: все, оплатившие,
+  неоплатившие. Ограничений по числу лидов/сообщений в v1 нет.
+- Светлая тема по умолчанию; переключение light/dark доступно в workspace.
+- Нельзя выдавать отсутствующую backend-логику за готовую UI-функцию.
+
+### Current Stage
+
+R1 / Этап 0.3 реализован и закоммичен. Gate частично ожидает только ручной
+smoke в авторизованном Telegram WebView на desktop и телефоне; новый продуктовый
+этап начинать до фиксации результата этой проверки не следует.
+
+### Next Step
+
+Первым действием новой сессии выполнить ручной R1 smoke после deploy:
+«Мои боты → открыть → Сценарий → назад → настройки → смена бота», оба варианта
+dirty-state, non-admin admin-route, mobile safe-area/keyboard/scroll. Если gate
+зелёный, начать R2 с аудита текущих схем и API для обратноссовместимого контракта
+`scenario_type` и lifecycle — сначала план миграции, без немедленного изменения БД.
+
+### Important Files
+
+- `CONTEXT.md`, `docs/PRODUCT_MODEL.md`, `docs/ARCHITECTURE.md`,
+  `docs/DESIGN_SYSTEM.md`, `docs/ROADMAP.md`, `docs/OPERATIONS_AND_RELEASE.md`.
+- `frontend/src/App.tsx`, `frontend/src/routes.ts`,
+  `frontend/src/components/shell/AppShell.tsx`, `TopBar.tsx`, `Sidebar.tsx`,
+  `BottomNav.tsx`.
+- `frontend/src/providers/AppStateProvider.tsx`,
+  `frontend/src/hooks/useBotSelectionGuard.ts`,
+  `frontend/src/components/tabs/Build.tsx`, `Home.tsx`, `BotManagement.tsx`.
+- `backend/api_router.py`, `backend/main.py`, `backend/database/models.py`,
+  `backend/services/payment_link.py`, `backend/services/scheduler.py`.
+
+### Do Not Redo
+
+- Не повторять перестройку shell/роутинга и уже устранённые safe-area/dirty/admin
+  ошибки из `6fd7179` и `f684af4`.
+- Не создавать пустую вкладку «Рассылки» и не добавлять общую библиотеку касс до R2.
+- Не менять текущие API, БД, биллинг или платёжную бизнес-логику в рамках R1.
+- Не доверять устаревшему `graphify-out/graph.json` до успешного обновления graphify.
