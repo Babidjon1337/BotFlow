@@ -550,9 +550,10 @@ export const Build = () => {
       push2: "push2",
       payment: "tariffs",
     };
-    if (selectedBlockId && blockToScreen[selectedBlockId]) {
-      setPreviewScreen(blockToScreen[selectedBlockId]);
-    }
+    const nextScreen = selectedBlockId && blockToScreen[selectedBlockId];
+    if (!nextScreen) return;
+    const timer = window.setTimeout(() => setPreviewScreen(nextScreen), 0);
+    return () => window.clearTimeout(timer);
   }, [selectedBlockId]);
   const { toggleBot, isToggling } = useBotToggle();
 
@@ -677,7 +678,7 @@ export const Build = () => {
   const paymentBlock = getBlock("payment");
   const paymentMode = paymentBlock?.paymentMode || "auto";
 
-  const checkHasContent = (content?: any) => {
+  const checkHasContent = (content?: unknown) => {
     if (!content || typeof content !== 'string') return false;
     const plainText = content.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ").trim();
     return plainText.length > 0;

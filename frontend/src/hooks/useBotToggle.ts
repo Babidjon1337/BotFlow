@@ -52,9 +52,13 @@ export const useBotToggle = () => {
 
       setToastType('success');
       setToastMessage(newStatus === 'active' ? 'Бот успешно запущен' : 'Бот остановлен');
-    } catch (error: any) {
+    } catch (error: unknown) {
       setToastType('error');
-      setToastMessage(error?.message || (newStatus === 'active' ? 'Не удалось запустить бота' : 'Не удалось остановить бота'));
+      setToastMessage(
+        error instanceof Error
+          ? error.message
+          : (newStatus === 'active' ? 'Не удалось запустить бота' : 'Не удалось остановить бота'),
+      );
     } finally {
       setIsToggling(prev => ({ ...prev, [bot.id]: false }));
     }

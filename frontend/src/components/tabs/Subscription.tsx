@@ -125,7 +125,7 @@ export const Subscription = () => {
     setToastMessage,
     isAdmin,
   } = useAppState();
-  const onGoToBots = () => setActiveTab("home");
+  const onGoToBots = () => setActiveTab("manage");
   const [step, setStep] = useState<"select" | "confirm" | "success">("select");
   const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
   const [email, setEmail] = useState("");

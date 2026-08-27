@@ -32,7 +32,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, title, className
     const spaceBottom = window.innerHeight - rect.bottom;
     const spaceRight = window.innerWidth - rect.right;
 
-    let actualSide: InfoTooltipProps['side'] = side;
+    let actualSide: InfoTooltipProps['side'];
 
     // Smart positioning logic based on available space
     if (window.innerWidth >= 768 && spaceRight > width + 20 && side !== 'left' && side !== 'bottom') {

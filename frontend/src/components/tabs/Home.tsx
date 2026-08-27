@@ -258,13 +258,16 @@ export const Home = () => {
     const botId = appState.activeBot?.id;
     if (!botId) return;
     let cancelled = false;
-    setIsLoadingChart(true);
+    const loadingTimer = window.setTimeout(() => setIsLoadingChart(true), 0);
     void import("../../services/api")
       .then(({ apiService }) => apiService.getBotChartData(botId, chartPeriod))
       .then((data) => { if (!cancelled) setChartData(data.points); })
       .catch(() => { if (!cancelled) setChartData([]); })
       .finally(() => { if (!cancelled) setIsLoadingChart(false); });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(loadingTimer);
+    };
   }, [appState.activeBot?.id, chartPeriod]);
 
   useEffect(() => {
@@ -1061,10 +1064,10 @@ export const Home = () => {
             </div>
             <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
           </div>
-          {stats.funnel_data && stats.funnel_data.length > 0 && stats.funnel_data.some((d: any) => d.value > 0) ? (
+          {stats.funnel_data && stats.funnel_data.length > 0 && stats.funnel_data.some(d => d.value > 0) ? (
             <div className="mt-5 flex flex-col gap-2.5">
-              {stats.funnel_data.map((step: any, idx: number) => {
-                const maxFunnelValue = Math.max(...stats.funnel_data.map((d: any) => d.value), 1);
+              {stats.funnel_data.map((step, idx: number) => {
+                const maxFunnelValue = Math.max(...stats.funnel_data.map(d => d.value), 1);
                 const percentage = Math.max((step.value / maxFunnelValue) * 100, 2); // min 2% for visibility
                 const prevValue = idx > 0 ? stats.funnel_data[idx - 1].value : null;
                 const conversionFromPrev = prevValue ? Math.round((step.value / prevValue) * 100) : (idx === 0 ? 100 : 0);

@@ -38,9 +38,14 @@ GEMINI.md
 
 # Dev artifacts
 gemini_image/
-md/
 test*
 frontend/.playwright-cli/
 frontend/*.png
 frontend/*.jpg
 graphify-out/
+.playwright/
+.playwright-cli/
+.smoke/
+references/
+docs/history/
+output/

@@ -140,10 +140,10 @@ export const DeliverySelector = ({
     const nextChatType = firstVerifiedType ?? (newIds.length > 0 ? chat.chatType : undefined);
     
     if (onBatchUpdate) {
-      onBatchUpdate(newDelivery, nextChatType as any);
+      onBatchUpdate(newDelivery, nextChatType);
     } else {
       onDeliveryValueChange(newDelivery);
-      onChatTypeChange?.(nextChatType as any);
+      onChatTypeChange?.(nextChatType);
     }
   };
 
@@ -311,7 +311,7 @@ export const DeliverySelector = ({
                             try {
                               const modes = JSON.parse(chatAccessMode || '{}');
                               currentMode = modes[chat.chatId] || 'member';
-                            } catch(err) { /* ignore */ }
+                            } catch { /* malformed legacy value falls back to member */ }
                             
                             return (
                               <div className="flex items-center rounded-full bg-[var(--color-surface-2)] p-0.5 border border-[var(--color-border)] mr-2" onClick={e => e.stopPropagation()}>
@@ -322,7 +322,7 @@ export const DeliverySelector = ({
                                       const modes = JSON.parse(chatAccessMode || '{}');
                                       modes[chat.chatId] = 'member';
                                       onChatAccessModeChange(JSON.stringify(modes));
-                                    } catch(err) {
+                                    } catch {
                                       onChatAccessModeChange(JSON.stringify({ [chat.chatId]: 'member' }));
                                     }
                                   }}
@@ -337,7 +337,7 @@ export const DeliverySelector = ({
                                       const modes = JSON.parse(chatAccessMode || '{}');
                                       modes[chat.chatId] = 'read_only';
                                       onChatAccessModeChange(JSON.stringify(modes));
-                                    } catch(err) {
+                                    } catch {
                                       onChatAccessModeChange(JSON.stringify({ [chat.chatId]: 'read_only' }));
                                     }
                                   }}

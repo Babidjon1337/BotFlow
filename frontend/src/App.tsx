@@ -1,17 +1,12 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
-import { Sidebar } from './components/Sidebar';
-import { Header } from './components/Header';
-import { MobileNav } from './components/MobileNav';
 
-import { Home } from './components/tabs/Home';
-
-import { BotSettings } from './components/sheets/BotSettings';
+import { BillingRenew } from './components/sheets/BillingRenew';
 import { CheckoutSheet } from './components/sheets/CheckoutSheet';
 import { BotCreateSheet } from './components/sheets/BotCreateSheet';
 import { BotSwitcher } from './components/sheets/BotSwitcher';
-import { BillingRenew } from './components/sheets/BillingRenew';
+import { BotSettings } from './components/sheets/BotSettings';
 import { FunnelLoadStateView } from './components/FunnelLoadStateView';
 
 import { Toast } from './components/Toast';
@@ -19,6 +14,17 @@ import { useAppState } from './providers/AppStateProvider';
 import { mapApiBot } from './services/botMapper';
 import { useBotToggle } from './hooks/useBotToggle';
 import { useBotSelectionGuard } from './hooks/useBotSelectionGuard';
+
+import {
+  loadStoredRoute,
+  persistRoute,
+  resolveRoute,
+} from './routes';
+import type { AccountTab, AppRoute } from './routes';
+import { AppShell } from './components/shell/AppShell';
+import { BotPlatformsScreen } from './components/screens/BotPlatformsScreen';
+import { BotMonetizationScreen } from './components/screens/BotMonetizationScreen';
+import { BotOverviewScreen } from './components/screens/BotOverviewScreen';
 
 type TelegramWebApp = {
   ready?: () => void; expand?: () => void;
@@ -39,15 +45,15 @@ const getTelegramWebApp = (): TelegramWebApp | undefined =>
   (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp;
 
 const Build = lazy(() => import('./components/tabs/Build').then(({ Build: Component }) => ({ default: Component })));
-const Flow = lazy(() => import('./components/tabs/Flow').then(({ Flow: Component }) => ({ default: Component })));
-const BotManagement = lazy(() => import('./components/tabs/BotManagement').then(({ BotManagement: Component }) => ({ default: Component })));
 const Profile = lazy(() => import('./components/tabs/Profile').then(({ Profile: Component }) => ({ default: Component })));
 const Subscription = lazy(() => import('./components/tabs/Subscription').then(({ Subscription: Component }) => ({ default: Component })));
+const Home = lazy(() => import('./components/tabs/Home').then(({ Home: Component }) => ({ default: Component })));
+const BotManagement = lazy(() => import('./components/tabs/BotManagement').then(({ BotManagement: Component }) => ({ default: Component })));
 const AdminStats = lazy(() => import('./components/tabs/AdminStats').then(({ AdminStats: Component }) => ({ default: Component })));
 
 const TabLoading = () => (
   <div className="flex min-h-[240px] w-full items-center justify-center" role="status" aria-label="Загрузка раздела">
-    <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--color-primary-soft)] border-t-[var(--color-primary)]" />
+    <div className="size-8 animate-spin rounded-full border-2 border-accent border-t-primary" />
   </div>
 );
 
@@ -55,8 +61,6 @@ export default function App() {
   const {
     appState,
     setAppState,
-    activeTab,
-    setActiveTab,
     toastMessage,
     setToastMessage,
     toastType,
@@ -69,18 +73,58 @@ export default function App() {
     funnelLoadState,
     switchingBotId,
     getFunnelWorkspaceGeneration,
+    activeTab,
+    setActiveTab,
   } = useAppState();
   const { toggleBot } = useBotToggle();
   const { requestBotSelection } = useBotSelectionGuard();
-  const activeBotId = appState.activeBot?.id;
-  const needsMediaSync = appState.activeBot?.mediaSyncDone === false;
-  const funnelWorkspaceReady = !appState.activeBot || (
-    funnelLoadState.status === 'ready' &&
-    funnelLoadState.botId === appState.activeBot.id
-  );
+
+  const [route, setRoute] = useState<AppRoute>(() => loadStoredRoute());
   const [isBotCreating, setIsBotCreating] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [hasFocusedTextField, setHasFocusedTextField] = useState(false);
+
+  const resolvedRoute = appState.isLoading
+    ? route
+    : resolveRoute(route, Boolean(appState.activeBot), Boolean(appState.isAdmin));
+  const previousLegacyTab = useRef(activeTab);
+  const routeDrivenLegacyTab = useRef<typeof activeTab | null>(null);
+
+  const goAccountTab = (tab: AccountTab) => setRoute({ level: 'account', tab });
+  const goBackToBots = () => setRoute({ level: 'account', tab: 'bots' });
+
+  useEffect(() => {
+    if (!appState.isLoading) persistRoute(resolvedRoute);
+  }, [appState.isLoading, resolvedRoute]);
+
+  useEffect(() => {
+    if (routeDrivenLegacyTab.current === activeTab) {
+      routeDrivenLegacyTab.current = null;
+      previousLegacyTab.current = activeTab;
+      return;
+    }
+    if (previousLegacyTab.current === activeTab) return;
+    previousLegacyTab.current = activeTab;
+    const legacyRoutes = {
+      home: { level: 'bot', view: 'overview' },
+      build: { level: 'bot', view: 'scenario' },
+      flow: { level: 'bot', view: 'scenario' },
+      profile: { level: 'account', tab: 'profile' },
+      subscription: { level: 'account', tab: 'billing' },
+      manage: { level: 'account', tab: 'bots' },
+      admin_stats: { level: 'account', tab: 'admin' },
+    } as const;
+    setRoute(legacyRoutes[activeTab]);
+  }, [activeTab]);
+
+  useEffect(() => {
+    const legacyTab = resolvedRoute.level === 'account'
+      ? ({ bots: 'manage', billing: 'subscription', profile: 'profile', admin: 'admin_stats' } as const)[resolvedRoute.tab as 'bots' | 'billing' | 'profile' | 'admin']
+      : ({ overview: 'home', scenario: 'build' } as const)[resolvedRoute.view as 'overview' | 'scenario'];
+    if (!legacyTab || legacyTab === activeTab) return;
+    routeDrivenLegacyTab.current = legacyTab;
+    setActiveTab(legacyTab);
+  }, [activeTab, resolvedRoute, setActiveTab]);
 
   useEffect(() => {
     const tg = getTelegramWebApp();
@@ -99,13 +143,11 @@ export default function App() {
           console.warn('requestFullscreen not supported:', error);
         }
       }
-      // Official TG API to disable swipe-to-close gesture
       if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
-      // Set TG colors to match our exact theme to prevent black lines/bars at the bottom
-      const bgColor = theme === 'dark' ? '#09090b' : '#ffffff';
-      if (tg.setHeaderColor) tg.setHeaderColor(bgColor);
-      if (tg.setBackgroundColor) tg.setBackgroundColor(bgColor);
-      if (tg.setBottomBarColor) tg.setBottomBarColor(bgColor);
+      const bgColor = theme === 'dark' ? '#0d0e12' : '#fcfcfd';
+      tg.setHeaderColor?.(bgColor);
+      tg.setBackgroundColor?.(bgColor);
+      tg.setBottomBarColor?.(bgColor);
     }
   }, [theme, appState.isDirty]);
 
@@ -160,13 +202,6 @@ export default function App() {
     }
   }, [theme]);
 
-  const previousTab = useRef<typeof activeTab>('home');
-  useEffect(() => {
-    if (activeTab !== 'subscription') {
-      previousTab.current = activeTab;
-    }
-  }, [activeTab]);
-
   useEffect(() => {
     const tg = getTelegramWebApp();
     const backButton = tg?.BackButton;
@@ -183,21 +218,23 @@ export default function App() {
       return () => {
         backButton.offClick(handleBack);
       };
-    } else if (activeTab === 'subscription') {
+    }
+
+    if (resolvedRoute.level === 'bot') {
       backButton.show();
-      const handleBack = () => {
-        setActiveTab(previousTab.current);
-      };
+      const handleBack = goBackToBots;
       backButton.onClick(handleBack);
       return () => {
         backButton.offClick(handleBack);
       };
-    } else {
-      backButton.hide();
     }
-  }, [appState.activeSheet, setSheet, activeTab, setActiveTab, switchingBotId, isBotCreating]);
+
+    backButton.hide();
+  }, [appState.activeSheet, appState.activeBot, setSheet, resolvedRoute, switchingBotId, isBotCreating]);
 
   useEffect(() => {
+    const activeBotId = appState.activeBot?.id;
+    const needsMediaSync = appState.activeBot?.mediaSyncDone === false;
     let interval: ReturnType<typeof setInterval> | undefined;
     if (activeBotId && needsMediaSync) {
       interval = setInterval(async () => {
@@ -224,36 +261,38 @@ export default function App() {
       }, 3000);
     }
     return () => clearInterval(interval);
-  }, [activeBotId, needsMediaSync, setAppState]);
+  }, [appState.activeBot?.id, appState.activeBot?.mediaSyncDone, setAppState]);
+
+  const funnelWorkspaceReady = !appState.activeBot || (
+    funnelLoadState.status === 'ready' &&
+    funnelLoadState.botId === appState.activeBot.id
+  );
 
   if (appState.isLoading) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-[var(--color-background)]" style={{ color: 'var(--color-foreground)' }}>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]"></div>
+      <div className="flex h-full w-full items-center justify-center bg-background text-foreground">
+        <div className="size-8 animate-spin rounded-full border-2 border-accent border-t-primary" />
       </div>
     );
   }
 
   if (authError) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center relative overflow-hidden bg-[var(--color-background)] px-6 text-center" style={{ color: 'var(--color-foreground)' }}>
-        {/* Background glow effects */}
-        <div style={{ position: 'absolute', top: '20%', left: '30%', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(239,68,68,0.08) 0%, rgba(255,255,255,0) 70%)', zIndex: 0, borderRadius: '50%' }} />
-        <div style={{ position: 'absolute', bottom: '20%', right: '30%', width: '250px', height: '250px', background: 'radial-gradient(circle, rgba(245,158,11,0.05) 0%, rgba(255,255,255,0) 70%)', zIndex: 0, borderRadius: '50%' }} />
-        
-        <div className="relative z-10 flex flex-col items-center max-w-[400px] p-8 rounded-3xl border border-[var(--color-border)] shadow-xl" style={{ background: 'rgba(var(--color-surface-rgb), 0.7)', backdropFilter: 'blur(20px)' }}>
-          <div className="w-20 h-20 bg-red-500/10 rounded-2xl flex items-center justify-center mb-6 shadow-inner ring-1 ring-red-500/20">
-            <ShieldAlert className="text-red-500/90 w-10 h-10 animate-pulse" />
+      <div className="flex h-full w-full flex-col items-center justify-center bg-background px-6 text-center text-foreground">
+        <div className="flex max-w-[400px] flex-col items-center rounded-2xl border border-border bg-card p-8 shadow-card">
+          <div className="mb-5 flex size-16 items-center justify-center rounded-xl bg-danger-soft">
+            <ShieldAlert className="size-8 text-danger" />
           </div>
-          <h2 className="text-2xl font-black mb-3 tracking-tight">Ошибка авторизации</h2>
-          <p className="text-[var(--color-foreground-secondary)] mb-8 leading-relaxed text-sm">
-            Мы не смогли распознать ваш аккаунт. Пожалуйста, запустите главного бота (BotFlow) и нажмите кнопку <span className="font-semibold">«Открыть приложение»</span>.
+          <h2 className="text-title-lg font-semibold">Ошибка авторизации</h2>
+          <p className="mt-2 text-meta leading-relaxed text-fg-secondary">
+            Мы не смогли распознать ваш аккаунт. Откройте главного бота BotFlow и
+            нажмите кнопку «Открыть приложение».
           </p>
           <button
             onClick={() => {
               getTelegramWebApp()?.close?.();
             }}
-            className="w-full py-3.5 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-bold rounded-xl active:scale-[0.98] transition-all shadow-md shadow-red-500/20"
+            className="mt-6 h-11 w-full cursor-pointer rounded-md bg-primary font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
           >
             Закрыть окно
           </button>
@@ -263,87 +302,86 @@ export default function App() {
   }
 
   return (
-    <div
-      className={`app-root flex h-full w-full overflow-hidden ${isKeyboardOpen || hasFocusedTextField ? "app-keyboard-open" : ""}`}
-      style={{ color: 'var(--color-foreground)', position: 'relative' }}
-    >
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '40vh', background: 'linear-gradient(180deg, rgba(46,154,219,0.06) 0%, rgba(242,241,236,0) 100%)', zIndex: 0, pointerEvents: 'none' }} />
-      <div style={{ position: 'fixed', top: '-100px', right: '-100px', width: '300px', height: '300px', background: 'radial-gradient(circle, rgba(168,85,247,0.06) 0%, rgba(255,255,255,0) 70%)', zIndex: 0, pointerEvents: 'none', borderRadius: '50%' }} />
+    <>
+      <style>{`
+        @media (max-width: 1023px) {
+          .action-bar-mobile { bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px)) + 12px) !important; }
+          .flow-padding { padding-bottom: 0; }
+          .app-keyboard-open .action-bar-fixed {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translateY(140%) !important;
+          }
+        }
+      `}</style>
 
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-            appState={appState}
-            setSheet={setSheet}
-            theme={theme}
-            toggleTheme={toggleTheme}
-            onCreateBot={handleCreateBotClick}
-          />
-
-
-      <main
-        className="flex-1 min-h-0 flex flex-col relative lg:ml-[240px] overflow-hidden h-full"
+      <AppShell
+        route={resolvedRoute}
+        onAccountTab={goAccountTab}
+        onBotView={(view) => setRoute({ level: 'bot', view })}
+        onBackToBots={goBackToBots}
+        onCreateBot={handleCreateBotClick}
+        onOpenBotSettings={() => setSheet('bot_settings')}
+        onOpenBotSwitcher={() => setSheet('bot_switcher')}
+        activeBot={appState.activeBot}
+        isAdmin={Boolean(appState.isAdmin)}
+        subscriptionStatus={appState.subscriptionStatus}
+        subscriptionUntil={appState.subscriptionUntil}
+        theme={theme}
+        toggleTheme={toggleTheme}
+        bottomNavHidden={isKeyboardOpen || hasFocusedTextField}
       >
-        <Header activeTab={activeTab} appState={appState} setSheet={setSheet} onCreateBot={handleCreateBotClick} />
-
-        {/* Content Area with its own scroll */}
-        <div data-app-scroll-container className={`flex-1 min-h-0 flex flex-col relative ${activeTab === 'flow' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-          
-          {/* Mobile Navigation Spacer */}
-          <style>{`
-            @media (max-width: 1023px) {
-              /* Bottom: nav bar height (56) + 16px breathing room + safe area */
-              .mobile-padding { padding-bottom: calc(72px + max(env(safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px))) !important; }
-              .action-bar-mobile { bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px) !important; }
-              /* Top: TG header bar (Close + Minimize buttons) — use env(safe-area-inset-top) + 44px */
-              .tg-header-safe { padding-top: max(54px, calc(var(--tg-content-safe-area-inset-top, 0px) + 16px)) !important; }
-              .flow-padding { padding-bottom: 0; }
-              .app-keyboard-open .action-bar-fixed {
-                opacity: 0 !important;
-                pointer-events: none !important;
-                transform: translateY(140%) !important;
-              }
-            }
-          `}</style>
-
-          <div 
-            className={`flex-1 flex flex-col ${activeTab === 'flow' ? 'flow-padding' : activeTab === 'subscription' ? 'px-3 lg:px-4 py-4 lg:py-8 mobile-padding' : 'px-4 pt-3 pb-4 lg:p-8 mobile-padding'}`} 
-            style={{ maxWidth: activeTab === 'flow' ? '100%' : activeTab === 'admin_stats' ? '1440px' : activeTab === 'build' ? '1240px' : '900px', margin: '0 auto', width: '100%' }}
-          >
-          <Suspense fallback={<TabLoading />}>
+        <Suspense fallback={<TabLoading />}>
           <AnimatePresence mode="wait">
-            {activeTab === 'home' && (
-              <Home key="home" />
+            {resolvedRoute.level === 'account' && resolvedRoute.tab === 'bots' && (
+              <BotManagement key="bots" />
             )}
-            {activeTab === 'build' && (
-              funnelWorkspaceReady
-                ? <Build key="build" />
-                : <FunnelLoadStateView key="build-funnel-state" />
+            {resolvedRoute.level === 'account' && resolvedRoute.tab === 'billing' && (
+              <Subscription key="billing" />
             )}
-            {activeTab === 'flow' && (
-              funnelWorkspaceReady
-                ? <Flow key="flow" />
-                : <FunnelLoadStateView key="flow-funnel-state" />
-            )}
-            {activeTab === 'profile' && (
+            {resolvedRoute.level === 'account' && resolvedRoute.tab === 'profile' && (
               <Profile key="profile" />
             )}
-            {activeTab === 'subscription' && (
-              <Subscription key="subscription" />
+            {resolvedRoute.level === 'account' && resolvedRoute.tab === 'admin' && appState.isAdmin && (
+              <AdminStats key="admin" />
             )}
-            {activeTab === 'manage' && (
-              <BotManagement key="manage" />
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'overview' && appState.activeBot && (
+              funnelWorkspaceReady ? (
+                appState.activeBot.status === 'active'
+                  ? <Home key="overview" />
+                  : <BotOverviewScreen
+                      key="overview"
+                      bot={appState.activeBot}
+                      subscriptionStatus={appState.subscriptionStatus}
+                      onNavigate={(view) => setRoute({ level: 'bot', view })}
+                      onPublish={async () => {
+                        if (appState.activeBot) await toggleBot(appState.activeBot);
+                      }}
+                    />
+              ) : (
+                <FunnelLoadStateView key="overview-state" />
+              )
             )}
-            {activeTab === 'admin_stats' && (
-              <AdminStats key="admin_stats" />
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'scenario' && (
+              funnelWorkspaceReady ? <Build key="scenario" /> : <FunnelLoadStateView key="scenario-state" />
+            )}
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'platforms' && appState.activeBot && (
+              <BotPlatformsScreen
+                key="platforms"
+                bot={appState.activeBot}
+                onOpenSettings={() => setSheet('bot_settings')}
+              />
+            )}
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'monetization' && appState.activeBot && (
+              <BotMonetizationScreen
+                key="monetization"
+                bot={appState.activeBot}
+                onOpenSettings={() => setSheet('bot_settings')}
+              />
             )}
           </AnimatePresence>
-          </Suspense>
-        </div>
-        </div>
-      </main>
-
-      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} hidden={isKeyboardOpen || hasFocusedTextField} />
+        </Suspense>
+      </AppShell>
 
       {/* Sheets */}
       <AnimatePresence>
@@ -373,10 +411,9 @@ export default function App() {
             tariffId={appState.sheetData.tariff}
             onClose={() => setSheet(null)}
             onSuccess={(email) => {
-              const tariff = appState.sheetData && 'tariff' in appState.sheetData ? appState.sheetData.tariff : 'basic';
               setAppState(prev => ({ ...prev, userEmail: email }));
               setSheet(null);
-              setToastMessage(`Счёт на ${tariff === 'pro' ? 'PRO' : 'лицензию'} создан. Завершите оплату в ЮKassa.`);
+              setToastMessage('Счёт создан. Завершите оплату в ЮKassa.');
             }}
           />
         )}
@@ -418,10 +455,10 @@ export default function App() {
               }));
               setSheet(null);
               if (canActivateCreatedBot) {
-                setActiveTab('build');
-                setToastMessage('Бот успешно создан! 🎉');
+                setRoute({ level: 'bot', view: 'scenario' });
+                setToastMessage('Бот создан. Подключите платформу и заполните сценарий.');
               } else {
-                setToastMessage('Бот создан и добавлен в список. Текущие изменения воронки сохранены.');
+                setToastMessage('Бот создан и добавлен в список.');
               }
             }}
           />
@@ -441,12 +478,14 @@ export default function App() {
             onClose={() => setSheet(null)}
             onAddBot={handleCreateBotClick}
             onSelect={(id) => {
-              const bot = appState.bots.find(b => String(b.id) === String(id));
-              if (bot) {
-                requestBotSelection(bot, {
-                  onSelected: () => setSheet(null),
-                });
-              }
+              const targetBot = appState.bots.find(bot => String(bot.id) === String(id));
+              if (!targetBot) return;
+              requestBotSelection(targetBot, {
+                onSelected: () => {
+                  setSheet(null);
+                  setRoute({ level: 'bot', view: 'overview' });
+                },
+              });
             }}
             onToggleStatus={async (id) => {
               const bot = appState.bots.find(item => item.id === id);
@@ -456,13 +495,12 @@ export default function App() {
             }}
           />
         )}
-
       </AnimatePresence>
 
       {toastMessage && (
         <Toast message={toastMessage} type={toastType} onClose={() => { setToastMessage(null); setTimeout(() => setToastType('success'), 300); }} />
       )}
 
-    </div>
+    </>
   );
 }

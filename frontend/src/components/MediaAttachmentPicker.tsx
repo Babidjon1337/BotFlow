@@ -32,22 +32,24 @@ export function MediaAttachmentPicker({
 }: MediaAttachmentPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ key: string; url: string } | null>(null);
+  const previewKey = botId && assetId && mediaType ? `${botId}:${assetId}:${mediaType}` : null;
+  const previewUrl = previewKey && preview?.key === previewKey ? preview.url : null;
 
   useEffect(() => {
     if (!botId || !assetId || !mediaType) {
-      setPreviewUrl(null);
       return;
     }
+    const requestKey = `${botId}:${assetId}:${mediaType}`;
     let objectUrl: string | null = null;
     let cancelled = false;
     void apiService.getBotMediaPreview(botId, assetId)
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
-        setPreviewUrl(objectUrl);
+        setPreview({ key: requestKey, url: objectUrl });
       })
-      .catch(() => { if (!cancelled) setPreviewUrl(null); });
+      .catch(() => { /* fallback icon remains visible */ });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
