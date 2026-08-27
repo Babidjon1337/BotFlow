@@ -58,9 +58,10 @@ Gate: lint, build, pytest, browser smoke — зелёные. Отдельный 
 
 ## R2. Контракты домена и миграционный каркас
 
-Статус: первый малый шаг выполнен. План совместимой миграции зафиксирован в
-`docs/R2_MIGRATION_PLAN.md`; добавлены nullable migration и compatibility
-контракты. Runtime-поведение пока не менялось.
+Статус: первый малый шаг и migration gate пройдены. План совместимой миграции
+зафиксирован в `docs/R2_MIGRATION_PLAN.md`; nullable migration и compatibility
+контракты проверены forward/backfill/downgrade на изолированной PostgreSQL.
+Runtime-поведение пока не менялось.
 
 ### Backend
 
