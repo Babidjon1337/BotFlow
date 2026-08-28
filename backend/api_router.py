@@ -32,6 +32,7 @@ from database.requests.bot_rq import (
 )
 from database.requests.user_rq import archive_leads_by_bot_id, get_lead, get_leads_by_bot_id
 from database.requests.broadcast_rq import (
+    cancel_broadcast,
     create_broadcast,
     get_audience_summary,
     get_broadcast,
@@ -1491,10 +1492,12 @@ async def list_audience_endpoint(
 async def create_broadcast_endpoint(
     bot_id: int, request: Request, body: BroadcastCreateRequest
 ):
-    """Создаёт рассылку со снимком получателей и ставит в очередь отправки."""
+    """Создаёт рассылку со снимком получателей; дата в будущем — scheduled."""
     bot = await get_owned_bot(bot_id, request)
     try:
-        broadcast = await create_broadcast(bot.id, body.text, body.audience)
+        broadcast = await create_broadcast(
+            bot.id, body.text, body.audience, scheduled_at=body.scheduled_at
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
@@ -1538,3 +1541,15 @@ async def retry_broadcast_endpoint(broadcast_id: UUID, request: Request):
     if requeued == 0:
         raise HTTPException(status_code=400, detail="Нет неудачных доставок для повтора")
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
+
+
+@api_router.post("/api/broadcasts/{broadcast_id}/cancel", response_model=BroadcastApiResponse)
+async def cancel_broadcast_endpoint(broadcast_id: UUID, request: Request):
+    """Отменяет рассылку, которая ещё не начала отправляться."""
+    broadcast = await _get_owned_broadcast(broadcast_id, request)
+    try:
+        await cancel_broadcast(broadcast.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    updated = await get_broadcast(broadcast.id)
+    return BroadcastApiResponse.from_orm_broadcast(updated).model_dump(by_alias=True)

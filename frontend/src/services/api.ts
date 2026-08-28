@@ -53,6 +53,7 @@ export interface AudienceLead {
 export type BroadcastStatus =
   | "draft"
   | "queued"
+  | "scheduled"
   | "sending"
   | "sent"
   | "failed"
@@ -67,6 +68,7 @@ export interface Broadcast {
   totalRecipients: number;
   sentCount: number;
   failedCount: number;
+  scheduledAt: string | null;
   createdAt: string | null;
   completedAt: string | null;
   lastError: string | null;
@@ -619,11 +621,21 @@ export const apiService = {
   async createBroadcast(
     botId: string | number,
     text: string,
-    audience: AudienceFilter
+    audience: AudienceFilter,
+    scheduledAt?: string
   ) {
     return fetchApi<Broadcast>(`/api/bots/${botId}/broadcasts`, {
       method: "POST",
-      body: JSON.stringify({ text, audience }),
+      body: JSON.stringify(
+        scheduledAt ? { text, audience, scheduledAt } : { text, audience }
+      ),
+    });
+  },
+
+  async cancelBroadcast(broadcastId: string) {
+    return fetchApi<Broadcast>(`/api/broadcasts/${broadcastId}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({}),
     });
   },
 

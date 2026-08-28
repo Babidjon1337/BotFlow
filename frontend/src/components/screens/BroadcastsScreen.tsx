@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
+  CalendarClock,
   Megaphone,
   Plus,
   RefreshCw,
   Send,
   Users,
+  XCircle,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
 import { apiService } from '../../services/api';
@@ -15,11 +17,13 @@ import type {
   AudienceSummary,
   Broadcast,
   BroadcastStatus,
-} from '../../services/api';import { Button } from '../ui/button';
+} from '../../services/api';
+import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { StatusBadge, type StatusTone } from '../common/StatusBadge';
 import { SectionHeader } from '../common/SectionHeader';
 import { StoryEmptyState } from '../common/StoryEmptyState';
+import { useAlert } from '../AlertProvider';
 import { BroadcastComposerSheet } from '../sheets/BroadcastComposerSheet';
 
 type BroadcastsTab = 'audience' | 'broadcasts';
@@ -35,6 +39,7 @@ const PAGE_SIZE = 20;
 const statusMeta: Record<BroadcastStatus, { tone: StatusTone; label: string }> = {
   draft: { tone: 'neutral', label: 'Черновик' },
   queued: { tone: 'info', label: 'В очереди' },
+  scheduled: { tone: 'warning', label: 'Запланирована' },
   sending: { tone: 'primary', label: 'Отправляется' },
   sent: { tone: 'success', label: 'Отправлено' },
   failed: { tone: 'danger', label: 'Ошибка' },
@@ -357,6 +362,8 @@ function BroadcastsTabContent({
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const { showConfirm, showAlert } = useAlert();
 
   const load = useCallback(
     () =>
@@ -381,7 +388,10 @@ function BroadcastsTabContent({
   }, [load]);
 
   const hasActive = (broadcasts ?? []).some(
-    (item) => item.status === 'queued' || item.status === 'sending'
+    (item) =>
+      item.status === 'queued' ||
+      item.status === 'sending' ||
+      item.status === 'scheduled'
   );
 
   useEffect(() => {
@@ -408,6 +418,38 @@ function BroadcastsTabContent({
     } finally {
       setRetryingId(null);
     }
+  };
+
+  const handleCancel = (broadcast: Broadcast) => {
+    showConfirm({
+      type: 'warning',
+      title: 'Отменить рассылку?',
+      message: 'Сообщение не будет отправлено. Действие нельзя отменить.',
+      confirmText: 'Отменить рассылку',
+      onConfirm: () => {
+        setCancellingId(broadcast.id);
+        apiService
+          .cancelBroadcast(broadcast.id)
+          .then((updated) => {
+            setBroadcasts((prev) =>
+              (prev ?? []).map((item) =>
+                item.id === updated.id ? updated : item
+              )
+            );
+          })
+          .catch((cancelError) => {
+            showAlert({
+              type: 'danger',
+              title: 'Не удалось отменить рассылку',
+              message:
+                cancelError instanceof Error
+                  ? cancelError.message
+                  : 'Попробуйте ещё раз позже',
+            });
+          })
+          .finally(() => setCancellingId(null));
+      },
+    });
   };
 
   if (broadcasts === null) {
@@ -469,6 +511,13 @@ function BroadcastsTabContent({
               {broadcast.text}
             </p>
 
+            {broadcast.status === 'scheduled' && broadcast.scheduledAt && (
+              <p className="mt-2 flex items-center gap-1.5 text-meta font-medium text-warning">
+                <CalendarClock className="size-3.5" aria-hidden />
+                Отправка: {formatDate(broadcast.scheduledAt)}
+              </p>
+            )}
+
             <div className="mt-3 flex items-center gap-2">
               <StatusBadge
                 tone={
@@ -513,21 +562,31 @@ function BroadcastsTabContent({
                   ? ` · ${formatNumber(broadcast.failedCount)} с ошибкой`
                   : ''}
               </p>
-              {broadcast.status === 'failed' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={retryingId === broadcast.id}
-                  onClick={() => void handleRetry(broadcast)}
-                >
-                  {retryingId === broadcast.id ? (
-                    <RefreshCw className="size-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <RefreshCw className="size-3.5" aria-hidden />
-                  )}
-                  Повторить
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {(broadcast.status === 'queued' ||
+                  broadcast.status === 'scheduled') && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={cancellingId === broadcast.id}
+                    onClick={() => handleCancel(broadcast)}
+                  >
+                    <XCircle data-icon="inline-start" aria-hidden />
+                    Отменить
+                  </Button>
+                )}
+                {broadcast.status === 'failed' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={retryingId === broadcast.id}
+                    onClick={() => void handleRetry(broadcast)}
+                  >
+                    <RefreshCw data-icon="inline-start" aria-hidden />
+                    Повторить
+                  </Button>
+                )}
+              </div>
             </div>
 
             {broadcast.lastError && broadcast.status === 'failed' && (

@@ -285,6 +285,10 @@ class AudienceListResponse(BaseModel):
 class BroadcastCreateRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=4096)
     audience: AudienceFilter = "all"
+    # None — отправить сразу; дата в будущем — отложенная отправка
+    scheduled_at: Optional[datetime] = Field(None, alias="scheduledAt")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class BroadcastApiResponse(BaseModel):
@@ -296,6 +300,7 @@ class BroadcastApiResponse(BaseModel):
     total_recipients: int = Field(..., alias="totalRecipients")
     sent_count: int = Field(..., alias="sentCount")
     failed_count: int = Field(..., alias="failedCount")
+    scheduled_at: Optional[str] = Field(None, alias="scheduledAt")
     created_at: Optional[str] = Field(None, alias="createdAt")
     completed_at: Optional[str] = Field(None, alias="completedAt")
     last_error: Optional[str] = Field(None, alias="lastError")
@@ -313,6 +318,9 @@ class BroadcastApiResponse(BaseModel):
             total_recipients=broadcast.total_recipients,
             sent_count=broadcast.sent_count,
             failed_count=broadcast.failed_count,
+            scheduled_at=(
+                broadcast.scheduled_at.isoformat() if broadcast.scheduled_at else None
+            ),
             created_at=(
                 broadcast.created_at.isoformat() if broadcast.created_at else None
             ),

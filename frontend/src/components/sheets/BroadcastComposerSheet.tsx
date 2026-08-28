@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Send, X } from 'lucide-react';
+import { CalendarClock, Send, X } from 'lucide-react';
 import { useViewportHeight } from '../../hooks';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
@@ -10,6 +10,9 @@ import type {
 } from '../../services/api';
 
 const MAX_LENGTH = 4096;
+// Минимальный запас до запланированного момента — минута, как на бэкенде.
+const MIN_SCHEDULE_LEAD_MS = 60_000;
+const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60 * 1000;
 
 const AUDIENCE_OPTIONS: {
   value: AudienceFilter;
@@ -28,6 +31,13 @@ interface BroadcastComposerSheetProps {
   onCreated: () => void;
 }
 
+/** datetime-local (локальная зона) → ISO с таймзоной или null. */
+function toIsoOrNull(localValue: string): string | null {
+  if (!localValue) return null;
+  const date = new Date(localValue);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export function BroadcastComposerSheet({
   botId,
   counts,
@@ -38,20 +48,53 @@ export function BroadcastComposerSheet({
   const { showConfirm, showAlert } = useAlert();
   const [text, setText] = useState('');
   const [audience, setAudience] = useState<AudienceFilter>('all');
+  const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
+  const [scheduleAt, setScheduleAt] = useState('');
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const trimmed = text.trim();
-  const isValid = trimmed.length > 0 && text.length <= MAX_LENGTH;
+  const scheduledIso = scheduleMode === 'later' ? toIsoOrNull(scheduleAt) : null;
+  const scheduleEmpty = scheduleMode === 'later' && !scheduleAt;
+  const isValid =
+    trimmed.length > 0 &&
+    text.length <= MAX_LENGTH &&
+    (scheduleMode === 'now' || (!scheduleEmpty && scheduleError === null));
   const recipients = counts ? counts[audience] : null;
 
   const countFor = (value: AudienceFilter) =>
     counts ? counts[value].toLocaleString('ru-RU') : '—';
 
+  /** Валидация даты — вызывается только из обработчиков (Date.now). */
+  const validateSchedule = (value: string): string | null => {
+    if (!value) return 'Выберите дату и время';
+    const time = new Date(value).getTime();
+    if (Number.isNaN(time)) return 'Выберите дату и время';
+    if (time < Date.now() + MIN_SCHEDULE_LEAD_MS)
+      return 'Время должно быть хотя бы на минуту в будущем';
+    if (time > Date.now() + MAX_SCHEDULE_AHEAD_MS)
+      return 'Отложить можно не больше чем на 90 дней';
+    return null;
+  };
+
+  const handleScheduleChange = (value: string) => {
+    setScheduleAt(value);
+    setScheduleError(value ? validateSchedule(value) : null);
+  };
+
   const submit = async () => {
-    if (!isValid || isSubmitting) return;
+    if (isSubmitting) return;
+    if (scheduleMode === 'later') {
+      const scheduleIssue = validateSchedule(scheduleAt);
+      if (scheduleIssue) {
+        setScheduleError(scheduleIssue);
+        return;
+      }
+    }
+    if (!isValid) return;
     setIsSubmitting(true);
     try {
-      await apiService.createBroadcast(botId, trimmed, audience);
+      await apiService.createBroadcast(botId, trimmed, audience, scheduledIso ?? undefined);
       onCreated();
     } catch (error) {
       showAlert({
@@ -66,11 +109,35 @@ export function BroadcastComposerSheet({
   };
 
   const handleSendClick = () => {
+    if (scheduleMode === 'later') {
+      const scheduleIssue = validateSchedule(scheduleAt);
+      if (scheduleIssue) {
+        setScheduleError(scheduleIssue);
+        return;
+      }
+    }
     if (!isValid) return;
+    const audienceLabel = recipients === null ? '—' : recipients.toLocaleString('ru-RU');
+    if (scheduleMode === 'later' && scheduledIso) {
+      const local = new Date(scheduleAt).toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      showConfirm({
+        type: 'info',
+        title: 'Запланировать рассылку?',
+        message: `Сообщение получат ${audienceLabel} подписчиков — ${local}. До отправки рассылку можно отменить.`,
+        confirmText: 'Запланировать',
+        onConfirm: submit,
+      });
+      return;
+    }
     showConfirm({
       type: 'info',
       title: 'Отправить рассылку?',
-      message: `Сообщение получат ${recipients === null ? '—' : recipients.toLocaleString('ru-RU')} подписчиков. Отменить отправку после запуска нельзя.`,
+      message: `Сообщение получат ${audienceLabel} подписчиков. Отменить отправку после запуска нельзя.`,
       confirmText: 'Отправить',
       onConfirm: submit,
     });
@@ -194,6 +261,50 @@ export function BroadcastComposerSheet({
               })}
             </div>
           </div>
+          <div>
+            <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+              Когда отправить
+            </p>
+            <div className="mt-2 flex gap-1 rounded-xl bg-muted p-1">
+              {(
+                [
+                  { value: 'now', label: 'Сейчас' },
+                  { value: 'later', label: 'Запланировать' },
+                ] as const
+              ).map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={scheduleMode === option.value}
+                  onClick={() => setScheduleMode(option.value)}
+                  className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-body-sm font-semibold transition-colors ${
+                    scheduleMode === option.value
+                      ? 'bg-card text-fg-primary shadow-xs'
+                      : 'text-fg-secondary hover:text-fg-primary'
+                  }`}
+                >
+                  {option.value === 'later' && (
+                    <CalendarClock className="size-4" aria-hidden />
+                  )}
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            {scheduleMode === 'later' && (
+              <div className="mt-2">
+                <input
+                  type="datetime-local"
+                  value={scheduleAt}
+                  onChange={(event) => handleScheduleChange(event.target.value)}
+                  aria-label="Дата и время отправки"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-body text-fg-primary outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30"
+                />
+                {scheduleError && (
+                  <p className="mt-1.5 text-meta text-warning">{scheduleError}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="border-t border-border px-5 py-4">
@@ -205,14 +316,18 @@ export function BroadcastComposerSheet({
           >
             {isSubmitting ? (
               <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+            ) : scheduleMode === 'later' ? (
+              <CalendarClock className="size-4" aria-hidden />
             ) : (
               <Send className="size-4" aria-hidden />
             )}
             {isSubmitting
               ? 'Запускаем…'
-              : `Отправить ${
-                  recipients === null ? '' : `${recipients.toLocaleString('ru-RU')} `
-                }подписчикам`}
+              : scheduleMode === 'later'
+                ? 'Запланировать'
+                : `Отправить ${
+                    recipients === null ? '' : `${recipients.toLocaleString('ru-RU')} `
+                  }подписчикам`}
           </button>
         </div>
       </motion.div>

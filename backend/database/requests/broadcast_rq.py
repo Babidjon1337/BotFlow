@@ -13,6 +13,11 @@ AUDIENCE_FILTERS = ("all", "paid", "unpaid")
 # Аварийное возвращение рассылки в очередь, если процесс умер во время отправки.
 STALE_SENDING_THRESHOLD = timedelta(minutes=10)
 
+# Отложенную отправку можно назначить не дальше, чем на 90 дней вперёд,
+# и не раньше, чем через минуту от текущего момента.
+MAX_SCHEDULE_AHEAD = timedelta(days=90)
+MIN_SCHEDULE_LEAD = timedelta(minutes=1)
+
 
 def audience_condition(audience: str):
     """SQL-условие фильтра аудитории; None означает «все»."""
@@ -80,11 +85,28 @@ async def list_audience_leads(
         return list(items.all()), total
 
 
-async def create_broadcast(bot_id: int, text: str, audience: str) -> Broadcast:
+def normalize_scheduled_at(scheduled_at: Optional[datetime]) -> Optional[datetime]:
+    """Валидирует дату отложенной отправки; naive-время трактуется как UTC."""
+    if scheduled_at is None:
+        return None
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if scheduled_at <= now + MIN_SCHEDULE_LEAD:
+        raise ValueError("Дата отправки должна быть хотя бы на минуту в будущем")
+    if scheduled_at > now + MAX_SCHEDULE_AHEAD:
+        raise ValueError("Отложить отправку можно не больше чем на 90 дней")
+    return scheduled_at
+
+
+async def create_broadcast(
+    bot_id: int, text: str, audience: str, scheduled_at: Optional[datetime] = None
+) -> Broadcast:
     """Создаёт рассылку и мгновенный снимок получателей; ставит в очередь.
 
     Снимок делается в момент создания: изменение аудитории после этого
     не меняет состав рассылки, а счётчик получателей детерминирован.
+    Дата в будущем переводит рассылку в статус scheduled.
     """
     if audience not in AUDIENCE_FILTERS:
         raise ValueError("Неизвестный фильтр аудитории")
@@ -93,6 +115,7 @@ async def create_broadcast(bot_id: int, text: str, audience: str) -> Broadcast:
         raise ValueError("Текст рассылки пуст")
     if len(cleaned) > 4096:
         raise ValueError("Текст длиннее лимита Telegram в 4096 символов")
+    scheduled_at = normalize_scheduled_at(scheduled_at)
 
     async with async_session() as session:
         leads_query = select(Lead).where(
@@ -107,11 +130,12 @@ async def create_broadcast(bot_id: int, text: str, audience: str) -> Broadcast:
 
         broadcast = Broadcast(
             bot_id=bot_id,
-            status="queued",
+            status="scheduled" if scheduled_at else "queued",
             audience=audience,
             text=cleaned,
             platform="telegram",
             total_recipients=len(leads),
+            scheduled_at=scheduled_at,
         )
         session.add(broadcast)
         await session.flush()
@@ -147,12 +171,23 @@ async def get_broadcast(broadcast_id: UUID) -> Optional[Broadcast]:
 
 
 async def claim_queued_broadcast() -> Optional[Broadcast]:
-    """Атомарно забирает одну рассылку из очереди (PostgreSQL SKIP LOCKED)."""
+    """Атомарно забирает одну созревшую рассылку (PostgreSQL SKIP LOCKED).
+
+    Отложенные (scheduled) не берутся, пока не наступит scheduled_at;
+    порядок — по дате отправки, затем по времени создания.
+    """
+    now = datetime.now(timezone.utc)
     async with async_session() as session:
         subquery = (
             select(Broadcast.id)
-            .where(Broadcast.status == "queued")
-            .order_by(Broadcast.created_at.asc())
+            .where(
+                Broadcast.status == "queued",
+                or_(
+                    Broadcast.scheduled_at.is_(None),
+                    Broadcast.scheduled_at <= now,
+                ),
+            )
+            .order_by(func.coalesce(Broadcast.scheduled_at, Broadcast.created_at).asc())
             .limit(1)
             .with_for_update(skip_locked=True)
         )
@@ -173,6 +208,36 @@ async def claim_queued_broadcast() -> Optional[Broadcast]:
             return None
         await session.commit()
         return row
+
+
+async def cancel_broadcast(broadcast_id: UUID) -> str:
+    """Атомарно отменяет рассылку, которая ещё не начала отправляться.
+
+    Повтор безопасен: пока воркер не сделал claim, статус остаётся
+    queued/scheduled и переводится в cancelled одним UPDATE.
+    """
+    async with async_session() as session:
+        result = await session.execute(
+            update(Broadcast)
+            .where(
+                Broadcast.id == broadcast_id,
+                Broadcast.status.in_(("queued", "scheduled")),
+            )
+            .values(status="cancelled", completed_at=func.now())
+            .returning(Broadcast.status)
+            .execution_options(synchronize_session=False)
+        )
+        row = result.scalar_one_or_none()
+        await session.commit()
+        if row is not None:
+            return row
+
+    broadcast = await get_broadcast(broadcast_id)
+    if broadcast is None:
+        raise ValueError("Рассылка не найдена")
+    if broadcast.status == "sending":
+        raise ValueError("Рассылка уже отправляется — отменить нельзя")
+    raise ValueError("Рассылка уже завершена или отменена")
 
 
 async def requeue_stale_sending_broadcasts() -> int:

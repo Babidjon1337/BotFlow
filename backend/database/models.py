@@ -409,7 +409,7 @@ class Broadcast(Base):
     )
     bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
 
-    # draft -> queued -> sending -> sent | failed | cancelled (scheduled comes in R7.3)
+    # queued | scheduled -> sending -> sent | failed | cancelled
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
 
     # Аудитория: all | paid | unpaid
@@ -419,6 +419,11 @@ class Broadcast(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
     platform: Mapped[str] = mapped_column(String(16), default="telegram")
+
+    # None — отправить сразу; дата в будущем — отложенная отправка (scheduled)
+    scheduled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
 
     total_recipients: Mapped[int] = mapped_column(Integer, default=0)
     sent_count: Mapped[int] = mapped_column(Integer, default=0)
