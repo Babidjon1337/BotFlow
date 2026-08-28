@@ -248,7 +248,7 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
             className="w-phone"
             aria-hidden="true"
           >
-            <div className="w-screen">
+            <div className="w-phone-screen">
               <div className="flex items-center justify-between px-5 pb-1.5 pt-3 text-[12.5px] font-bold text-[#10141c] dark:text-[#e8ecf4]">
                 <span>9:41</span>
                 <span className="inline-flex items-center gap-1" aria-hidden="true">
