@@ -86,18 +86,45 @@ Account
   (`c13ce0a`, `0681546`, `705e17d`, `9f22344`).
 - Проверки: `npm run lint`, `npm run build`, backend pytest — `53 passed`.
 
+### Completed (28.08.2026 — сессия дизайна и R7)
+
+- **Roadmap ревизия** (`6eb7c5e`): порядок выполнения R7 → R4.1 → R4.5 →
+  R4.2/R4.3; R4 разбит на R4.1/R4.2/R4.3, добавлен R4.5 (DS v2 rollout).
+- **Design System v2** (`8f8f4aa`): переписан `docs/DESIGN_SYSTEM.md`
+  (диагноз мини-аппа, Unbounded для денег/KPI, иерархия 26–44px, слоты
+  градиентов), живой гайд `docs/design-system.html` (light/dark).
+- **R7 рассылки — завершение** (`3fc5c01`): `scheduled_at` + миграция
+  `d7e9f2a4b6c8`, claim берёт только созревшие, `POST /api/broadcasts/{id}/cancel`
+  (queued/scheduled, атомарно), композер «Сейчас/Запланировать», cancel/retry в
+  истории, статус «Запланирована»; pytest контрактов — 21, полный suite 99 passed.
+- **R4.1 Welcome v2** (`ced5115`): дизайн v5 в `WelcomeScreen.tsx` — hero с
+  CSS-телефоном и чатом продажи, орбита с бусинами/спутниками, мягкое
+  вертикальное движение карточек, 4 сценария с 3D-иллюстрациями
+  (`public/visuals/welcome/`), цена-«чек», violet-токены, Unbounded;
+  `prefers-reduced-motion` поддержан.
+- **R4.5 DS v2 rollout** (`53aba98`): токены (violet, ink, radius 12,
+  page-title, kicker/money-классы), Button md/xl по DS, компонент `PageHeader`,
+  локальные тона разделов в Sidebar/BottomNav/табах бота (blue/cyan/green/
+  orange/violet/indigo + маркер).
+- **R4.2/R4.3 полировка** (`96cfa8c`): PageHeader на «Мои боты» и «Обзор»,
+  выручка на Unbounded.
+- **Уборка**: удалены мёртвые `Landing.tsx` и `Flow.tsx`; граф связей обновлён
+  `graphify . --update --no-viz --code-only` (1586 узлов / 3365 рёбер; для
+  docs-извлечения по-прежнему нужен LLM API key).
+- Проверки финала: `npm run lint`, `npm run build`, backend pytest — `99 passed`.
+
 ### Findings
 
 - Реальный авторизованный browser smoke не выполнен локально: Vite возвращает
   `502` на `/api/auth`, а локальный browser не получает валидный Telegram `initData`.
-  Нельзя подменять это фейковой авторизацией; нужен ручной прогон в Telegram после deploy.
-- Vite предупреждает о крупном chunk `Home` (~394 kB minified). Это не блокер R1,
+  Нельзя подменять это фейковой авторизацией; нужен ручной прогон в Telegram после deploy
+  (актуально и для Welcome v2 + рассылок с scheduled).
+- Vite предупреждает о крупном chunk `Home` (~394 kB minified). Это не блокер,
   но его нужно оценить при отдельной работе над производительностью.
-- Рассылки пока не имеют ни реализованного экрана, ни API. Они не должны
-  маскироваться пустой вкладкой; честно оставлены задачей R7.
-- Локальный graphify-graph устарел и всё ещё содержит удалённый `BotsListScreen`.
-  `graphify . --update --no-viz` заблокирован без LLM API key для changed docs;
-  до успешного update не использовать graph как единственный источник истины.
+- Локальный graphify-graph обновлён 28.08.2026 в режиме `--code-only`:
+  docs-семантика в графе отсутствует до появления LLM API key.
+- Scheduled-рассылки: редактирование запланированной не делаем (только отмена
+  и создание новой) — осознанное упрощение v1.
 
 ### Approved Decisions
 
@@ -113,41 +140,39 @@ Account
   неоплатившие. Ограничений по числу лидов/сообщений в v1 нет.
 - Светлая тема по умолчанию; переключение light/dark доступно в workspace.
 - Нельзя выдавать отсутствующую backend-логику за готовую UI-функцию.
+- Welcome Screen показывается только при отсутствии ботов, fullscreen.
+- Рассылки v1: немедленная и отложенная (scheduled) отправка; отмена доступна
+  только до старта отправки; редактирование запланированной — не делаем.
 
 ### Current Stage
 
-R3: CLOSED. R1 и R2 закрыты. Подшаги 1–4
-выполнены: совместимые `GatewayConnection` и `BotSubscription`, entitlement
-boundary, deterministic pricing contract и compatible per-bot publication
-switch. В v1 продаётся только Telegram-бот со сценарием «Воронка продаж» за
-990 ₽/мес; VK/MAX и будущие сценарии остаются «Скоро» и не могут попасть в
-quote. Если у бота есть `BotSubscription`, публикацию определяет только она;
-если записи нет — прежний PRO/lifetime маршрут. Expiry job атомарно резервирует
-истёкшую подписку, снимает webhook только связанного бота и переводит его в
-`paused/subscription`; legacy PRO-expiry не трогает мигрированные боты.
-Checkout и runtime billing намеренно не переключены. Финальная проверка: 75
-backend tests passed, Alembic head `a4d2e7f93c01`, code/spec review без
-незакрытых findings.
+R7 CLOSED (scheduled + cancel + UI). R4.1 Welcome v2 и R4.5 DS v2 rollout
+(токены, кит, shell) выполнены. R4.2/R4.3 — точечная полировка «Мои боты» и
+«Обзор» выполнена; остальные экраны продолжают внедрять DS v2 по правилу R10.
+Checkout и runtime billing по-прежнему намеренно не переключены.
 
 ### Next Step
 
-Перейти к R4 / подшагу 1: реализовать first-entry Account Workspace и честное
-отображение текущей Telegram «Воронки продаж» с заранее созданной карточкой;
-VK/MAX и будущие сценарии показывать только как disabled «Скоро». Не
-переключать legacy checkout; visual лежит в
-`frontend/public/visuals/scenarios/sales-funnel-card.png`.
+Ручной smoke в Telegram после deploy: Welcome v2 (0 ботов, обе темы, мобильный),
+создание scheduled-рассылки и её отмена. Затем по roadmap — R5 «Воронка продаж»
+(UX-часть): PageHeader + tone на редакторе сценария, тариф/offer-секция без
+бесконечного скролла.
 
 ### Important Files
 
 - `CONTEXT.md`, `docs/PRODUCT_MODEL.md`, `docs/ARCHITECTURE.md`,
-  `docs/DESIGN_SYSTEM.md`, `docs/ROADMAP.md`, `docs/OPERATIONS_AND_RELEASE.md`.
+  `docs/DESIGN_SYSTEM.md`, `docs/design-system.html`, `docs/ROADMAP.md`,
+  `docs/OPERATIONS_AND_RELEASE.md`.
 - `frontend/src/App.tsx`, `frontend/src/routes.ts`,
   `frontend/src/components/shell/AppShell.tsx`, `TopBar.tsx`, `Sidebar.tsx`,
   `BottomNav.tsx`.
-- `frontend/src/providers/AppStateProvider.tsx`,
-  `frontend/src/hooks/useBotSelectionGuard.ts`,
+- `frontend/src/components/common/PageHeader.tsx`,
+  `frontend/src/components/screens/WelcomeScreen.tsx`,
+  `frontend/src/components/screens/BroadcastsScreen.tsx`,
+  `frontend/src/components/sheets/BroadcastComposerSheet.tsx`,
   `frontend/src/components/tabs/Build.tsx`, `Home.tsx`, `BotManagement.tsx`.
 - `backend/api_router.py`, `backend/main.py`, `backend/database/models.py`,
+  `backend/database/requests/broadcast_rq.py`, `backend/services/broadcast.py`,
   `backend/services/payment_link.py`, `backend/services/scheduler.py`.
 
 ### Do Not Redo
@@ -156,4 +181,7 @@ VK/MAX и будущие сценарии показывать только ка
   ошибки из `6fd7179` и `f684af4`.
 - Не создавать пустую вкладку «Рассылки» и не добавлять общую библиотеку касс до R2.
 - Не менять текущие API, БД, биллинг или платёжную бизнес-логику в рамках R1.
-- Не доверять устаревшему `graphify-out/graph.json` до успешного обновления graphify.
+- Не доверять graphify-graph как единственному источнику истины по docs:
+  кодовая часть обновляется `--code-only`, docs-семантика требует LLM API key.
+- Не возвращать Unbounded в длинные русские заголовки и не окрашивать рабочие
+  формы фиолетовым/градиентами — слоты зафиксированы в DS v2 §4/§8.
