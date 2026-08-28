@@ -9,6 +9,13 @@ interface BottomNavProps {
   hidden?: boolean;
 }
 
+/** Локальные тона разделов (DS v2 §5) — совпадают с Sidebar. */
+const ACCOUNT_TAB_TONES: Record<string, string> = {
+  bots: 'nav-tone-blue',
+  billing: 'nav-tone-violet',
+  profile: 'nav-tone',
+};
+
 export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
   return (
     <nav
@@ -29,8 +36,11 @@ export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
               onClick={() => onAccountTab(tab.id)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'flex min-h-[44px] cursor-pointer flex-col items-center justify-center gap-0.5 text-micro font-medium transition-colors',
-                active ? 'text-primary' : 'text-fg-tertiary hover:text-fg-secondary',
+                'nav-tone flex min-h-[44px] cursor-pointer flex-col items-center justify-center gap-0.5 text-micro font-semibold transition-colors',
+                ACCOUNT_TAB_TONES[tab.id] ?? 'nav-tone',
+                active
+                  ? '[&]:text-[var(--nav-tone-text)]'
+                  : 'text-fg-tertiary hover:text-fg-secondary',
               )}
             >
               <Icon className="size-5" />

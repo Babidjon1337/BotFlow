@@ -7,6 +7,17 @@ import { BottomNav } from './BottomNav';
 import { TopBar } from './TopBar';
 import type { BotConfig } from '../../types';
 
+/** Локальные тона разделов бота (DS v2 §5): Обзор blue, Сценарий cyan, Продажи green, Рассылки orange. Legacy clients/analytics алиасятся на overview. */
+const BOT_VIEW_TONES: Record<BotView, string> = {
+  overview: 'nav-tone-blue',
+  scenario: 'nav-tone-cyan',
+  platforms: 'nav-tone',
+  monetization: 'nav-tone-green',
+  broadcasts: 'nav-tone-orange',
+  clients: 'nav-tone-blue',
+  analytics: 'nav-tone-indigo',
+};
+
 interface AppShellProps {
   route: AppRoute;
   onAccountTab: (tab: AccountTab) => void;
@@ -86,9 +97,10 @@ export function AppShell({
                   onClick={() => !disabled && onBotView(view.id)}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
+                    'nav-tone tab-item shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
+                    BOT_VIEW_TONES[view.id] ?? 'nav-tone',
                     active
-                      ? 'bg-accent text-accent-foreground'
+                      ? 'on'
                       : 'text-fg-secondary hover:bg-muted hover:text-foreground',
                     disabled && 'cursor-not-allowed text-fg-tertiary hover:bg-transparent',
                   )}

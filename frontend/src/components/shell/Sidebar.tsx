@@ -31,6 +31,14 @@ function subscriptionLabel(
   return { text: 'Без подписки', tone: 'text-fg-secondary bg-muted' };
 }
 
+/** Локальные тона разделов (DS v2 §5): окрашивают только пункт меню. */
+const ACCOUNT_TAB_TONES: Record<string, string> = {
+  bots: 'nav-tone-blue',
+  billing: 'nav-tone-violet',
+  profile: 'nav-tone',
+  admin: 'nav-tone',
+};
+
 export function Sidebar({
   route,
   onAccountTab,
@@ -48,7 +56,7 @@ export function Sidebar({
         <div className="flex size-8 items-center justify-center rounded-[10px] bg-primary">
           <Bot className="size-[18px] text-primary-foreground" />
         </div>
-        <span className="text-title font-semibold tracking-tight">BotFlow</span>
+        <span className="font-accent text-[14px] font-semibold tracking-tight">BotFlow</span>
       </div>
 
       <nav className="flex-1 space-y-1 px-3" aria-label="Основная навигация">
@@ -65,9 +73,10 @@ export function Sidebar({
               onClick={() => onAccountTab(tab.id)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-body-sm font-medium transition-colors',
+                'nav-item relative flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-body-sm font-medium transition-colors',
+                ACCOUNT_TAB_TONES[tab.id] ?? 'nav-tone',
                 active
-                  ? 'bg-accent text-accent-foreground'
+                  ? 'on'
                   : 'text-fg-secondary hover:bg-muted hover:text-foreground',
               )}
             >

@@ -83,10 +83,14 @@
 
   /* ── Semantic: радиусы ── */
   --radius-chip: 8px;
-  --radius-control: 10px;
+  --radius-control: 12px;
   --radius-alert: 12px;
   --radius-card: 16px;
   --radius-sheet: 20px;
+
+  /* Ink-кнопка лендинга/Welcome (DS §9.1): инвертируется в тёмной теме */
+  --ink: var(--n-800);
+  --ink-foreground: var(--n-0);
 
   /* ── Semantic: тени ── */
   --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
@@ -163,6 +167,9 @@
   --info-soft: rgb(132 173 255 / 0.14);
 
   --overlay: rgb(5 6 10 / 0.55);
+
+  --ink: #f8fafc;
+  --ink-foreground: #0b0c0f;
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.24);
   --shadow-card: 0 1px 3px rgb(0 0 0 / 0.28);
@@ -273,12 +280,20 @@
   --color-n-100: var(--n-100);
   --color-n-300: var(--n-300);
   --color-n-900: var(--n-900);
+  --color-v-100: var(--v-100);
+  --color-v-300: var(--v-300);
+  --color-v-500: var(--v-500);
+  --color-v-600: var(--v-600);
 
   --radius-sm: var(--radius-chip);
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-alert);
   --radius-xl: var(--radius-card);
   --radius-2xl: var(--radius-sheet);
+
+  --text-page-title: 1.625rem;
+  --text-page-title--line-height: 2rem;
+  --text-page-title--letter-spacing: -0.03em;
 
   --shadow-xs: var(--shadow-xs);
 }
@@ -741,8 +756,72 @@ body {
 }
 
 /* Ink-кнопка (лендинг/Welcome): автоматически инвертируется в тёмной теме */
-.bg-ink { background-color: var(--n-800); }
-.text-ink { color: var(--n-0); }
+.bg-ink { background-color: var(--ink); }
+.text-ink { color: var(--ink-foreground); }
+
+/* ── DS v2 §5/§10: кикер, деньги, локальные тона навигации ── */
+.kicker {
+  font-family: "Unbounded", "Onest", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+html.dark .kicker { color: var(--p-500); }
+.money-lg {
+  font-family: "Unbounded", "Onest", system-ui, sans-serif;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-feature-settings: "tnum";
+}
+.money-sm {
+  font-family: "Unbounded", "Onest", system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-feature-settings: "tnum";
+}
+
+.nav-tone { --nav-tone: var(--n-400); --nav-tone-soft: var(--n-100); --nav-tone-text: var(--n-700); }
+.nav-tone-blue { --nav-tone: var(--p-500); --nav-tone-soft: var(--p-100); --nav-tone-text: var(--p-600); }
+.nav-tone-green { --nav-tone: #12b76a; --nav-tone-soft: #ecfdf3; --nav-tone-text: #168a55; }
+.nav-tone-cyan { --nav-tone: #0ea5e9; --nav-tone-soft: #e0f2fe; --nav-tone-text: #0369a1; }
+.nav-tone-orange { --nav-tone: #f79009; --nav-tone-soft: #fffaeb; --nav-tone-text: #b54708; }
+.nav-tone-indigo { --nav-tone: #6172f3; --nav-tone-soft: #eef0ff; --nav-tone-text: #444ce7; }
+.nav-tone-violet { --nav-tone: var(--v-500); --nav-tone-soft: var(--v-100); --nav-tone-text: var(--v-600); }
+html.dark .nav-tone { --nav-tone: var(--n-400); --nav-tone-soft: var(--n-100); --nav-tone-text: var(--n-700); }
+html.dark .nav-tone-blue { --nav-tone-soft: rgb(77 141 255 / 0.14); --nav-tone-text: var(--p-600); }
+html.dark .nav-tone-green { --nav-tone: #3ccb7f; --nav-tone-soft: rgb(60 203 127 / 0.14); --nav-tone-text: #3ccb7f; }
+html.dark .nav-tone-cyan { --nav-tone: #36bffa; --nav-tone-soft: rgb(54 191 250 / 0.14); --nav-tone-text: #7dd3fc; }
+html.dark .nav-tone-orange { --nav-tone: #fdb022; --nav-tone-soft: rgb(253 176 34 / 0.14); --nav-tone-text: #fdb022; }
+html.dark .nav-tone-indigo { --nav-tone: #8098f9; --nav-tone-soft: rgb(128 152 249 / 0.14); --nav-tone-text: #a5b0fc; }
+html.dark .nav-tone-violet { --nav-tone-soft: rgb(139 92 246 / 0.14); --nav-tone-text: var(--v-600); }
+
+.nav-item { position: relative; }
+.nav-item.on {
+  background-color: var(--nav-tone-soft);
+  color: var(--nav-tone-text);
+}
+.nav-item.on::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--nav-tone);
+}
+
+/* Пилюльные табы разделов бота: тон без маркера */
+.tab-item.on {
+  background-color: var(--nav-tone-soft);
+  color: var(--nav-tone-text);
+}
 
 .text-gradient {
   background: linear-gradient(94deg, var(--p-500), var(--v-500));
