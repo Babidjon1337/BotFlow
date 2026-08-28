@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from "framer-motion";
+﻿import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -35,7 +35,8 @@ import {
   Play,
   CalendarDays,
 } from "lucide-react";
-import { useAppState } from "../../providers/AppStateProvider";
+ import { useAppState } from "../../providers/AppStateProvider";
+import { PageHeader } from "../common/PageHeader";
 
 /** The editor stores HTML for Telegram; selection cards need a safe, readable preview. */
 const toPlainPreviewText = (value: string | null | undefined) => {
@@ -792,10 +793,7 @@ export const Home = () => {
       className="space-y-6 pb-8"
     >
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-[20px] font-semibold tracking-tight text-[var(--color-foreground)]">Обзор бота</h1>
-          <p className="mt-0.5 truncate text-[12px] text-[var(--color-foreground-secondary)]">{appState.activeBot?.name}</p>
-        </div>
+        <PageHeader kicker="Обзор" tone="blue" title="Обзор бота" hint={appState.activeBot?.name} />
         <button
           type="button"
           onClick={refreshDashboard}
@@ -852,7 +850,7 @@ export const Home = () => {
               </div>
             </div>
             <div>
-              <div className="text-[32px] font-extrabold leading-none tracking-tight text-[var(--color-foreground)] sm:text-[36px]">
+              <div className="money-lg text-foreground">
                 {formatCurrency(stats.revenue)}
               </div>
               <div className="mt-2 text-[12px] font-medium text-[var(--color-foreground-tertiary)]">

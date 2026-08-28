@@ -14,6 +14,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { WelcomeScreen } from "../screens/WelcomeScreen";
+import { PageHeader } from "../common/PageHeader";
+import { Button } from "../ui/button";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useBotSelectionGuard } from "../../hooks/useBotSelectionGuard";
@@ -134,28 +136,19 @@ export const BotManagement = () => {
         transition={{ duration: 0.25 }}
       >
         {/* Top Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-[var(--color-foreground)]">
-              Управление ботами
-            </h1>
-            <p className="text-[14px] text-[var(--color-foreground-secondary)] mt-1">
-              Аналитика и настройки всех ваших проектов
-            </p>
-          </div>
-          <button
-            onClick={onCreateBot}
-            className="btn-primary-saas whitespace-nowrap"
-            style={{
-              height: "44px",
-              padding: "0 20px",
-              borderRadius: "14px",
-              fontSize: "14px",
-            }}
-          >
-            <Plus size={16} className="mr-2" />
-            Создать бота
-          </button>
+        <div className="mb-8">
+          <PageHeader
+            kicker="Аккаунт"
+            tone="blue"
+            title="Мои боты"
+            hint="Ваши проекты и их статистика"
+            action={
+              <Button onClick={onCreateBot} size="md">
+                <Plus data-icon="inline-start" aria-hidden />
+                Создать бота
+              </Button>
+            }
+          />
         </div>
 
         {/* Stats Section */}
