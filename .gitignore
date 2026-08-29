@@ -54,3 +54,5 @@ design/
 skills-lock.json
 opencode.json
 .superdesign
+# Superdesign temp artifacts
+.superdesign/tmp/
