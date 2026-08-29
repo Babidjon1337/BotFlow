@@ -34,6 +34,7 @@ function subscriptionLabel(
 /** Локальные тона разделов (DS v2 §5): окрашивают только пункт меню. */
 const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
+  gateways: 'nav-tone-green',
   billing: 'nav-tone-violet',
   profile: 'nav-tone',
   admin: 'nav-tone',
@@ -63,7 +64,7 @@ export function Sidebar({
         <p className="px-3 pb-1 pt-2 text-micro font-medium uppercase tracking-wide text-fg-tertiary">
           Аккаунт
         </p>
-        {ACCOUNT_TABS.filter(tab => tab.id !== 'admin' && tab.id !== 'gateways').map(tab => {
+        {ACCOUNT_TABS.filter(tab => tab.id !== 'admin').map(tab => {
           const Icon = ACCOUNT_TAB_ICONS[tab.id];
           const active = route.level === 'account' && route.tab === tab.id;
           return (

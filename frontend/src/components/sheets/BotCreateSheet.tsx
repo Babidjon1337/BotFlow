@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bot, Rocket, X } from 'lucide-react';
+import { Bot, Check, Rocket, X } from 'lucide-react';
 import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
+import { PlatformGlyph } from '../common/platform';
 
 interface BotCreateSheetProps {
   onClose: () => void;
@@ -97,6 +98,43 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   </article>
                 ))}
               </div></fieldset>
+
+              <fieldset className="mt-6">
+                <legend className="text-body-sm font-medium text-foreground">Платформа</legend>
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center gap-3 rounded-[var(--radius-control)] border border-primary/30 bg-accent px-4 py-3">
+                    <PlatformGlyph platform="telegram" size={20} />
+                    <div className="min-w-0">
+                      <p className="text-body-sm font-semibold text-foreground">Telegram</p>
+                      <p className="text-meta text-fg-tertiary">Подключится перед публикацией</p>
+                    </div>
+                    <Check className="ml-auto size-4 shrink-0 text-success" aria-hidden="true" />
+                  </div>
+                  {([['vk', 'VK'], ['max', 'MAX']] as const).map(([id, label]) => (
+                    <div key={id} aria-disabled className="flex items-center gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-muted px-4 py-3 text-fg-tertiary">
+                      <PlatformGlyph platform={id} size={20} />
+                      <div className="min-w-0">
+                        <p className="text-body-sm font-semibold">{label}</p>
+                        <p className="text-meta">Скоро — уведомим при запуске</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="mt-6 rounded-[var(--radius-card)] border border-border bg-muted p-4" role="img" aria-label="Сейчас черновик — 0 рублей; после публикации — 990 рублей в месяц, без лимитов">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-body-sm text-fg-secondary">Сейчас (черновик)</span>
+                  <b className="money-sm text-foreground">0 ₽</b>
+                </div>
+                <div className="mt-2.5 flex items-center justify-between gap-3">
+                  <span className="text-body-sm text-fg-secondary">После публикации</span>
+                  <b className="money-sm text-success">990 ₽/мес</b>
+                </div>
+                <p className="mt-3 border-t border-border/70 pt-3 text-meta leading-relaxed text-fg-tertiary">
+                  Без лимитов: сколько бы клиентов и сообщений ни было — цена не меняется.
+                </p>
+              </div>
             </div>
           </div>
 

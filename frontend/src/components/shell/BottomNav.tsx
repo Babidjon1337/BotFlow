@@ -12,6 +12,7 @@ interface BottomNavProps {
 /** Локальные тона разделов (DS v2 §5) — совпадают с Sidebar. */
 const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
+  gateways: 'nav-tone-green',
   billing: 'nav-tone-violet',
   profile: 'nav-tone',
 };
@@ -25,8 +26,8 @@ export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
         hidden ? 'translate-y-full' : 'translate-y-0',
       )}
     >
-      <div className="grid h-14 grid-cols-3">
-        {ACCOUNT_TABS.filter(tab => tab.id !== 'admin' && tab.id !== 'gateways').map(tab => {
+      <div className="grid h-14 grid-cols-4">
+        {ACCOUNT_TABS.filter(tab => tab.id !== 'admin').map(tab => {
           const Icon = ACCOUNT_TAB_ICONS[tab.id];
           const active = activeTab === tab.id;
           return (
