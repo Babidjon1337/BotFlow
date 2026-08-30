@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 
 import { useAppState } from "../../providers/AppStateProvider";
+import { PageHeader } from "../common/PageHeader";
+import { StatusBadge } from "../common/StatusBadge";
 
 type PlanKey = "basic" | "pro";
 
@@ -133,7 +135,6 @@ export const Subscription = () => {
   const [paymentError, setPaymentError] = useState("");
   const [prices, setPrices] = useState<Partial<Record<PlanKey, number>>>({});
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelledUntil, setCancelledUntil] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -196,9 +197,8 @@ export const Subscription = () => {
         subscriptionUntil: billing.subscription_until,
         subscriptionAutoRenew: billing.subscription_auto_renew,
       }));
-      setCancelledUntil(billing.subscription_until);
       setShowCancelModal(false);
-      setToastMessage("Автопродление отключено. Доступ сохранится до конца периода.");
+      setToastMessage("Автосписание отключено. Доступ сохранится до конца периода.");
     } catch (error) {
       setPaymentError(error instanceof Error ? error.message : "Не удалось отменить автопродление.");
       setShowCancelModal(false);
@@ -232,7 +232,14 @@ export const Subscription = () => {
           animate={{ opacity: 1, y: 0 }}
           className="mt-6"
         >
-          <div className="flex flex-col gap-6">
+          <PageHeader
+            kicker="Подписка"
+            tone="violet"
+            title="Подписка"
+            hint="Право публикации ваших ботов — оплата за BotFlow, не за продажи"
+          />
+
+          <div className="mt-6 flex flex-col gap-6">
             {/* Main Hero Card */}
             <div
               className="relative overflow-hidden rounded-[24px] md:rounded-[32px] p-6 md:p-10 border border-[var(--color-primary)]/20 shadow-lg shadow-[var(--color-primary)]/5"
@@ -244,109 +251,104 @@ export const Subscription = () => {
               <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[var(--color-primary)]/10 rounded-full blur-[80px] pointer-events-none -mr-20 -mt-20" />
               <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-[var(--color-accent)]/10 rounded-full blur-[60px] pointer-events-none -ml-20 -mb-20" />
 
-              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 md:gap-8">
-                <div className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6 w-full">
-                  <div className="w-16 h-16 md:w-24 md:h-24 rounded-[20px] md:rounded-[28px] bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-accent)] shadow-xl shadow-[var(--color-primary)]/20 flex items-center justify-center shrink-0 border-4 border-[var(--color-surface)]">
-                    <Crown
-                      size={32}
-                      className="text-white drop-shadow-md md:w-10 md:h-10"
-                    />
+              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                <div className="flex items-center gap-4 md:gap-5">
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-[18px] bg-gradient-to-br from-[var(--color-primary)] to-[var(--v-500)] shadow-lg flex items-center justify-center shrink-0">
+                    <Crown size={28} className="text-white drop-shadow" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-3 mb-1.5 md:mb-2">
-                      <h2 className="text-2xl md:text-4xl font-black text-[var(--color-foreground)] tracking-tight">
-                        {isAdmin ? "👑 Тариф: Админ (SaaS Owner)" : "PRO Подписка"}
+                    <div className="flex flex-wrap items-center gap-2.5 mb-1">
+                      <h2 className="text-xl md:text-2xl font-extrabold text-[var(--color-foreground)] tracking-tight">
+                        {isAdmin ? "Тариф: Админ (SaaS Owner)" : "PRO-подписка"}
                       </h2>
-                      <div className="px-2.5 py-1 bg-[var(--color-success)]/10 border border-[var(--color-success)]/20 text-[var(--color-success)] text-[11px] md:text-[13px] font-bold rounded-full flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-[var(--color-success)] shadow-[0_0_8px_var(--color-success)]" />
-                        Активна
-                      </div>
+                      <StatusBadge tone="success" label="Активна" />
                     </div>
-                    <p className="text-[14px] md:text-[16px] text-[var(--color-foreground-secondary)] font-medium">
-                      {isAdmin ? "Безлимитный доступ ко всем функциям и аналитике BotFlow" : "Разблокированы все возможности платформы"}
+                    <p className="text-body-sm text-fg-secondary font-medium">
+                      {isAdmin
+                        ? "Безлимитный доступ ко всем функциям и аналитике BotFlow"
+                        : "Право публикации ботов платформы"}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex flex-col items-start md:items-end p-4 md:p-6 rounded-[20px] md:rounded-[24px] bg-[var(--color-surface)]/80 backdrop-blur-md border border-[var(--color-border)] w-full md:w-auto shrink-0">
-                  <div className="flex items-center gap-2 text-[12px] md:text-[13px] font-bold text-[var(--color-primary)] uppercase tracking-wider mb-1.5 md:mb-2">
-                    {isAdmin ? <Crown size={14} /> : <RefreshCcw size={14} />} {isAdmin ? "VIP Статус" : "Автопродление"}
-                  </div>
-                  <div className="text-2xl font-black text-[var(--color-foreground)] mb-1">
-                    {isAdmin ? "Навсегда" : "25 июля"}
-                  </div>
-                  <div className="text-[14px] text-[var(--color-foreground-secondary)] font-medium">
-                    Списание{" "}
-                    <span className="text-[var(--color-foreground)] font-bold">
-                      {isAdmin ? "0 ₽ (Безлимит)" : "3 000 ₽"}
-                    </span>
+                <div className="rounded-[16px] border border-border bg-card/80 backdrop-blur px-5 py-4 w-full md:w-auto shrink-0">
+                  <div className="flex items-center gap-6">
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                        <RefreshCcw size={12} aria-hidden="true" /> Продление
+                      </p>
+                      <p className="font-accent text-[18px] font-semibold leading-tight mt-1 text-[var(--color-foreground)]">
+                        {appState.subscriptionUntil
+                          ? new Date(appState.subscriptionUntil).toLocaleDateString("ru-RU", {
+                              day: "numeric",
+                              month: "long",
+                            })
+                          : "—"}
+                      </p>
+                      <p className="text-meta text-fg-secondary mt-0.5">
+                        {(prices.pro ?? 3000).toLocaleString("ru-RU")} ₽/мес
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary mb-1.5">
+                        Автосписание
+                      </p>
+                      {appState.subscriptionAutoRenew ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="inline-flex items-center gap-1.5 text-body-sm font-bold text-[var(--color-success)]">
+                            <span className="size-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
+                            Включено
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowCancelModal(true)}
+                            className="text-meta font-semibold text-[var(--color-danger)] hover:underline text-left"
+                          >
+                            Отключить
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-body-sm text-fg-tertiary">
+                          Выключено — включится при следующей оплате
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Management & Limits Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="card-saas p-6 md:p-8 rounded-[28px]">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-12 h-12 rounded-[16px] bg-[var(--color-surface-2)] flex items-center justify-center text-[var(--color-foreground)] border border-[var(--color-border)]">
-                    <Bot size={24} />
-                  </div>
-                  <div>
-                    <h3 className="text-[18px] font-bold text-[var(--color-foreground)]">
-                      Лимиты ботов
-                    </h3>
-                    <p className="text-[14px] text-[var(--color-foreground-secondary)] font-medium">
-                      Используется {appState.bots.length} {isAdmin ? "(Безлимитный тариф)" : "из 10"}
-                    </p>
-                  </div>
-                </div>
-                <div className="h-3 w-full bg-[var(--color-surface-2)] rounded-full overflow-hidden mb-3">
-                  <div
-                    className="h-full bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-accent)] rounded-full transition-all duration-1000"
-                    style={{ width: isAdmin ? "100%" : `${(appState.bots.length / 10) * 100}%` }}
-                  />
-                </div>
-                <div className="flex justify-between text-[13px] font-semibold text-[var(--color-foreground-tertiary)]">
-                  <span>{appState.bots.length} активных</span>
-                  <span>{isAdmin ? "Осталось: Безлимитно" : `Осталось ${10 - appState.bots.length}`}</span>
-                </div>
-              </div>
-
-              <div className="card-saas p-6 md:p-8 rounded-[28px] flex flex-col justify-between">
-                <div>
-                  <h3 className="text-[18px] font-bold text-[var(--color-foreground)] mb-2">
-                    Управление
-                  </h3>
-                  <p className="text-[14px] text-[var(--color-foreground-secondary)] leading-relaxed mb-6">
-                    Настройте ваших ботов, подключите платежные системы или
-                    управляйте статусом подписки.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-3">
-                  <button
-                    onClick={() => onGoToBots()}
-                    className="btn-primary-saas w-full py-3.5 rounded-[16px] text-[15px] font-bold flex items-center justify-center gap-2"
-                  >
-                    К моим ботам
-                  </button>
-                  {cancelledUntil ? (
-                    <button
-                      onClick={() => setStep("select")}
-                      className="w-full py-3.5 rounded-[16px] text-[15px] font-bold text-[var(--color-success)] bg-[var(--color-success)]/10 hover:bg-[var(--color-success)]/20 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <RefreshCcw size={18} />
-                      Оформить подписку снова
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setShowCancelModal(true)}
-                      className="w-full py-3.5 rounded-[16px] text-[14px] font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 transition-colors flex items-center justify-center"
-                    >
-                      Отменить подписку
-                    </button>
-                  )}
-                </div>
+            {/* Боты в подписке */}
+            <div className="card-saas rounded-[20px] p-6">
+              <h3 className="text-[16px] font-bold text-[var(--color-foreground)]">Боты в подписке</h3>
+              <p className="mt-1 text-[13px] text-fg-secondary">
+                Пока подписка одна на аккаунт. Отдельные подписки на каждого бота — скоро.
+              </p>
+              <ul className="mt-4 divide-y divide-[var(--color-border)]">
+                {appState.bots.map((bot) => (
+                  <li key={bot.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3">
+                    <StatusBadge
+                      tone={bot.status === "active" ? "success" : "neutral"}
+                      label={bot.status === "active" ? "Опубликован" : "Черновик"}
+                    />
+                    <span className="min-w-0 truncate text-body-sm font-semibold text-[var(--color-foreground)]">
+                      {bot.name}
+                    </span>
+                    <span className="ml-auto text-meta text-fg-tertiary">
+                      {bot.status === "active"
+                        ? "Работает в подписке"
+                        : "Публикация — 990 ₽/мес"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4">
+                <button
+                  onClick={() => onGoToBots()}
+                  className="btn-primary-saas w-full py-3.5 rounded-[14px] text-[15px] font-bold flex items-center justify-center gap-2"
+                >
+                  К моим ботам
+                </button>
               </div>
             </div>
           </div>
