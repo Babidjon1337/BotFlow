@@ -21,7 +21,7 @@ function subscriptionLabel(
   if (status === 'active') {
     const date = until ? new Date(until).toLocaleDateString('ru-RU') : null;
     return {
-      text: date ? `PRO до ${date}` : 'PRO активна',
+      text: date ? `Подписка до ${date}` : 'Подписка активна',
       tone: 'text-success bg-success-soft',
     };
   }

@@ -20,7 +20,7 @@ import { useAppState } from "../../providers/AppStateProvider";
 import { PageHeader } from "../common/PageHeader";
 import { StatusBadge } from "../common/StatusBadge";
 
-type PlanKey = "basic" | "pro";
+type PlanKey = "pro";
 
 const plans: Record<
   PlanKey,
@@ -39,68 +39,31 @@ const plans: Record<
     ctaGradient: string;
   }
 > = {
-  basic: {
-    key: "basic",
-    name: "Базовый бот",
-    period: "навсегда",
-    tagline: "1 бот без абонентской платы",
-    image: "/single_bot.png",
-    accentFrom: "#3B82F6",
-    accentTo: "#2563EB",
-    bgLight: "linear-gradient(160deg, #EFF6FF 0%, #DBEAFE 80%)",
-    bgDark: "linear-gradient(160deg, #1e2d42 0%, #162236 80%)",
-    features: [
-      { icon: <Bot size={16} />, text: "1 активный бот", included: true },
-      {
-        icon: <LineChart size={16} />,
-        text: "Аналитика и воронки",
-        included: true,
-      },
-      {
-        icon: <CreditCard size={16} />,
-        text: "Приём платежей",
-        included: true,
-      },
-      {
-        icon: <RefreshCcw size={16} />,
-        text: "Редактирование бота",
-        included: true,
-      },
-      {
-        icon: <KeyRound size={16} />,
-        text: "Смена токена (при >10 юзеров — нельзя)",
-        included: false,
-      },
-      { icon: <Users size={16} />, text: "Несколько ботов", included: false },
-    ],
-    ctaLabel: "Купить за 2 000 ₽",
-    ctaGradient: "linear-gradient(135deg, #3B82F6, #2563EB)",
-  },
   pro: {
     key: "pro",
-    name: "PRO Подписка",
+    name: "Подписка бота",
     period: "/ мес",
-    tagline: "До 10 ботов с полным контролем",
+    tagline: "Каждый бот оплачивается отдельно — без лимитов внутри",
     image: "/pro_sub.png",
     accentFrom: "#9333EA",
     accentTo: "#6366F1",
     bgLight: "linear-gradient(160deg, #F5F3FF 0%, #EDE9FE 80%)",
     bgDark: "linear-gradient(160deg, #221a35 0%, #1a1528 80%)",
     features: [
-      { icon: <Bot size={16} />, text: "До 10 активных ботов", included: true },
+      { icon: <Bot size={16} />, text: "Публикация бота в Telegram", included: true },
       {
         icon: <Users size={16} />,
-        text: "Неограниченная аудитория",
+        text: "Без лимита сообщений и аудитории",
         included: true,
       },
       {
         icon: <CreditCard size={16} />,
-        text: "Приём платежей",
+        text: "Приём оплаты на вашу кассу",
         included: true,
       },
       {
         icon: <LineChart size={16} />,
-        text: "Аналитика и воронки",
+        text: "Статистика и воронки",
         included: true,
       },
       {
@@ -110,11 +73,11 @@ const plans: Record<
       },
       {
         icon: <Headphones size={16} />,
-        text: "Приоритетная поддержка",
+        text: "Рассылки по аудитории",
         included: true,
       },
     ],
-    ctaLabel: "Выбрать PRO",
+    ctaLabel: "Оформить подписку",
     ctaGradient: "linear-gradient(135deg, #9333EA, #6366F1)",
   },
 };
@@ -322,7 +285,8 @@ export const Subscription = () => {
             <div className="card-saas rounded-[20px] p-6">
               <h3 className="text-[16px] font-bold text-[var(--color-foreground)]">Боты в подписке</h3>
               <p className="mt-1 text-[13px] text-fg-secondary">
-                Пока подписка одна на аккаунт. Отдельные подписки на каждого бота — скоро.
+                Подписка одна на аккаунт и покрывает право публикации. Отдельные
+                подписки на каждого бота — скоро.
               </p>
               <ul className="mt-4 divide-y divide-[var(--color-border)]">
                 {appState.bots.map((bot) => (
@@ -368,13 +332,13 @@ export const Subscription = () => {
               {/* Header */}
               <div className="text-center mb-3 md:mb-10 px-4">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-bold text-[12px] mb-2 md:mb-4">
-                  <Crown size={13} /> Тарифы
+                  <Crown size={13} /> Подписка бота
                 </div>
                 <h1 className="text-[18px] md:text-4xl font-black text-[var(--color-foreground)] tracking-tight mb-0.5">
-                  Выберите тариф
+                  Оформите подписку
                 </h1>
                 <p className="text-[13px] md:text-[16px] text-[var(--color-foreground-secondary)]">
-                  Запустите своего бота уже сегодня
+                  Черновик бесплатен — платите, когда бот готов к публикации
                 </p>
               </div>
 
@@ -615,8 +579,8 @@ export const Subscription = () => {
                   </h2>
                   <h3 className="text-[16px] md:text-lg font-bold text-[var(--color-success)] mb-3">
                     {selectedPlan === "pro"
-                      ? "Тариф PRO активирован"
-                      : "Базовый бот приобретён"}
+                      ? "Подписка оформлена"
+                      : "Подписка оформлена"}
                   </h3>
                   <p className="text-[14px] md:text-[15px] text-[var(--color-foreground-secondary)] leading-relaxed max-w-sm mx-auto mb-8">
                     Средства зачислены, новые возможности уже доступны для ваших
@@ -721,7 +685,7 @@ const PlanCard = ({ plan, price }: { plan: (typeof plans)[PlanKey]; price?: numb
       {isPro && (
         <div className="absolute top-4 right-4 z-10">
           <div className="px-3 py-1 bg-gradient-to-r from-[#9333EA] to-[#6366F1] text-white text-[11px] font-black rounded-full shadow">
-            PRO
+            990 ₽/мес
           </div>
         </div>
       )}

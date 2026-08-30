@@ -2,7 +2,6 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Crown,
-  Star,
   Users,
   ChevronRight,
   Sun,
@@ -226,33 +225,6 @@ export const Profile = () => {
               </motion.div>
             </div>
 
-            {/* Purchased Slots Display */}
-            {!isSubscribed && (appState.slotsBought || 0) > 0 && (
-              <div
-                className="card-saas p-4"
-                style={{ border: "1px solid var(--color-primary)" }}
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-[var(--color-primary-soft)] rounded-xl flex items-center justify-center shrink-0">
-                    <Star size={24} className="text-[var(--color-primary)]" />
-                  </div>
-                  <div>
-                    <div className="text-[13px] text-[var(--color-foreground-secondary)] mb-0.5">
-                      Ваши покупки
-                    </div>
-                    <div className="text-[16px] font-bold text-[var(--color-foreground)]">
-                      Куплено: {appState.slotsBought}{" "}
-                      {appState.slotsBought === 1
-                        ? "базовый бот"
-                        : appState.slotsBought! > 1 && appState.slotsBought! < 5
-                          ? "базовых бота"
-                          : "базовых ботов"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* PRO Subscription CTA — selling banner if not subscribed */}
             {!isSubscribed ? (
               <motion.button
@@ -316,7 +288,7 @@ export const Profile = () => {
                             letterSpacing: "0.04em",
                           }}
                         >
-                          <Crown size={12} /> PRO ДОСТУП
+                          <Crown size={12} /> ПОДПИСКА БОТА
                         </div>
                         <div className="md:hidden flex items-baseline gap-1 bg-white/10 px-2 py-0.5 rounded-full">
                           <span
@@ -325,29 +297,29 @@ export const Profile = () => {
                               fontWeight: 800,
                               color: "#fff",
                             }}
-                          >
-                            3 000 ₽
-                          </span>
-                          <span
-                            style={{
-                              fontSize: "9px",
-                              color: "rgba(255,255,255,0.7)",
-                            }}
-                          >
-                            /мес
-                          </span>
+                            >
+                              990 ₽
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "9px",
+                                color: "rgba(255,255,255,0.7)",
+                              }}
+                            >
+                              /мес
+                            </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-4">
                         <div className="flex-1">
                           <div className="text-[17px] md:text-[24px] font-black text-white leading-[1.15] mb-1.5 md:mb-3 tracking-tight">
-                            Разблокируй
+                            Опубликуйте бота
                             <br />
-                            все возможности
+                            и получайте деньги
                           </div>
                           <div className="hidden md:flex flex-wrap gap-1.5 mb-4">
-                            {["10 ботов", "Без комиссии", "Аналитика"].map(
+                            {["Без лимитов", "Оплата на вашей кассе", "Аналитика"].map(
                               (tag) => (
                                 <span
                                   key={tag}
@@ -374,7 +346,7 @@ export const Profile = () => {
                                 letterSpacing: "-0.01em",
                               }}
                             >
-                              3 000 ₽
+                              990 ₽
                             </span>
                             <span
                               style={{
@@ -430,7 +402,7 @@ export const Profile = () => {
                         fontSize: "14px",
                       }}
                     >
-                      Перейти на PRO <ArrowRight size={16} />
+                      Перейти к подписке <ArrowRight size={16} />
                     </div>
                   </div>
                 </div>
@@ -455,7 +427,7 @@ export const Profile = () => {
                       color: isAdmin ? "#c084fc" : "var(--color-foreground)",
                     }}
                   >
-                    {isAdmin ? "👑 Тариф: Админ (SaaS Owner)" : "PRO подписка"}
+                    {isAdmin ? "Тариф: Админ (SaaS Owner)" : "Подписка"}
                   </div>
                   <div
                     style={{
@@ -464,7 +436,11 @@ export const Profile = () => {
                       marginTop: "2px",
                     }}
                   >
-                    {isAdmin ? `Активна · Безлимит (${appState.bots.length} ботов в работе)` : `Активна · ${appState.bots.length} из 10 ботов`}
+                    {isAdmin
+                      ? `Активна · ${appState.bots.length} ботов в работе`
+                      : appState.subscriptionUntil
+                        ? `Активна · продление ${new Date(appState.subscriptionUntil).toLocaleDateString("ru-RU")}`
+                        : `Активна · ${appState.bots.length} ботов`}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -476,7 +452,7 @@ export const Profile = () => {
                       color: isAdmin ? "#fff" : undefined,
                     }}
                   >
-                    {isAdmin ? "ADMIN" : "PRO"}
+                    {isAdmin ? "ADMIN" : "990 ₽/мес"}
                   </span>
                   <ChevronRight
                     size={16}
