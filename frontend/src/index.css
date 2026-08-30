@@ -777,6 +777,14 @@ html.dark .kicker { color: var(--p-500); }
   letter-spacing: -0.01em;
   font-feature-settings: "tnum";
 }
+.money-md {
+  font-family: "Unbounded", "Onest", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  font-feature-settings: "tnum";
+}
 .money-sm {
   font-family: "Unbounded", "Onest", system-ui, sans-serif;
   font-size: 15px;

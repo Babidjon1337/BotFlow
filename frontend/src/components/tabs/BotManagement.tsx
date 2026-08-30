@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { WelcomeScreen } from "../screens/WelcomeScreen";
 import { PageHeader } from "../common/PageHeader";
+import { StatusBadge } from "../common/StatusBadge";
 import { Button } from "../ui/button";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
@@ -214,26 +215,15 @@ export const BotManagement = () => {
                 transition={{ delay: index * 0.05 }}
                 className={!isActive ? "pt-3 md:pt-4" : ""}
               >
-                <div className="relative group bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[24px] p-5 md:p-6 flex flex-col gap-5 md:gap-6 transition-all hover:shadow-xl hover:border-[var(--color-primary)]/30">
-                  {/* Draft Badge Overlap */}
-                  {!isActive && (
-                    <div className="absolute -top-3 -left-2 md:-top-4 md:-left-3 z-10">
-                      <div className="bg-[var(--color-surface)]/95 backdrop-blur-md border border-[var(--color-border)] shadow-md rounded-[10px] md:rounded-xl px-2.5 py-1 md:px-3 md:py-1.5 flex items-center gap-1.5">
-                        <div className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-[var(--color-warning)] animate-pulse" />
-                        <span className="text-[9px] md:text-[10px] font-black uppercase tracking-wider text-[var(--color-foreground-secondary)]">
-                          Черновик
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                <div className="relative group bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[20px] p-5 md:p-6 flex flex-col gap-4 md:gap-5 transition-all hover:shadow-xl hover:border-[var(--color-primary)]/30">
                   {/* --- HEADER --- */}
                   <div className="flex items-start justify-between gap-4">
                     {/* Left: Avatar + Info */}
                     <div className="flex items-start gap-4 min-w-0">
                       {/* Avatar */}
                       <div className="relative shrink-0">
-                        <div 
-                          className="w-[52px] h-[52px] md:w-[60px] md:h-[60px] rounded-[16px] md:rounded-[20px] text-white flex items-center justify-center text-[18px] md:text-xl font-black shadow-sm"
+                        <div
+                          className="w-[52px] h-[52px] md:w-[56px] md:h-[56px] rounded-[16px] text-white flex items-center justify-center text-[18px] md:text-xl font-black shadow-sm"
                           style={{ background: `linear-gradient(135deg, ${color1}, ${color2})` }}
                         >
                           {initials}
@@ -248,10 +238,11 @@ export const BotManagement = () => {
 
                       {/* Text */}
                       <div className="flex flex-col min-w-0 pt-0.5 md:pt-1 flex-1">
-                        <div className="flex items-center gap-2 mb-0.5 md:mb-1 w-full min-w-0">
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mb-0.5 md:mb-1 w-full min-w-0">
                           <h3 className="text-[17px] md:text-[19px] font-black text-[var(--color-foreground)] leading-tight truncate">
                             {bot.name}
                           </h3>
+                          <StatusBadge tone={isActive ? "success" : "neutral"} label={isActive ? "Работает" : "Черновик"} />
                         </div>
                         <span className="text-[13px] md:text-[14px] font-medium text-[var(--color-foreground-secondary)] truncate block w-full">
                           @{bot.username?.replace("@", "") || "username"}
@@ -360,40 +351,36 @@ export const BotManagement = () => {
                     </div>
                   </div>
 
-                  {/* --- STATS --- */}
-                  <div className="flex items-center justify-between px-2 md:px-4">
-                    <div className="flex flex-col items-center">
-                      <span className="text-[12px] md:text-[13px] font-bold text-[var(--color-foreground-tertiary)] uppercase tracking-wider mb-1">
+                  {/* --- STATS: фиксированные уровни у всех карточек --- */}
+                  <div className="grid grid-cols-3 gap-2 rounded-[16px] bg-[var(--color-surface-2)] px-3 py-3 md:px-4">
+                    <div className="flex flex-col justify-between gap-2 min-w-0">
+                      <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
                         Лиды
                       </span>
-                      <span className="text-[24px] md:text-[28px] font-black text-[var(--color-foreground)] leading-none">
+                      <span className="font-accent text-[16px] md:text-[18px] font-semibold tabular-nums leading-none text-[var(--color-foreground)]">
                         {bot.usersCount}
                       </span>
                     </div>
-
-                    <div className="flex flex-col items-center">
-                      <span className="text-[12px] md:text-[13px] font-bold text-[var(--color-foreground-tertiary)] uppercase tracking-wider mb-1">
+                    <div className="flex flex-col justify-between gap-2 min-w-0">
+                      <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
                         Продажи
                       </span>
-                      <span className="text-[24px] md:text-[28px] font-black text-[var(--color-foreground)] leading-none">
+                      <span className="font-accent text-[16px] md:text-[18px] font-semibold tabular-nums leading-none text-[var(--color-foreground)]">
                         {bot.sales || 0}
                       </span>
                     </div>
-
-                    <div className="flex flex-col items-center">
-                      <span className="text-[12px] md:text-[13px] font-bold text-[var(--color-foreground-tertiary)] uppercase tracking-wider mb-1">
+                    <div className="flex flex-col justify-between gap-2 min-w-0">
+                      <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
                         Выручка
                       </span>
                       {bot.paymentProvider ? (
-                        <span className="text-[24px] md:text-[28px] font-black text-[var(--color-success)] leading-none">
-                          {(bot.revenue || 0).toLocaleString()} ₽
+                        <span className="font-accent text-[16px] md:text-[18px] font-semibold tabular-nums leading-none text-[var(--color-success)]">
+                          {(bot.revenue || 0).toLocaleString("ru-RU")} ₽
                         </span>
                       ) : (
-                        <div className="h-[24px] md:h-[28px] flex items-center">
-                          <span className="text-[11px] md:text-[12px] font-bold text-[var(--color-warning)] bg-[var(--color-warning-soft)] px-2 py-0.5 rounded-md">
-                            Нет кассы
-                          </span>
-                        </div>
+                        <span className="inline-flex w-fit px-2 py-1 rounded-md text-[10px] md:text-[11px] font-bold text-[var(--color-warning)] bg-[var(--color-warning-soft)]">
+                          Нет кассы
+                        </span>
                       )}
                     </div>
                   </div>
@@ -401,9 +388,9 @@ export const BotManagement = () => {
                   {/* --- MAIN ACTION --- */}
                   <button
                     onClick={() => onEditBot(bot.id)}
-                    className="w-full h-[46px] md:h-[48px] rounded-[16px] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)] font-bold text-[14px] md:text-[15px] flex items-center justify-center gap-2 transition-colors duration-200"
+                    className="w-full h-[46px] md:h-[48px] rounded-[14px] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)] font-bold text-[14px] md:text-[15px] flex items-center justify-center gap-2 transition-colors duration-200"
                   >
-                    Редактор воронки <ArrowRight size={16} />
+                    Открыть бота <ArrowRight size={16} />
                   </button>
                 </div>
               </motion.div>
