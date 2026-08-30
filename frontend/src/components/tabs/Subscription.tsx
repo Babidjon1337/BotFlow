@@ -625,18 +625,27 @@ export const Subscription = () => {
               </div>
 
               <h3 className="text-xl font-bold text-[var(--color-foreground)] mb-2">
-                Отменить подписку?
+                Отключить автосписание?
               </h3>
               <p className="text-[14px] text-[var(--color-foreground-secondary)] mb-8">
-                Вы сможете пользоваться тарифом до конца оплаченного периода (25
-                июля 2025).
+                Подписка продолжит действовать до{' '}
+                <b className="text-[var(--color-foreground)]">
+                  {appState.subscriptionUntil
+                    ? new Date(appState.subscriptionUntil).toLocaleDateString('ru-RU', {
+                        day: 'numeric',
+                        month: 'long',
+                      })
+                    : 'конца периода'}
+                </b>
+                .
                 <br />
                 <br />
                 <span className="font-semibold text-[var(--color-foreground)]">
-                  Деньги больше не спишутся.
-                </span>{" "}
-                После окончания срока ваши боты сверх лимита будут
-                приостановлены.
+                  Больше ничего не спишется.
+                </span>{' '}
+                После этой даты неопубликованные боты нельзя будет опубликовать,
+                а опубликованные — приостановятся. Включить автосписание снова
+                можно следующей оплатой.
               </p>
 
               <div className="flex flex-col gap-3 relative z-10">
@@ -644,13 +653,13 @@ export const Subscription = () => {
                   onClick={handleCancel}
                   className="w-full py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors shadow-sm"
                 >
-                  Да, отменить
+                  Да, отключить
                 </button>
                 <button
                   onClick={() => setShowCancelModal(false)}
                   className="w-full py-3 px-4 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-foreground)] font-semibold rounded-xl transition-colors border border-[var(--color-border)]"
                 >
-                  Не отменять
+                  Не отключать
                 </button>
               </div>
             </motion.div>
