@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bot, Check, Rocket, X } from 'lucide-react';
+import { Bot, Check, Plus, Rocket, X } from 'lucide-react';
 import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
 import { PlatformGlyph } from '../common/platform';
@@ -28,7 +28,7 @@ type TelegramWebApp = {
 const scenarios = [
   { title: 'Воронка продаж', description: 'Подойдёт для товаров и услуг: знакомит, отвечает и ведёт к оплате.', image: '/visuals/scenarios/sales-funnel-card.png', available: true },
   { title: 'Приём заявок', description: 'Для обращений клиентов и первичной квалификации.', image: '/visuals/scenarios/applications-card.png', available: false },
-  { title: 'Mini App', description: 'Для каталога, витрины и заказов в мессенджере.', image: '/visuals/scenarios/mini-app-card.png', available: false },
+  { title: 'Mini App', description: 'Для каталога, витрины и заказов. Дороже базового сценария — цена при запуске.', image: '/visuals/scenarios/mini-app-card.png', available: false },
 ];
 
 /** Создаёт черновик с готовой основой; детали настраиваются в рабочем пространстве бота. */
@@ -122,17 +122,32 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                 </div>
               </fieldset>
 
-              <div className="mt-6 rounded-[var(--radius-card)] border border-border bg-muted p-4" role="img" aria-label="Сейчас черновик — 0 рублей; после публикации — 990 рублей в месяц, без лимитов">
+              <div className="mt-6 rounded-[var(--radius-card)] border border-border bg-muted p-4" role="img" aria-label="Сейчас черновик — 0 рублей; после публикации подписка бота — от 990 рублей в месяц, каждая дополнительная платформа плюс 500 рублей в месяц, без лимитов">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-body-sm text-fg-secondary">Сейчас (черновик)</span>
                   <b className="money-sm text-foreground">0 ₽</b>
                 </div>
                 <div className="mt-2.5 flex items-center justify-between gap-3">
                   <span className="text-body-sm text-fg-secondary">После публикации</span>
-                  <b className="money-sm text-success">990 ₽/мес</b>
+                  <b className="money-sm text-success">от 990 ₽/мес</b>
                 </div>
+                <ul className="mt-3 space-y-1.5 border-t border-border/70 pt-3 text-meta leading-relaxed text-fg-tertiary">
+                  <li className="flex items-center gap-1.5">
+                    <Check className="size-3 shrink-0 text-success" aria-hidden="true" />
+                    Воронка продаж + Telegram — 990 ₽/мес
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <Plus className="size-3 shrink-0" aria-hidden="true" />
+                    Каждая доп. платформа (VK, MAX) — +500 ₽/мес
+                  </li>
+                  <li className="flex items-center gap-1.5">
+                    <Check className="size-3 shrink-0 text-success" aria-hidden="true" />
+                    Без лимитов сообщений — цена не меняется
+                  </li>
+                </ul>
                 <p className="mt-3 border-t border-border/70 pt-3 text-meta leading-relaxed text-fg-tertiary">
-                  Без лимитов: сколько бы клиентов и сообщений ни было — цена не меняется.
+                  Создание — бесплатно. Оплатить можно сразу после настройки или
+                  позже — черновик никуда не денется.
                 </p>
               </div>
             </div>
