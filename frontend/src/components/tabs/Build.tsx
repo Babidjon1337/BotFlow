@@ -32,6 +32,7 @@ import { TimerPresets } from "../TimerPresets";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
+import { PageHeader } from "../common/PageHeader";
 import type { Tariff } from "../../types";
 
 const keepMobileFieldVisible = (element: HTMLElement) => {
@@ -765,7 +766,14 @@ export const Build = () => {
         @media (min-width: 1024px) {
           .action-bar-fixed { bottom: 24px; }
         }
-      `}</style>
+      `}      </style>
+
+      <PageHeader
+        kicker="Сценарий"
+        tone="cyan"
+        title="Воронка продаж"
+        hint="Последовательность, которую проходит клиент: старт → дожимы → продажа"
+      />
 
       {/* Bot Header (Settings Access) */}
       {appState.activeBot.mediaSyncDone && (
@@ -977,7 +985,7 @@ export const Build = () => {
 
             <FunnelCard
               stepId="start"
-              title="Шаг 1 · Старт (Гайд / Презентация)"
+              title="Старт"
               isComplete={isStartComplete}
               defaultExpanded
             >
@@ -1037,7 +1045,7 @@ export const Build = () => {
 
             <FunnelCard
               stepId="push1"
-              title="Шаг 2 · Дожим 1"
+              title="Дожим 1"
               isComplete={isPush1Complete}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1095,7 +1103,7 @@ export const Build = () => {
 
             <FunnelCard
               stepId="push2"
-              title="Шаг 3 · Дожим 2"
+              title="Дожим 2"
               isComplete={isPush2Complete}
             >
               <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -1153,7 +1161,7 @@ export const Build = () => {
 
             <FunnelCard
               stepId="payment"
-              title="Шаг 4 · Оплата и Выдача доступа"
+              title="Продажа и выдача"
               isComplete={isPaymentComplete}
             >
               <div onClick={() => setSelectedBlockId("payment")}>

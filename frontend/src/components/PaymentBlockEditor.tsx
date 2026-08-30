@@ -277,7 +277,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                       <p className="text-[13px] font-semibold text-[var(--color-foreground)] truncate leading-tight mb-0.5">
                         {tariff.name || 'Без названия'}
                       </p>
-                      <p className="text-[12px] text-[var(--color-foreground-tertiary)] leading-tight">
+                      <p className={`leading-tight ${tariff.price ? 'font-accent text-[12px] font-semibold tabular-nums text-[var(--color-foreground-secondary)]' : 'text-[12px] text-[var(--color-foreground-tertiary)]'}`}>
                         {tariff.price ? `${Number(tariff.price).toLocaleString('ru-RU')} ₽` : 'Цена не задана'}
                       </p>
                     </div>
