@@ -384,6 +384,7 @@ export default function App() {
                 key="monetization"
                 bot={appState.activeBot}
                 onOpenSettings={() => setSheet('bot_settings')}
+                onOpenGatewayLibrary={() => setRoute({ level: 'account', tab: 'gateways' })}
               />
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'broadcasts' && appState.activeBot && (
