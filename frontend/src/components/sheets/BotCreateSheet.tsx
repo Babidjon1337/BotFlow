@@ -91,7 +91,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
               <fieldset className="mt-6"><legend className="text-body-sm font-medium text-foreground">Сценарий</legend><div className="mt-3 grid grid-cols-3 gap-3">
                 {scenarios.map(({ title, description, image, available }) => (
                   <article key={title} aria-disabled={!available} className={`flex min-h-44 flex-col rounded-[var(--radius-card)] border p-3 ${available ? 'border-primary/30 bg-accent' : 'border-dashed border-border bg-muted text-fg-tertiary'}`}>
-                    <img src={image} alt="" className={`aspect-[16/8] w-full rounded-[var(--radius-control)] object-cover ${available ? '' : 'opacity-60'}`} />
+                    <img src={image} alt="" className="aspect-[4/3] w-full rounded-[var(--radius-control)] bg-white object-contain p-1.5 dark:bg-white/10" />
                     <p className={`mt-3 text-body-sm font-semibold ${available ? 'text-foreground' : ''}`}>{title}</p>
                     <p className="mt-1 text-micro leading-relaxed">{description}</p>
                     {!available && <span className="mt-auto pt-2 text-micro font-medium">Скоро добавим</span>}
@@ -103,7 +103,9 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                 <legend className="text-body-sm font-medium text-foreground">Платформа</legend>
                 <div className="mt-3 space-y-2">
                   <div className="flex items-center gap-3 rounded-[var(--radius-control)] border border-primary/30 bg-accent px-4 py-3">
-                    <PlatformGlyph platform="telegram" size={20} />
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-card">
+                      <PlatformGlyph platform="telegram" size={22} />
+                    </span>
                     <div className="min-w-0">
                       <p className="text-body-sm font-semibold text-foreground">Telegram</p>
                       <p className="text-meta text-fg-tertiary">Подключится перед публикацией</p>
@@ -112,7 +114,9 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   </div>
                   {([['vk', 'VK'], ['max', 'MAX']] as const).map(([id, label]) => (
                     <div key={id} aria-disabled className="flex items-center gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-muted px-4 py-3 text-fg-tertiary">
-                      <PlatformGlyph platform={id} size={20} />
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-card">
+                        <PlatformGlyph platform={id} size={22} />
+                      </span>
                       <div className="min-w-0">
                         <p className="text-body-sm font-semibold">{label}</p>
                         <p className="text-meta">Скоро — уведомим при запуске</p>

@@ -315,7 +315,7 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
 
         {/* ── Путь клиента ── */}
         <div
-          className="flex flex-wrap items-center justify-center gap-2.5 pb-14 pt-2"
+          className="mt-16 flex flex-wrap items-center justify-center gap-2.5 pb-14 sm:mt-20"
           aria-label="Путь клиента"
         >
           <FlowPill icon={<UserRound className="size-4" aria-hidden="true" />}>Клиент пишет</FlowPill>
