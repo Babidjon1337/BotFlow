@@ -21,8 +21,9 @@ import type {
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { StatusBadge, type StatusTone } from '../common/StatusBadge';
-import { SectionHeader } from '../common/SectionHeader';
 import { StoryEmptyState } from '../common/StoryEmptyState';
+import { PageHeader } from '../common/PageHeader';
+import { BroadcastComposerForm } from '../common/BroadcastComposerForm';
 import { useAlert } from '../AlertProvider';
 import { BroadcastComposerSheet } from '../sheets/BroadcastComposerSheet';
 
@@ -88,15 +89,18 @@ export function BroadcastsScreen({ bot }: { bot: BotConfig }) {
   };
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-28 pt-6 sm:px-6">
-      <SectionHeader
+    <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-6 sm:px-6">
+      <PageHeader
+        kicker="Рассылки"
+        tone="orange"
         title="Рассылки"
-        meta={`${bot.name} · Сегменты аудитории и рассылки по ним`}
-        actions={
+        hint={`${bot.name} · Сегменты аудитории и рассылки по ним`}
+        action={
           <Button
             onClick={() => setComposerOpen(true)}
             disabled={summaryLoading || !summary || summary.all === 0}
-            size="sm"
+            size="md"
+            className="lg:hidden"
           >
             <Plus data-icon="inline-start" aria-hidden />
             Новая
@@ -141,7 +145,7 @@ export function BroadcastsScreen({ bot }: { bot: BotConfig }) {
             onCompose={() => setComposerOpen(true)}
           />
         ) : (
-          <BroadcastsTabContent botId={bot.id} onCompose={() => setComposerOpen(true)} />
+          <BroadcastsTabContent botId={bot.id} counts={summary} onCompose={() => setComposerOpen(true)} />
         )}
       </div>
 
@@ -354,9 +358,11 @@ function AudienceTab({
 
 function BroadcastsTabContent({
   botId,
+  counts,
   onCompose,
 }: {
   botId: string;
+  counts: AudienceSummary | null;
   onCompose: () => void;
 }) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
@@ -462,6 +468,18 @@ function BroadcastsTabContent({
     );
   }
 
+  // Сводка по текущему месяцу — только из реально загруженных рассылок.
+  const now = new Date();
+  const monthBroadcasts = broadcasts.filter((item) => {
+    if (!item.createdAt) return false;
+    const created = new Date(item.createdAt);
+    return (
+      created.getMonth() === now.getMonth() &&
+      created.getFullYear() === now.getFullYear()
+    );
+  });
+  const monthDelivered = monthBroadcasts.reduce((sum, item) => sum + item.sentCount, 0);
+
   if (broadcasts.length === 0) {    return (
       <div className="rounded-3xl border border-border bg-card">
         <StoryEmptyState
@@ -480,12 +498,46 @@ function BroadcastsTabContent({
   }
 
   return (
-    <div className="space-y-3">
-      {error && (
-        <div className="rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
-          {error}
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      {/* Конструктор — закреплённая карточка (desktop) */}
+      <aside className="lg:sticky lg:top-[calc(72px+16px)] lg:self-start" aria-label="Создание рассылки">
+        <div className="rounded-3xl border border-border bg-card p-4 sm:p-5">
+          <div className="mb-4 flex items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-full bg-accent text-accent-foreground">
+              <Send className="size-4" aria-hidden />
+            </span>
+            <div>
+              <p className="text-body-sm font-bold text-fg-primary">Новая рассылка</p>
+              <p className="text-meta text-fg-tertiary">Одно сообщение выбранному сегменту</p>
+            </div>
+          </div>
+          {counts && counts.all > 0 ? (
+            <BroadcastComposerForm
+              botId={botId}
+              counts={counts}
+              onCreated={onCompose}
+              idPrefix="broadcast-inline"
+            />
+          ) : (
+            <p className="py-4 text-center text-body-sm text-fg-tertiary">
+              Аудитория пока пуста — рассылать некому.
+            </p>
+          )}
         </div>
-      )}
+      </aside>
+
+      {/* Лента кампаний */}
+      <div className="space-y-3" aria-label="История рассылок">
+        <p className="px-1 text-meta font-medium text-fg-secondary tabular-nums">
+          В этом месяце: {monthBroadcasts.length}{' '}
+          {pluralBroadcasts(monthBroadcasts.length)} ·{' '}
+          {monthDelivered.toLocaleString('ru-RU')} доставлено
+        </p>
+        {error && (
+          <div className="rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
+            {error}
+          </div>
+        )}
       {broadcasts.map((broadcast) => {
         const meta = statusMeta[broadcast.status];
         const total = broadcast.totalRecipients;
@@ -597,6 +649,16 @@ function BroadcastsTabContent({
           </article>
         );
       })}
+      </div>
     </div>
   );
+}
+
+/** «1 рассылка / 2 рассылки / 5 рассылок». */
+function pluralBroadcasts(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'рассылка';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'рассылки';
+  return 'рассылок';
 }
