@@ -59,8 +59,8 @@ const formatDate = (iso: string | null) =>
 
 const formatNumber = (value: number) => value.toLocaleString('ru-RU');
 
-export function BroadcastsScreen({ bot }: { bot: BotConfig }) {
-  const [tab, setTab] = useState<BroadcastsTab>('audience');
+export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotConfig; initialTab?: BroadcastsTab }) {
+  const [tab, setTab] = useState<BroadcastsTab>(initialTab);
   const [summary, setSummary] = useState<AudienceSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [composerOpen, setComposerOpen] = useState(false);

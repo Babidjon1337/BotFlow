@@ -4,8 +4,8 @@ export type AccountTab = 'bots' | 'gateways' | 'billing' | 'profile' | 'admin';
 export type BotView =
   | 'overview'
   | 'scenario'
-  | 'platforms'
-  | 'monetization'
+  | 'integrations'
+  | 'audience'
   | 'broadcasts'
   | 'clients'
   | 'analytics';
@@ -37,8 +37,8 @@ export const BOT_VIEWS: Array<{
 }> = [
   { id: 'overview', label: 'Обзор' },
   { id: 'scenario', label: 'Сценарий' },
-  { id: 'platforms', label: 'Платформы' },
-  { id: 'monetization', label: 'Монетизация' },
+  { id: 'integrations', label: 'Интеграции' },
+  { id: 'audience', label: 'Аудитория' },
   { id: 'broadcasts', label: 'Рассылки' },
 ];
 
@@ -55,7 +55,9 @@ function isAccountTab(value: unknown): value is AccountTab {
 /** Миграция старых сохранённых маршрутов (funnel → scenario и т.п.). */
 const BOT_VIEW_ALIASES: Record<string, BotView> = {
   funnel: 'scenario',
-  connections: 'platforms',
+  connections: 'integrations',
+  platforms: 'integrations',
+  monetization: 'integrations',
   clients: 'overview',
   analytics: 'overview',
 };

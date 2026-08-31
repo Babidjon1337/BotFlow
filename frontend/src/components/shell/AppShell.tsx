@@ -11,8 +11,8 @@ import type { BotConfig } from '../../types';
 const BOT_VIEW_TONES: Record<BotView, string> = {
   overview: 'nav-tone-blue',
   scenario: 'nav-tone-cyan',
-  platforms: 'nav-tone',
-  monetization: 'nav-tone-green',
+  integrations: 'nav-tone-green',
+  audience: 'nav-tone',
   broadcasts: 'nav-tone-orange',
   clients: 'nav-tone-blue',
   analytics: 'nav-tone-indigo',

@@ -95,7 +95,7 @@ function LaunchChecklist({
         label: 'Платформа',
         hint: platformDone ? undefined : 'Токен от @BotFather — покажем, где взять',
         state: bot.funnelComplete ? (platformDone ? ('done' as const) : ('current' as const)) : 'locked',
-        onClick: () => onNavigate('platforms'),
+        onClick: () => onNavigate('integrations'),
       },
       {
         id: 'payment',
@@ -107,7 +107,7 @@ function LaunchChecklist({
             : paymentDone
               ? ('done' as const)
               : ('available' as const),
-        onClick: () => onNavigate('monetization'),
+        onClick: () => onNavigate('integrations'),
       },
       {
         id: 'publish',

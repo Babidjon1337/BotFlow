@@ -22,8 +22,7 @@ import {
 } from './routes';
 import type { AccountTab, AppRoute } from './routes';
 import { AppShell } from './components/shell/AppShell';
-import { BotPlatformsScreen } from './components/screens/BotPlatformsScreen';
-import { BotMonetizationScreen } from './components/screens/BotMonetizationScreen';
+import { BotIntegrationsScreen } from './components/screens/BotIntegrationsScreen';
 import { BotOverviewScreen } from './components/screens/BotOverviewScreen';
 import { BroadcastsScreen } from './components/screens/BroadcastsScreen';
 
@@ -372,23 +371,18 @@ export default function App() {
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'scenario' && (
               funnelWorkspaceReady ? <Build key="scenario" /> : <FunnelLoadStateView key="scenario-state" />
             )}
-            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'platforms' && appState.activeBot && (
-              <BotPlatformsScreen
-                key="platforms"
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'integrations' && appState.activeBot && (
+              <BotIntegrationsScreen
+                key="integrations"
                 bot={appState.activeBot}
                 onOpenSettings={() => setSheet('bot_settings')}
               />
             )}
-            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'monetization' && appState.activeBot && (
-              <BotMonetizationScreen
-                key="monetization"
-                bot={appState.activeBot}
-                onOpenSettings={() => setSheet('bot_settings')}
-                onOpenGatewayLibrary={() => setRoute({ level: 'account', tab: 'gateways' })}
-              />
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'audience' && appState.activeBot && (
+              <BroadcastsScreen key="audience" bot={appState.activeBot} initialTab="audience" />
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'broadcasts' && appState.activeBot && (
-              <BroadcastsScreen key="broadcasts" bot={appState.activeBot} />
+              <BroadcastsScreen key="broadcasts" bot={appState.activeBot} initialTab="broadcasts" />
             )}
           </AnimatePresence>
         </Suspense>
