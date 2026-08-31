@@ -18,8 +18,6 @@ import {
   CheckCircle2,
   XCircle,
   MessageCircle,
-  RefreshCw,
-  Bot,
   FileText,
   X,
   AlertTriangle,
@@ -776,7 +774,6 @@ export const Build = () => {
       />
 
       {/* Bot Header (Settings Access) */}
-      {appState.activeBot.mediaSyncDone && (
       <div
         className="flex items-center justify-between gap-3 p-4 md:px-5 md:py-4 mb-6 md:mb-8 border rounded-[20px] md:rounded-[24px] shadow-sm relative overflow-hidden"
         style={{
@@ -912,7 +909,6 @@ export const Build = () => {
           </button>
         </div>
       </div>
-      )}
 
       <motion.div
         key="build"
@@ -920,36 +916,8 @@ export const Build = () => {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
-        className={!appState.activeBot.mediaSyncDone ? "flex-1 flex flex-col justify-center items-center h-[calc(100vh-160px)] w-full" : "grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"}
+        className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"
       >
-        {!appState.activeBot.mediaSyncDone ? (
-          <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[var(--radius-xl)] p-8 md:p-12 text-center shadow-[var(--shadow-card)] flex flex-col items-center max-w-2xl w-full mx-auto my-auto mt-12 lg:mt-0">
-            <div className="w-16 h-16 rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center mb-6">
-              <RefreshCw size={32} className="animate-spin" />
-            </div>
-            <h2 className="text-2xl md:text-3xl font-bold text-[var(--color-foreground)] mb-4">
-              Остался один шаг!
-            </h2>
-            <p className="text-[15px] md:text-[16px] text-[var(--color-foreground-secondary)] leading-relaxed mb-8 max-w-[400px]">
-              Чтобы получить доступ к настройке воронки, необходимо инициализировать бота. Нажмите кнопку ниже, чтобы перейти в бота, и нажмите <b>START</b>.
-            </p>
-            <button 
-              onClick={() => {
-                const tg = (window as Window & { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram?.WebApp;
-                const botUrl = appState.activeBot!.botUrl || `https://t.me/${appState.activeBot!.username}`;
-                if (tg && tg.openTelegramLink) {
-                  tg.openTelegramLink(`${botUrl}?start=sync`);
-                } else {
-                  window.open(`${botUrl}?start=sync`, '_blank');
-                }
-              }}
-              className="btn btn-primary min-h-11 px-6 text-[15px] flex items-center gap-2"
-            >
-              <Bot size={18} /> Открыть бота в Telegram
-            </button>
-          </div>
-        ) : (
-          <>
         {/* Left: funnel steps */}
         <div
           style={{
@@ -1689,8 +1657,6 @@ export const Build = () => {
             </div>
           </div>
         </div>
-        </>
-        )}
 
       </motion.div>
 

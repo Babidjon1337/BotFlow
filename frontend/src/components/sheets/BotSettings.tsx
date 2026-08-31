@@ -136,16 +136,19 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
     const changedCredentials = Object.fromEntries(
       Object.entries(keys).filter(([key, value]) => changedCredentialFields.has(key) && value.trim())
     );
-    const requiredCredentialKeys = PAYMENT_PROVIDERS[provider].map((field) => field.key);
-    const needsAllCredentials = providerChanged || !activeBot.hasPaymentCredentials;
-    if (needsAllCredentials && requiredCredentialKeys.some((key) => !changedCredentials[key])) {
-      showAlert({
-        title: "Заполните ключи",
-        message: "Для новой платёжной системы укажите все ключи.",
-        type: "warning",
-        confirmText: "Понятно",
-      });
-      return;
+    // Касса необязательна: валидируем ключи только если юзер реально начал вводить.
+    const isTouchingPayments = paymentCredsChanged || providerChanged;
+    if (isTouchingPayments) {
+      const requiredCredentialKeys = PAYMENT_PROVIDERS[provider].map((field) => field.key);
+      if (requiredCredentialKeys.some((key) => !changedCredentials[key])) {
+        showAlert({
+          title: "Заполните ключи",
+          message: "Чтобы подключить кассу, укажите все ключи — или пропустите этот шаг.",
+          type: "warning",
+          confirmText: "Понятно",
+        });
+        return;
+      }
     }
     setIsSaving(true);
     try {
@@ -154,8 +157,8 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         displayName: name,
         token: tokenChanged && token ? token : undefined,
         offerUrl,
-        paymentProvider: provider,
-        paymentCreds: paymentCredsChanged ? changedCredentials : undefined,
+        paymentProvider: isTouchingPayments ? provider : undefined,
+        paymentCreds: paymentCredsChanged && Object.keys(changedCredentials).length ? changedCredentials : undefined,
       });
       const didTokenChange = updated.token_changed === true;
       const blocksForSave = didTokenChange
@@ -178,7 +181,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
           name: updated.displayName || name,
           token: activeBot.token,
           offerUrl: updated.offerUrl ?? offerUrl,
-          paymentProvider: updated.paymentProvider ?? provider,
+          paymentProvider: updated.paymentProvider ?? (isTouchingPayments ? provider : activeBot.paymentProvider),
           paymentKeys: activeBot.paymentKeys,
           hasPaymentCredentials: updated.hasPaymentCredentials ?? activeBot.hasPaymentCredentials,
           tokenPreview: updated.tokenPreview ?? activeBot.tokenPreview,
