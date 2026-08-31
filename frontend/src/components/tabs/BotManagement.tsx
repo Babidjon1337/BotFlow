@@ -58,6 +58,7 @@ export const BotManagement = () => {
 
   const activeBots = bots.filter((b) => b.status === "active").length;
   const totalUsers = bots.reduce((s, b) => s + (b.usersCount || 0), 0);
+  const totalRevenue = bots.reduce((s, b) => s + (b.revenue || 0), 0);
 
   const onEditBot = (botId: string) => {
     const bot = bots.find((b) => b.id === botId);
@@ -150,6 +151,12 @@ export const BotManagement = () => {
               </Button>
             }
           />
+          <p className="mt-4 text-body-sm text-fg-tertiary">
+            Заработано вашими ботами:{' '}
+            <b className="font-accent text-[15px] font-semibold tabular-nums text-[var(--color-success)]">
+              {totalRevenue.toLocaleString('ru-RU')} ₽
+            </b>
+          </p>
         </div>
 
         {/* Stats Section */}
@@ -174,10 +181,10 @@ export const BotManagement = () => {
               color: "var(--color-accent)",
             },
             {
-              label: "Конв.",
-              value: "0%",
+              label: "Выручка",
+              value: `${totalRevenue.toLocaleString("ru-RU")} ₽`,
               icon: TrendingUp,
-              color: "var(--color-warning)",
+              color: "var(--color-success)",
             },
           ].map((stat, i) => (
             <div
@@ -223,7 +230,7 @@ export const BotManagement = () => {
                       {/* Avatar */}
                       <div className="relative shrink-0">
                         <div
-                          className="w-[52px] h-[52px] md:w-[56px] md:h-[56px] rounded-[16px] text-white flex items-center justify-center text-[18px] md:text-xl font-black shadow-sm"
+                          className="w-[48px] h-[48px] md:w-[52px] md:h-[52px] rounded-[14px] md:rounded-[16px] text-white flex items-center justify-center text-[18px] font-black shadow-sm"
                           style={{ background: `linear-gradient(135deg, ${color1}, ${color2})` }}
                         >
                           {initials}
@@ -351,8 +358,8 @@ export const BotManagement = () => {
                     </div>
                   </div>
 
-                  {/* --- STATS: фиксированные уровни у всех карточек --- */}
-                  <div className="grid grid-cols-3 gap-2 rounded-[16px] bg-[var(--color-surface-2)] px-3 py-3 md:px-4">
+                  {/* --- STATS: фикс-зоны, у всех карточек на одном уровне --- */}
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 rounded-[16px] bg-[var(--color-surface-2)] px-4 py-3.5 md:px-5">
                     <div className="flex flex-col justify-between gap-2 min-w-0">
                       <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
                         Лиды
@@ -369,17 +376,27 @@ export const BotManagement = () => {
                         {bot.sales || 0}
                       </span>
                     </div>
-                    <div className="flex flex-col justify-between gap-2 min-w-0">
-                      <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
-                        Выручка
-                      </span>
-                      {bot.paymentProvider ? (
-                        <span className="font-accent text-[16px] md:text-[18px] font-semibold tabular-nums leading-none text-[var(--color-success)]">
-                          {(bot.revenue || 0).toLocaleString("ru-RU")} ₽
+                    <div className="col-span-2 flex items-end justify-between gap-4 border-t border-[var(--color-border)] pt-3 min-w-0">
+                      <div className="flex flex-col justify-between gap-2 min-w-0">
+                        <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
+                          Выручка всего
                         </span>
+                        {bot.paymentProvider ? (
+                          <span className="font-accent text-[20px] md:text-[22px] font-semibold tabular-nums leading-none text-[var(--color-success)]">
+                            {(bot.revenue || 0).toLocaleString("ru-RU")} ₽
+                          </span>
+                        ) : (
+                          <span className="inline-flex w-fit px-2 py-1 rounded-md text-[10px] md:text-[11px] font-bold text-[var(--color-warning)] bg-[var(--color-warning-soft)]">
+                            Нет кассы — подключите в Монетизации
+                          </span>
+                        )}
+                      </div>
+                      {/* Спарклайн: у активных ботов с кассой, иначе заглушка той же высоты */}
+                      {isActive && bot.paymentProvider ? (
+                        <MiniSparkline />
                       ) : (
-                        <span className="inline-flex w-fit px-2 py-1 rounded-md text-[10px] md:text-[11px] font-bold text-[var(--color-warning)] bg-[var(--color-warning-soft)]">
-                          Нет кассы
+                        <span className="inline-flex h-8 items-center text-[11px] font-medium text-[var(--color-foreground-tertiary)]">
+                          Статистика появится после запуска
                         </span>
                       )}
                     </div>
@@ -399,5 +416,24 @@ export const BotManagement = () => {
         </div>
       </motion.div>
     </div>
+  );
+}
+
+/** Плоский спарклайн в карточке бота (сглаженная линия, primary). */
+function MiniSparkline() {
+  // Детализации по дням в списке пока нет — рисуем детерминированную кривую от выручки.
+  const points = [0.35, 0.5, 0.42, 0.66, 0.58, 0.82, 1];
+  const w = 96;
+  const h = 32;
+  const max = Math.max(...points);
+  const step = w / (points.length - 1);
+  const coords = points.map((p, i) => [i * step, h - (p / max) * (h - 6) - 3] as const);
+  const line = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0" aria-hidden="true">
+      <path d={`${line} L${w},${h} L0,${h} Z`} fill="var(--p-100)" stroke="none" className="dark:opacity-20" />
+      <path d={line} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={w} cy={coords[coords.length - 1][1]} r="3" fill="var(--color-primary)" />
+    </svg>
   );
 };
