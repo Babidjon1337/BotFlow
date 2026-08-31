@@ -622,13 +622,15 @@ export const apiService = {
     botId: string | number,
     text: string,
     audience: AudienceFilter,
-    scheduledAt?: string
+    options: { scheduledAt?: string; mediaAssetIds?: string[] } = {}
   ) {
+    const { scheduledAt, mediaAssetIds } = options;
+    const payload: Record<string, unknown> = { text, audience };
+    if (scheduledAt) payload.scheduledAt = scheduledAt;
+    if (mediaAssetIds?.length) payload.mediaAssetIds = mediaAssetIds;
     return fetchApi<Broadcast>(`/api/bots/${botId}/broadcasts`, {
       method: "POST",
-      body: JSON.stringify(
-        scheduledAt ? { text, audience, scheduledAt } : { text, audience }
-      ),
+      body: JSON.stringify(payload),
     });
   },
 

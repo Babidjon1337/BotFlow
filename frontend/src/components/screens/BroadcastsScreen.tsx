@@ -145,7 +145,7 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
             onCompose={() => setComposerOpen(true)}
           />
         ) : (
-          <BroadcastsTabContent botId={bot.id} counts={summary} onCompose={() => setComposerOpen(true)} />
+          <BroadcastsTabContent botId={bot.id} counts={summary} mediaReady={Boolean(bot.mediaSyncDone)} onCompose={() => setComposerOpen(true)} />
         )}
       </div>
 
@@ -154,6 +154,7 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
           <BroadcastComposerSheet
             botId={bot.id}
             counts={summary}
+            mediaReady={Boolean(bot.mediaSyncDone)}
             onClose={() => setComposerOpen(false)}
             onCreated={handleCreated}
           />
@@ -359,10 +360,12 @@ function AudienceTab({
 function BroadcastsTabContent({
   botId,
   counts,
+  mediaReady,
   onCompose,
 }: {
   botId: string;
   counts: AudienceSummary | null;
+  mediaReady: boolean;
   onCompose: () => void;
 }) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
@@ -516,6 +519,7 @@ function BroadcastsTabContent({
               botId={botId}
               counts={counts}
               onCreated={onCompose}
+              mediaReady={mediaReady}
               idPrefix="broadcast-inline"
             />
           ) : (

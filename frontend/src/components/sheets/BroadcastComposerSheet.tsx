@@ -7,6 +7,8 @@ import type { AudienceSummary } from '../../services/api';
 interface BroadcastComposerSheetProps {
   botId: string;
   counts: AudienceSummary | null;
+  /** Готов ли бот к загрузке медиа (токен + START выполнены). */
+  mediaReady: boolean;
   onClose: () => void;
   onCreated: () => void;
 }
@@ -15,6 +17,7 @@ interface BroadcastComposerSheetProps {
 export const BroadcastComposerSheet = ({
   botId,
   counts,
+  mediaReady,
   onClose,
   onCreated,
 }: BroadcastComposerSheetProps) => {
@@ -64,7 +67,7 @@ export const BroadcastComposerSheet = ({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-5">
-          <BroadcastComposerForm botId={botId} counts={counts} onCreated={onCreated} />
+          <BroadcastComposerForm botId={botId} counts={counts} onCreated={onCreated} mediaReady={mediaReady} />
         </div>
       </motion.div>
     </div>

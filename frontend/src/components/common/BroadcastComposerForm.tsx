@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarClock, Send } from 'lucide-react';
+import { CalendarClock, ImagePlus, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
 import type {
@@ -8,6 +8,8 @@ import type {
 } from '../../services/api';
 
 const MAX_LENGTH = 4096;
+const MAX_MEDIA = 10;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // Минимальный запас до запланированного момента — минута, как на бэкенде.
 const MIN_SCHEDULE_LEAD_MS = 60_000;
 const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60 * 1000;
@@ -22,10 +24,19 @@ const AUDIENCE_OPTIONS: {
   { value: 'unpaid', title: 'Без оплаты', desc: 'Дошли по воронке, но не купили' },
 ];
 
+export type PendingMedia = {
+  /** Локальный object-url для превью. */
+  url: string;
+  file: File;
+  type: 'photo' | 'video';
+};
+
 interface BroadcastComposerFormProps {
   botId: string;
   counts: AudienceSummary | null;
   onCreated: () => void;
+  /** Готов ли бот к медиа (токен + синхронизация выполнены). */
+  mediaReady: boolean;
   /** id-префикс, чтобы sheet и inline-вариант не конфликтовали по label/for. */
   idPrefix?: string;
 }
@@ -37,14 +48,11 @@ function toIsoOrNull(localValue: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
-/**
- * Форма создания рассылки: сегмент, текст, планирование.
- * Используется в bottom-sheet (mobile) и в inline-карточке (desktop, R7.4).
- */
 export function BroadcastComposerForm({
   botId,
   counts,
   onCreated,
+  mediaReady,
   idPrefix = 'broadcast',
 }: BroadcastComposerFormProps) {
   const { showConfirm, showAlert } = useAlert();
@@ -54,12 +62,16 @@ export function BroadcastComposerForm({
   const [scheduleAt, setScheduleAt] = useState('');
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Медиа: привязанные asset id (загружены) или локальные файлы (ждут привязки).
+  const [assetIds, setAssetIds] = useState<string[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<PendingMedia[]>([]);
 
   const trimmed = text.trim();
   const scheduledIso = scheduleMode === 'later' ? toIsoOrNull(scheduleAt) : null;
   const scheduleEmpty = scheduleMode === 'later' && !scheduleAt;
+  const mediaPendingLocal = pendingFiles.length > 0;
   const isValid =
-    trimmed.length > 0 &&
+    (trimmed.length > 0 || assetIds.length > 0 || (mediaPendingLocal && mediaReady)) &&
     text.length <= MAX_LENGTH &&
     (scheduleMode === 'now' || (!scheduleEmpty && scheduleError === null));
   const recipients = counts ? counts[audience] : null;
@@ -84,6 +96,37 @@ export function BroadcastComposerForm({
     setScheduleError(value ? validateSchedule(value) : null);
   };
 
+  const addFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    const accepted: PendingMedia[] = [];
+    for (const file of Array.from(files)) {
+      if (assetIds.length + pendingFiles.length + accepted.length >= MAX_MEDIA) break;
+      if (file.size > MAX_FILE_BYTES) continue;
+      const isPhoto = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      if (!isPhoto && !isVideo) continue;
+      accepted.push({
+        url: URL.createObjectURL(file),
+        file,
+        type: isPhoto ? 'photo' : 'video',
+      });
+    }
+    setPendingFiles((prev) => [...prev, ...accepted]);
+  };
+
+  const removePending = (index: number) => {
+    setPendingFiles((prev) => {
+      const copy = [...prev];
+      const [removed] = copy.splice(index, 1);
+      if (removed) URL.revokeObjectURL(removed.url);
+      return copy;
+    });
+  };
+
+  const removeAsset = (assetId: string) => {
+    setAssetIds((prev) => prev.filter((id) => id !== assetId));
+  };
+
   const submit = async () => {
     if (isSubmitting) return;
     if (scheduleMode === 'later') {
@@ -96,7 +139,19 @@ export function BroadcastComposerForm({
     if (!isValid) return;
     setIsSubmitting(true);
     try {
-      await apiService.createBroadcast(botId, trimmed, audience, scheduledIso ?? undefined);
+      const finalAssetIds = [...assetIds];
+      // Локальные медиа — загружаем бесшумно при отправке (бот уже привязан).
+      if (pendingFiles.length && mediaReady) {
+        for (const item of pendingFiles) {
+          const uploaded = await apiService.uploadBotMedia(botId, 'broadcast', item.file);
+          finalAssetIds.push(uploaded.id);
+        }
+      }
+      await apiService.createBroadcast(botId, trimmed, audience, {
+        scheduledAt: scheduledIso ?? undefined,
+        mediaAssetIds: finalAssetIds,
+      });
+      pendingFiles.forEach((item) => URL.revokeObjectURL(item.url));
       onCreated();
     } catch (error) {
       showAlert({
@@ -118,8 +173,19 @@ export function BroadcastComposerForm({
         return;
       }
     }
+    if (pendingFiles.length && !mediaReady) {
+      showAlert({
+        type: 'warning',
+        title: 'Медиа прикрепится после привязки бота',
+        message: 'Подключите Telegram-токен в разделе «Интеграции» и нажмите START в боте — медиа загрузятся автоматически.',
+        confirmText: 'Понятно',
+      });
+      return;
+    }
     if (!isValid) return;
     const audienceLabel = recipients === null ? '—' : recipients.toLocaleString('ru-RU');
+    const mediaLabel =
+      assetIds.length + pendingFiles.length > 0 ? ' С медиа.' : '';
     if (scheduleMode === 'later' && scheduledIso) {
       const local = new Date(scheduleAt).toLocaleString('ru-RU', {
         day: 'numeric',
@@ -130,7 +196,7 @@ export function BroadcastComposerForm({
       showConfirm({
         type: 'info',
         title: 'Запланировать рассылку?',
-        message: `Сообщение получат ${audienceLabel} подписчиков — ${local}. До отправки рассылку можно отменить.`,
+        message: `Сообщение получат ${audienceLabel} подписчиков — ${local}.${mediaLabel} До отправки рассылку можно отменить.`,
         confirmText: 'Запланировать',
         onConfirm: submit,
       });
@@ -139,7 +205,7 @@ export function BroadcastComposerForm({
     showConfirm({
       type: 'info',
       title: 'Отправить рассылку?',
-      message: `Сообщение получат ${audienceLabel} подписчиков. Отменить отправку после запуска нельзя.`,
+      message: `Сообщение получат ${audienceLabel} подписчиков.${mediaLabel} Отменить отправку после запуска нельзя.`,
       confirmText: 'Отправить',
       onConfirm: submit,
     });
@@ -147,12 +213,119 @@ export function BroadcastComposerForm({
 
   return (
     <div className="space-y-5">
+      {/* ── Медиа ── */}
+      <div>
+        <div className="flex items-center justify-between">
+          <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+            Фото и видео
+          </p>
+          <span className="text-micro text-fg-tertiary tabular-nums">
+            {assetIds.length + pendingFiles.length} / {MAX_MEDIA}
+          </span>
+        </div>
+
+        {(assetIds.length > 0 || pendingFiles.length > 0) && (
+          <ul className="mt-2 flex flex-wrap gap-2">
+            {assetIds.map((id) => (
+              <li
+                key={id}
+                className="group relative flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-muted"
+              >
+                <span className="text-fg-tertiary">✓</span>
+                <button
+                  type="button"
+                  onClick={() => removeAsset(id)}
+                  aria-label="Убрать медиа"
+                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-danger-soft text-danger hover:bg-danger hover:text-white"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </li>
+            ))}
+            {pendingFiles.map((item, index) => (
+              <li
+                key={item.url}
+                className="group relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted"
+              >
+                {item.type === 'photo' ? (
+                  <img src={item.url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex flex-col items-center gap-0.5 text-fg-tertiary">
+                    <Play className="size-5" aria-hidden />
+                    <span className="text-[9px] font-semibold">видео</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removePending(index)}
+                  aria-label="Удалить медиа"
+                  className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                >
+                  <X className="size-2.5" aria-hidden />
+                </button>
+              </li>
+            ))}
+            {assetIds.length + pendingFiles.length < MAX_MEDIA && (
+              <li>
+                <label
+                  htmlFor={`${idPrefix}-media`}
+                  className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border-strong text-fg-tertiary transition-colors hover:border-primary hover:text-primary"
+                >
+                  <ImagePlus className="size-5" aria-hidden />
+                  <span className="text-[9px] font-semibold">добавить</span>
+                </label>
+                <input
+                  id={`${idPrefix}-media`}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  className="sr-only"
+                  onChange={(event) => {
+                    addFiles(event.target.files);
+                    event.target.value = '';
+                  }}
+                />
+              </li>
+            )}
+          </ul>
+        )}
+
+        {assetIds.length + pendingFiles.length < MAX_MEDIA && (
+          <label
+            htmlFor={`${idPrefix}-media-additional`}
+            className="mt-2 inline-flex cursor-pointer items-center gap-1.5 text-meta font-medium text-primary hover:underline"
+          >
+            <ImagePlus className="size-3.5" aria-hidden />
+            Добавить фото или видео
+          </label>
+        )}
+        <input
+          id={`${idPrefix}-media-additional`}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          className="sr-only"
+          onChange={(event) => {
+            addFiles(event.target.files);
+            event.target.value = '';
+          }}
+        />
+
+        <p className="mt-1.5 text-meta text-fg-tertiary">
+          {mediaPendingLocal
+            ? 'Медиа прикрепится автоматически после привязки бота к Telegram.'
+            : 'Фото и видео уйдут одним сообщением, текст — следующим.'}{' '}
+          До 10 файлов, каждый до 20 МБ.
+        </p>
+      </div>
+
+      {/* ── Текст ── */}
       <div>
         <label
           htmlFor={`${idPrefix}-text`}
           className="text-micro font-medium uppercase tracking-wide text-fg-tertiary"
         >
-          Сообщение
+          Текст сообщения (отдельным сообщением после медиа)
         </label>
         <textarea
           id={`${idPrefix}-text`}
@@ -172,6 +345,7 @@ export function BroadcastComposerForm({
         </p>
       </div>
 
+      {/* ── Аудитория ── */}
       <div>
         <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
           Кому отправить
@@ -219,6 +393,7 @@ export function BroadcastComposerForm({
         </div>
       </div>
 
+      {/* ── Планирование ── */}
       <div>
         <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
           Когда отправить
