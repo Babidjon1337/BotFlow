@@ -205,77 +205,79 @@ export const Subscription = () => {
           <div className="mt-6 flex flex-col gap-6">
             {/* Main Hero Card */}
             <div
-              className="relative overflow-hidden rounded-[24px] md:rounded-[32px] p-6 md:p-10 border border-[var(--color-primary)]/20 shadow-lg shadow-[var(--color-primary)]/5"
+              className="relative overflow-hidden rounded-[24px] border border-[var(--color-primary)]/20 shadow-lg shadow-[var(--color-primary)]/5"
               style={{
                 background:
                   "linear-gradient(145deg, var(--color-surface) 0%, var(--color-surface-2) 100%)",
               }}
             >
-              <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-[var(--color-primary)]/10 rounded-full blur-[80px] pointer-events-none -mr-20 -mt-20" />
-              <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-[var(--color-accent)]/10 rounded-full blur-[60px] pointer-events-none -ml-20 -mb-20" />
+              <div className="absolute top-0 right-0 w-[420px] h-[420px] bg-[var(--color-primary)]/10 rounded-full blur-[80px] pointer-events-none -mr-20 -mt-20" />
 
-              <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                <div className="flex items-center gap-4 md:gap-5">
-                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-[18px] bg-gradient-to-br from-[var(--color-primary)] to-[var(--v-500)] shadow-lg flex items-center justify-center shrink-0">
-                    <Crown size={28} className="text-white drop-shadow" />
+              <div className="relative z-10 flex flex-col gap-5 p-6 md:p-8">
+                <div className="flex items-center gap-4">
+                  <div className="size-12 rounded-[14px] bg-gradient-to-br from-[var(--color-primary)] to-[var(--v-500)] shadow-lg flex items-center justify-center shrink-0">
+                    <Crown size={24} className="text-white" />
                   </div>
                   <div>
-                    <div className="flex flex-wrap items-center gap-2.5 mb-1">
-                      <h2 className="text-xl md:text-2xl font-extrabold text-[var(--color-foreground)] tracking-tight">
-                        {isAdmin ? "Тариф: Админ (SaaS Owner)" : "PRO-подписка"}
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <h2 className="text-lg font-extrabold text-[var(--color-foreground)] tracking-tight">
+                        {isAdmin ? "Тариф: Админ (SaaS Owner)" : "Подписка"}
                       </h2>
                       <StatusBadge tone="success" label="Активна" />
                     </div>
-                    <p className="text-body-sm text-fg-secondary font-medium">
+                    <p className="text-meta text-fg-secondary">
                       {isAdmin
-                        ? "Безлимитный доступ ко всем функциям и аналитике BotFlow"
-                        : "Право публикации ботов платформы"}
+                        ? "Безлимитный доступ ко всем функциям"
+                        : "Право публикации ваших ботов"}
                     </p>
                   </div>
                 </div>
 
-                <div className="rounded-[16px] border border-border bg-card/80 backdrop-blur px-5 py-4 w-full md:w-auto shrink-0">
-                  <div className="flex items-center gap-6">
-                    <div>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
-                        <RefreshCcw size={12} aria-hidden="true" /> Продление
-                      </p>
-                      <p className="font-accent text-[18px] font-semibold leading-tight mt-1 text-[var(--color-foreground)]">
-                        {appState.subscriptionUntil
-                          ? new Date(appState.subscriptionUntil).toLocaleDateString("ru-RU", {
-                              day: "numeric",
-                              month: "long",
-                            })
-                          : "—"}
-                      </p>
-                      <p className="text-meta text-fg-secondary mt-0.5">
-                        {(prices.pro ?? 3000).toLocaleString("ru-RU")} ₽/мес
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary mb-1.5">
-                        Автосписание
-                      </p>
-                      {appState.subscriptionAutoRenew ? (
-                        <div className="flex flex-col gap-1">
-                          <span className="inline-flex items-center gap-1.5 text-body-sm font-bold text-[var(--color-success)]">
-                            <span className="size-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
-                            Включено
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setShowCancelModal(true)}
-                            className="text-meta font-semibold text-[var(--color-danger)] hover:underline text-left"
-                          >
-                            Отключить
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-body-sm text-fg-tertiary">
-                          Выключено — включится при следующей оплате
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="rounded-[14px] border border-border bg-card/80 px-4 py-3.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary">Цена</p>
+                    <p className="font-accent text-[20px] font-semibold leading-tight mt-1 text-[var(--color-foreground)]">
+                      990 ₽ <span className="align-baseline font-sans text-[12px] font-medium text-fg-secondary">/ мес</span>
+                    </p>
+                    <p className="text-meta text-fg-tertiary mt-0.5">за каждого бота</p>
+                  </div>
+                  <div className="rounded-[14px] border border-border bg-card/80 px-4 py-3.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary flex items-center gap-1.5">
+                      <RefreshCcw size={12} aria-hidden="true" /> Продление
+                    </p>
+                    <p className="font-accent text-[20px] font-semibold leading-tight mt-1 text-[var(--color-foreground)]">
+                      {appState.subscriptionUntil
+                        ? new Date(appState.subscriptionUntil).toLocaleDateString("ru-RU", {
+                            day: "numeric",
+                            month: "long",
+                          })
+                        : "—"}
+                    </p>
+                    <p className="text-meta text-fg-tertiary mt-0.5">следующее списание</p>
+                  </div>
+                  <div className="rounded-[14px] border border-border bg-card/80 px-4 py-3.5">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary mb-1">
+                      Автосписание
+                    </p>
+                    {appState.subscriptionAutoRenew ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1.5 text-body-sm font-bold text-[var(--color-success)]">
+                          <span className="size-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
+                          Включено
                         </span>
-                      )}
-                    </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowCancelModal(true)}
+                          className="text-meta font-semibold text-[var(--color-danger)] hover:underline text-left"
+                        >
+                          Отключить
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-body-sm text-fg-tertiary">
+                        Выключено — включится при следующей оплате
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
