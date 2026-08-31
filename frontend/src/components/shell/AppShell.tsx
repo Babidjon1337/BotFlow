@@ -12,7 +12,7 @@ const BOT_VIEW_TONES: Record<BotView, string> = {
   overview: 'nav-tone-blue',
   scenario: 'nav-tone-cyan',
   integrations: 'nav-tone-green',
-  audience: 'nav-tone',
+  audience: 'nav-tone-indigo',
   broadcasts: 'nav-tone-orange',
   clients: 'nav-tone-blue',
   analytics: 'nav-tone-indigo',
