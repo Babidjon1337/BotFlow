@@ -1,11 +1,11 @@
 """R7 broadcast queries: audience counts, recipient snapshots, claim and progress."""
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, or_, select, String, update
 
-from database.models import Broadcast, BroadcastRecipient, Lead, async_session
+from database.models import Broadcast, BroadcastRecipient, Lead, MediaAsset, async_session
 from loggers import logger
 
 AUDIENCE_FILTERS = ("all", "paid", "unpaid")
@@ -100,22 +100,37 @@ def normalize_scheduled_at(scheduled_at: Optional[datetime]) -> Optional[datetim
 
 
 async def create_broadcast(
-    bot_id: int, text: str, audience: str, scheduled_at: Optional[datetime] = None
+    bot_id: int,
+    text: str,
+    audience: str,
+    scheduled_at: Optional[datetime] = None,
+    media_asset_ids: Optional[list[str]] = None,
 ) -> Broadcast:
     """Создаёт рассылку и мгновенный снимок получателей; ставит в очередь.
 
     Снимок делается в момент создания: изменение аудитории после этого
     не меняет состав рассылки, а счётчик получателей детерминирован.
     Дата в будущем переводит рассылку в статус scheduled.
+    media_asset_ids — фото/видео (file_id из media_assets), до 10 штук;
+    в Telegram они уходят медиа-группой, а текст — отдельным сообщением.
     """
     if audience not in AUDIENCE_FILTERS:
         raise ValueError("Неизвестный фильтр аудитории")
     cleaned = (text or "").strip()
-    if not cleaned:
+    if not cleaned and not media_asset_ids:
         raise ValueError("Текст рассылки пуст")
     if len(cleaned) > 4096:
         raise ValueError("Текст длиннее лимита Telegram в 4096 символов")
     scheduled_at = normalize_scheduled_at(scheduled_at)
+
+    asset_ids = [str(a) for a in (media_asset_ids or [])]
+    if len(asset_ids) > 10:
+        raise ValueError("В одной рассылке — не больше 10 медиафайлов")
+    # Валидация uuid — до обращения к базе.
+    try:
+        asset_uuids = [UUID(a) for a in asset_ids]
+    except ValueError as exc:
+        raise ValueError("Некорректный идентификатор медиафайла") from exc
 
     async with async_session() as session:
         leads_query = select(Lead).where(
@@ -128,6 +143,19 @@ async def create_broadcast(
         if not leads:
             raise ValueError("В выбранной аудитории нет получателей")
 
+        # Медиа должны принадлежать этому боту.
+        if asset_uuids:
+            found = (
+                await session.scalars(
+                    select(MediaAsset.id).where(
+                        MediaAsset.bot_id == bot_id,
+                        MediaAsset.id.in_(asset_uuids),
+                    )
+                )
+            ).all()
+            if len(found) != len(set(asset_ids)):
+                raise ValueError("Некоторые медиафайлы не найдены")
+
         broadcast = Broadcast(
             bot_id=bot_id,
             status="scheduled" if scheduled_at else "queued",
@@ -136,6 +164,7 @@ async def create_broadcast(
             platform="telegram",
             total_recipients=len(leads),
             scheduled_at=scheduled_at,
+            media_asset_ids=asset_ids,
         )
         session.add(broadcast)
         await session.flush()
@@ -341,6 +370,19 @@ async def finalize_broadcast(broadcast_id: UUID) -> str:
         )
         await session.commit()
         return final_status
+
+
+async def get_broadcast_media(broadcast: Broadcast) -> list[MediaAsset]:
+    """Медиа рассылки в порядке добавления (фото/видео с Telegram file_id)."""
+    ids = [uuid.UUID(str(a)) for a in (broadcast.media_asset_ids or [])]
+    if not ids:
+        return []
+    async with async_session() as session:
+        items = await session.scalars(
+            select(MediaAsset).where(MediaAsset.id.in_(ids))
+        )
+        by_id = {item.id: item for item in items}
+        return [by_id[i] for i in [uuid.UUID(str(a)) for a in (broadcast.media_asset_ids or [])] if i in by_id]
 
 
 async def requeue_failed_recipients(broadcast_id: UUID) -> int:

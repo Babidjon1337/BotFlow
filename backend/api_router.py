@@ -1496,7 +1496,11 @@ async def create_broadcast_endpoint(
     bot = await get_owned_bot(bot_id, request)
     try:
         broadcast = await create_broadcast(
-            bot.id, body.text, body.audience, scheduled_at=body.scheduled_at
+            bot.id,
+            body.text,
+            body.audience,
+            scheduled_at=body.scheduled_at,
+            media_asset_ids=body.media_asset_ids,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

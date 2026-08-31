@@ -425,6 +425,13 @@ class Broadcast(Base):
         DateTime(timezone=True), index=True
     )
 
+    # Медиа рассылки: список id из media_assets (фото/видео, Telegram file_id).
+    # Пустой список — текстовая рассылка. В ТГ лимит подписи у медиа-группы —
+    # поэтому текст идёт отдельным сообщением после медиа.
+    media_asset_ids: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default="'[]'::jsonb"
+    )
+
     total_recipients: Mapped[int] = mapped_column(Integer, default=0)
     sent_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -474,8 +481,9 @@ async_session = async_sessionmaker(engine, expire_on_commit=False)
 async def init_models():
     """Verify database connectivity; schema changes are handled by Alembic."""
     async with engine.begin() as conn:
-        from sqlalchemy import text
-        await conn.execute(text("SELECT 1"))
+        from sqlalchemy import text as sa_text
+
+        await conn.execute(sa_text("SELECT 1"))
         logger.info("✅ Подключение к БД успешно. Схема управляется Alembic.")
 
 

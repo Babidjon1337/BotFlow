@@ -14,6 +14,7 @@ from aiogram.exceptions import (
     TelegramForbiddenError,
     TelegramRetryAfter,
 )
+from aiogram.types import InputMediaPhoto, InputMediaVideo
 
 from config import PROXY_URL
 from database.models import BotConfig
@@ -21,6 +22,7 @@ from database.requests.bot_rq import get_bot_by_id
 from database.requests.broadcast_rq import (
     finalize_broadcast,
     get_broadcast,
+    get_broadcast_media,
     get_pending_recipients,
     mark_recipient_failed,
     mark_recipient_sent,
@@ -75,12 +77,55 @@ async def _deliver_one(bot: Bot, telegram_id: int, text: str) -> None:
             await asyncio.sleep(exc.retry_after + 1)
 
 
-async def _send_pending_chunk(
-    bot: Bot, broadcast_id: UUID, text: str, chunk: list
+async def _deliver_media_then_text(
+    bot: Bot, telegram_id: int, media_assets: list, text: str
 ) -> None:
+    """Медиа-группа (file_id) отдельным сообщением, затем текст.
+
+    В Telegram подпись медиа-группы ограничена 1024 символами и по ТЗ
+    текст идёт отдельным сообщением — как обычное сообщение без медиа.
+    """
+    flood_waits = 0
+    while True:
+        try:
+            if len(media_assets) == 1:
+                asset = media_assets[0]
+                if asset.media_type == "video":
+                    await bot.send_video(chat_id=telegram_id, video=asset.telegram_file_id)
+                else:
+                    await bot.send_photo(chat_id=telegram_id, photo=asset.telegram_file_id)
+            else:
+                # aiogram принимает file_id строкой как InputMedia-источник.
+                media_group = [
+                    InputMediaVideo(media=a.telegram_file_id)
+                    if a.media_type == "video"
+                    else InputMediaPhoto(media=a.telegram_file_id)
+                    for a in media_assets
+                ]
+                await bot.send_media_group(chat_id=telegram_id, media=media_group)
+            break
+        except TelegramRetryAfter as exc:
+            flood_waits += 1
+            if flood_waits >= MAX_FLOOD_WAITS_PER_RECIPIENT:
+                raise
+            await asyncio.sleep(exc.retry_after + 1)
+
+    if text:
+        await _deliver_one(bot, telegram_id, text)
+
+
+async def _send_pending_chunk(
+    bot: Bot, broadcast_id: UUID, text: str, chunk: list, media_assets: list | None = None
+) -> None:
+    media_assets = media_assets or []
     for recipient in chunk:
         try:
-            await _deliver_one(bot, recipient.telegram_id, text)
+            if media_assets:
+                await _deliver_media_then_text(
+                    bot, recipient.telegram_id, media_assets, text
+                )
+            else:
+                await _deliver_one(bot, recipient.telegram_id, text)
             await mark_recipient_sent(recipient.id, broadcast_id)
         except Exception as exc:  # один получатель не должен остановить рассылку
             await mark_recipient_failed(
@@ -118,12 +163,15 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
 
     token = crypto.decrypt(bot_config.bot_token_enc)
     bot = Bot(token=token, session=bot_session or _get_session())
+    media_assets = await get_broadcast_media(broadcast)
     try:
         while True:
             chunk = await get_pending_recipients(broadcast_id, BROADCAST_CHUNK_SIZE)
             if not chunk:
                 break
-            await _send_pending_chunk(bot, broadcast_id, broadcast.text, chunk)
+            await _send_pending_chunk(
+                bot, broadcast_id, broadcast.text, chunk, media_assets=media_assets
+            )
     finally:
         final_status = await finalize_broadcast(broadcast_id)
         logger.info("Рассылка %s завершена со статусом %s", broadcast_id, final_status)

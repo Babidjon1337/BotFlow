@@ -34,6 +34,7 @@ def _broadcast(**overrides):
         "sent_count": 0,
         "failed_count": 0,
         "scheduled_at": None,
+        "media_asset_ids": [],
         "claimed_at": None,
         "started_at": None,
         "completed_at": None,
@@ -211,6 +212,63 @@ def test_broadcast_response_exposes_scheduled_at():
         _broadcast()
     ).model_dump(by_alias=True)
     assert payload_now["scheduledAt"] is None
+
+
+def test_broadcast_response_exposes_media_asset_ids():
+    payload = BroadcastApiResponse.from_orm_broadcast(
+        _broadcast(media_asset_ids=["11111111-1111-1111-1111-111111111111"])
+    ).model_dump(by_alias=True)
+    assert payload["mediaAssetIds"] == ["11111111-1111-1111-1111-111111111111"]
+
+    empty = BroadcastApiResponse.from_orm_broadcast(_broadcast()).model_dump(by_alias=True)
+    assert empty["mediaAssetIds"] == []
+
+
+def test_create_broadcast_validates_media_count():
+    """Больше 10 медиа в одной рассылке — нельзя (лимит Telegram media group)."""
+    ids = [str(uuid.uuid4()) for _ in range(11)]
+    with pytest.raises(ValueError, match="10 медиафайлов"):
+        asyncio.run(broadcast_rq.create_broadcast(1, "Привет", "all", media_asset_ids=ids))
+
+
+def test_create_broadcast_requires_text_or_media():
+    """Валидация текста/медиа — до обращения к базе."""
+    with pytest.raises(ValueError, match="Некорректный идентификатор медиафайла"):
+        asyncio.run(
+            broadcast_rq.create_broadcast(1, "   ", "all", media_asset_ids=["не-uuid"])
+        )
+    # Пустой текст без медиа отсекается до БД (как и раньше)
+    with pytest.raises(ValueError, match="Текст рассылки пуст"):
+        asyncio.run(broadcast_rq.create_broadcast(1, "   ", "all"))
+
+
+def test_create_broadcast_accepts_media_only_with_valid_uuids():
+    """Плохие uuid отсекаются до запроса в БД."""
+    with pytest.raises(ValueError, match="Некорректный идентификатор медиафайла"):
+        asyncio.run(
+            broadcast_rq.create_broadcast(
+                1, "Привет", "all", media_asset_ids=["not-a-uuid"]
+            )
+        )
+
+
+def test_create_endpoint_passes_media_through(monkeypatch):
+    broadcast = _broadcast()
+    spy = AsyncMock(return_value=broadcast)
+    monkeypatch.setattr(api_router, "get_owned_bot", AsyncMock(return_value=SimpleNamespace(id=18)))
+    monkeypatch.setattr(api_router, "create_broadcast", spy)
+
+    asset_id = str(uuid.uuid4())
+    response = asyncio.run(
+        api_router.create_broadcast_endpoint(
+            18,
+            object(),
+            BroadcastCreateRequest(text="Привет", audience="all", media_asset_ids=[asset_id]),
+        )
+    )
+
+    assert spy.call_args.kwargs["media_asset_ids"] == [asset_id]
+    assert response["id"] == str(broadcast.id)
 
 
 def test_create_broadcast_validates_scheduled_date_before_db():
