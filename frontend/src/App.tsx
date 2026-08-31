@@ -378,11 +378,12 @@ export default function App() {
                 onOpenSettings={() => setSheet('bot_settings')}
               />
             )}
-            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'audience' && appState.activeBot && (
-              <BroadcastsScreen key="audience" bot={appState.activeBot} initialTab="audience" />
-            )}
-            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'broadcasts' && appState.activeBot && (
-              <BroadcastsScreen key="broadcasts" bot={appState.activeBot} initialTab="broadcasts" />
+            {resolvedRoute.level === 'bot' && (resolvedRoute.view === 'audience' || resolvedRoute.view === 'broadcasts') && appState.activeBot && (
+              <BroadcastsScreen
+                key="audience-broadcasts"
+                bot={appState.activeBot}
+                initialTab={resolvedRoute.view === 'audience' ? 'audience' : 'broadcasts'}
+              />
             )}
           </AnimatePresence>
         </Suspense>
