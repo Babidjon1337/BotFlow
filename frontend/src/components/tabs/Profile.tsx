@@ -517,28 +517,49 @@ export const Profile = () => {
                 {/* Expanded Content */}
                 {notificationsOpen && <div style={{ padding: "0 20px 20px 20px" }}>
                   <div className="pt-4 border-t border-[var(--color-border)] space-y-5">
-                    <div className="rounded-xl bg-[var(--color-surface-2)] p-3 text-[13px] text-[var(--color-foreground-secondary)]">
-                      Telegram-уведомления о покупке, продлении и сбое списания обязательны: так вы не пропустите изменение доступа.
+                    <div className="flex items-start gap-3 rounded-xl bg-info-soft p-3.5 text-info">
+                      <Zap size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+                      <p className="text-meta leading-relaxed">
+                        Telegram-уведомления о покупке, продлении и сбое списания приходят автоматически —
+                        так вы не пропустите изменение доступа. Их отключить нельзя.
+                      </p>
                     </div>
                     <div>
-                      <label className="text-[13px] font-bold text-[var(--color-foreground)] block mb-1.5">
-                        Email для отправки чеков
+                      <label htmlFor="profile-email" className="block text-body-sm font-medium text-fg-primary">
+                        Email для чеков
                       </label>
                       <input
+                        id="profile-email"
                         type="email"
                         placeholder="ваша@почта.ru"
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
-                        className="input w-full"
-                        style={{ height: "44px", fontSize: "14px" }}
+                        className="input mt-1.5 w-full"
                       />
+                      <p className="mt-1 text-meta text-fg-tertiary">
+                        Приходят после каждой оплаты подписки.
+                      </p>
                     </div>
-                    <label className="flex items-center justify-between gap-4 text-[13px] text-[var(--color-foreground)]">
-                      <span><b>Чеки на email</b><br /><span className="text-[var(--color-foreground-secondary)]">Использовать email при оплате лицензии и PRO</span></span>
-                      <input type="checkbox" checked={receiptsEnabled} onChange={(event) => setReceiptsEnabled(event.target.checked)} />
-                    </label>
-                    {notificationError && <p className="text-[13px] text-[var(--color-danger)]">{notificationError}</p>}
-                    <button type="button" onClick={saveNotifications} disabled={isSavingNotifications} className="btn-primary w-full">
+                    <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-[var(--color-surface-2)] px-4 py-3">
+                      <span className="min-w-0">
+                        <span className="block text-body-sm font-bold text-[var(--color-foreground)]">Чеки на email</span>
+                        <span className="block text-meta text-fg-secondary">Дублировать чек на почту при оплате</span>
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={receiptsEnabled}
+                        onClick={() => setReceiptsEnabled((v) => !v)}
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${receiptsEnabled ? "bg-[var(--color-primary)]" : "bg-[var(--color-border-strong)]"}`}
+                      >
+                        <span
+                          className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${receiptsEnabled ? "left-[22px]" : "left-0.5"}`}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </div>
+                    {notificationError && <p className="text-body-sm text-[var(--color-danger)]">{notificationError}</p>}
+                    <button type="button" onClick={saveNotifications} disabled={isSavingNotifications} className="btn-primary-saas w-full">
                       {isSavingNotifications ? "Сохраняем…" : "Сохранить настройки"}
                     </button>
                   </div>
