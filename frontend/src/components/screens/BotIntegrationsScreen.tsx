@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Check, CreditCard, ExternalLink, FileText, KeyRound, Settings2 } from 'lucide-react';
+import { BadgeCheck, Check, ExternalLink, FileText, KeyRound, Settings2 } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
 import { Button } from '../ui/button';
 import { PageHeader } from '../common/PageHeader';
@@ -9,12 +9,14 @@ import { PlatformGlyph } from '../common/platform';
 const PROVIDERS: {
   id: PaymentProvider;
   name: string;
+  logo: string;
   desc: string;
   fields: { key: string; label: string; placeholder: string; help: string }[];
 }[] = [
   {
     id: 'yookassa',
     name: 'ЮKassa',
+    logo: '/yookassa.png',
     desc: 'Самый популярный способ. Подходит ИП и самозанятым.',
     fields: [
       { key: 'shopId', label: 'shopId (идентификатор магазина)', placeholder: '230456', help: 'Личный кабинет ЮKassa → Настройки → Магазин.' },
@@ -24,6 +26,7 @@ const PROVIDERS: {
   {
     id: 'robokassa',
     name: 'Robokassa',
+    logo: '/robokassa.png',
     desc: 'Приём платежей для ИП и юрлиц.',
     fields: [
       { key: 'login', label: 'Логин магазина', placeholder: 'myshop', help: 'Личный кабинет Robokassa → Тех. настройки → Логин.' },
@@ -34,6 +37,7 @@ const PROVIDERS: {
   {
     id: 'prodamus',
     name: 'Prodamus',
+    logo: '/prodamus.png',
     desc: 'Продажи в мессенджерах, гибкие способы оплаты.',
     fields: [
       { key: 'shop_id', label: 'ID магазина (shop_id)', placeholder: 'demo', help: 'Личный кабинет Prodamus → Интеграции → shop_id.' },
@@ -117,8 +121,11 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
     ? PROVIDERS.find((p) => p.id === bot.paymentProvider)?.name ?? bot.paymentProvider
     : '';
 
-  const [cashierSectionOpen, setCashierSectionOpen] = useState(!hasCashier);
   const [connectOpen, setConnectOpen] = useState(!bot.mediaSyncDone);
+  const [tokenFormOpen, setTokenFormOpen] = useState(false);
+  const [token, setToken] = useState('');
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [isSavingToken, setIsSavingToken] = useState(false);
 
   const [selectedProvider, setSelectedProvider] = useState<PaymentProvider | null>(null);
   const [keys, setKeys] = useState<Record<string, string>>({});
@@ -128,6 +135,20 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
 
   const activeProvider = PROVIDERS.find((p) => p.id === selectedProvider);
   const allFilled = activeProvider ? activeProvider.fields.every((f) => (keys[f.key] || '').trim()) : false;
+
+  const saveToken = async () => {
+    if (!token.trim() || isSavingToken) return;
+    setIsSavingToken(true);
+    setTokenError(null);
+    try {
+      const { apiService: api } = await import('../../services/api');
+      await api.updateBot(bot.id, { token: token.trim() });
+      window.location.reload();
+    } catch (error) {
+      setTokenError(error instanceof Error ? error.message : 'Не удалось сохранить токен.');
+      setIsSavingToken(false);
+    }
+  };
 
   const saveCashier = async () => {
     if (!activeProvider || !allFilled || isSavingCashier) return;
@@ -157,18 +178,68 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
       />
 
       {/* ── 1. Платформы ── */}
-      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3" aria-label="Платформы">
+      <section className="flex flex-col gap-3" aria-label="Платформы">
         <article className={`flex flex-col rounded-[16px] border p-4 sm:p-5 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
           <div className="flex items-start justify-between gap-2">
             <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] ${hasToken ? 'bg-[#229ED9] shadow-xs' : 'bg-muted'}`}>
               <TelegramGlyph active={hasToken} />
             </span>
-            <StatusBadge tone={hasToken ? 'success' : 'warning'} label={hasToken ? 'Добавлен' : 'Настроить'} />
+            <StatusBadge tone={hasToken ? 'success' : 'warning'} label={hasToken ? 'Добавлен' : 'Не подключён'} />
           </div>
           <h3 className={`mt-3.5 text-body-lg font-bold ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
-          <p className="mt-0.5 truncate text-meta text-fg-secondary">
-            {hasToken ? bot.username : 'Токен от @BotFather'}
-          </p>
+
+          {hasToken ? (
+            <p className="mt-0.5 truncate text-meta text-fg-secondary">{bot.username}</p>
+          ) : tokenFormOpen ? (
+            <div className="mt-3 space-y-2.5">
+              <label htmlFor="tg-token" className="block text-body-sm font-medium text-fg-primary">
+                Токен от @BotFather
+              </label>
+              <input
+                id="tg-token"
+                type="password"
+                value={token}
+                onChange={(event) => { setToken(event.target.value); setTokenError(null); }}
+                placeholder="123456789:AA…"
+                autoComplete="off"
+                className="input w-full"
+              />
+              {tokenError && (
+                <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-meta text-danger">
+                  {tokenError}
+                </p>
+              )}
+              <div className="flex items-center gap-2.5">
+                <Button
+                  size="sm"
+                  disabled={!token.trim() || isSavingToken}
+                  onClick={() => void saveToken()}
+                >
+                  {isSavingToken ? (
+                    <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+                  ) : null}
+                  {isSavingToken ? 'Подключаем…' : 'Подключить бота'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => { setTokenFormOpen(false); setToken(''); setTokenError(null); }}
+                  className="text-body-sm font-semibold text-fg-tertiary hover:text-fg-secondary"
+                >
+                  Позже
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="mt-0.5 text-meta text-fg-tertiary">Токен от @BotFather</p>
+              <div className="mt-auto pt-3.5">
+                <Button size="sm" onClick={() => setTokenFormOpen(true)}>
+                  <KeyRound className="size-3.5" data-icon="inline-start" aria-hidden="true" />
+                  Вставить токен
+                </Button>
+              </div>
+            </>
+          )}
         </article>
 
         {(['vk', 'max'] as const).map(platform => (
@@ -195,136 +266,131 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
         ))}
       </section>
 
-      {/* ── 2. Касса (аккордеон) ── */}
+      {/* ── 2. Касса: всегда раскрыта, лого платёжек видны сразу ── */}
       <section className="flex flex-col gap-3" aria-label="Касса">
-        <AccordionRow
-          icon={<CreditCard className="size-4" aria-hidden="true" />}
-          title="Касса"
-          badge={
-            hasCashier
-              ? <StatusBadge tone="success" label={`Подключено: ${cashierName}`} />
-              : <span className="rounded-full bg-warning-soft px-2.5 py-0.5 text-micro font-bold text-warning">Не подключена</span>
-          }
-          subtitle="Как клиенты платят — деньги приходят сразу на ваш счёт"
-          open={cashierSectionOpen}
-          onToggle={() => setCashierSectionOpen((v) => !v)}
-        />
-        {cashierSectionOpen && (
-          <div className="rounded-[16px] border border-border bg-card p-5">
-            {hasCashier ? (
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
-                    <BadgeCheck className="size-5" aria-hidden />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-body-lg font-semibold">Ключи сохранены</p>
-                    <p className="text-meta text-fg-secondary">Webhook адресуется этому боту.</p>
-                  </div>
-                </div>
-                <Button variant="outline" size="sm" onClick={onOpenSettings} className="gap-1.5">
-                  <Settings2 className="size-3.5" data-icon="inline-start" />
-                  Изменить ключи
-                </Button>
+        {hasCashier && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[16px] border border-success/40 bg-success-soft/60 px-4 py-3.5 dark:bg-success-soft/40">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success text-white">
+                <BadgeCheck className="size-5" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="text-body font-bold">Касса подключена: {cashierName}</p>
+                <p className="text-meta text-fg-secondary">Webhook адресуется этому боту.</p>
               </div>
-            ) : (
-              <>
-                <p className="text-body-sm text-fg-secondary">
-                  Можно работать без кассы — бот соберёт заявки. Чтобы принимать оплату, выберите одну из трёх:
-                </p>
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  {PROVIDERS.map((provider) => {
-                    const isSelected = selectedProvider === provider.id;
-                    return (
-                      <button
-                        key={provider.id}
-                        type="button"
-                        aria-pressed={isSelected}
-                        onClick={() => {
-                          setSelectedProvider(isSelected ? null : provider.id);
-                          setKeys({});
-                          setCashierError(null);
-                          setCashierSaved(false);
-                        }}
-                        className={`flex flex-col rounded-[16px] border p-4 text-left transition-all ${
-                          isSelected
-                            ? 'border-primary/60 ring-2 ring-ring/20'
-                            : 'border-border bg-card hover:border-fg-tertiary/50'
-                        }`}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="flex size-10 items-center justify-center rounded-full bg-[var(--color-surface-2)]">
-                            <CreditCard className="size-5 text-fg-secondary" aria-hidden />
-                          </span>
-                          {isSelected && (
-                            <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                              <Check className="size-3" aria-hidden />
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-3 block text-body font-bold">{provider.name}</span>
-                        <span className="mt-1 block text-meta leading-relaxed text-fg-secondary">{provider.desc}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={onOpenSettings} className="gap-1.5">
+              <Settings2 className="size-3.5" data-icon="inline-start" />
+              Изменить ключи
+            </Button>
+          </div>
+        )}
 
-                {activeProvider && (
-                  <div className="mt-5 space-y-4">
-                    {activeProvider.fields.map((field) => (
-                      <div key={field.key} className="space-y-1.5">
-                        <label htmlFor={`cashier-${field.key}`} className="block text-body-sm font-medium text-fg-primary">
-                          {field.label}
-                        </label>
-                        <input
-                          id={`cashier-${field.key}`}
-                          type="text"
-                          value={keys[field.key] || ''}
-                          onChange={(event) => {
-                            setKeys((prev) => ({ ...prev, [field.key]: event.target.value }));
-                            setCashierError(null);
-                            setCashierSaved(false);
-                          }}
-                          placeholder={field.placeholder}
-                          className="input w-full"
-                        />
-                        <p className="text-meta text-fg-tertiary">Где взять: {field.help}</p>
-                      </div>
-                    ))}
-                    {cashierError && (
-                      <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-body-sm text-danger">
-                        {cashierError}
-                      </p>
-                    )}
-                    {cashierSaved && (
-                      <p className="flex items-center gap-1.5 text-body-sm text-success">
-                        <Check className="size-4" aria-hidden="true" /> Касса подключена
-                      </p>
-                    )}
-                    <div className="flex items-center gap-3">
-                      <Button size="md" disabled={!allFilled || isSavingCashier} onClick={() => void saveCashier()}>
-                        {isSavingCashier ? (
-                          <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
-                        ) : cashierSaved ? (
-                          <Check className="size-4" data-icon="inline-start" aria-hidden />
-                        ) : null}
-                        {isSavingCashier ? 'Сохраняем…' : cashierSaved ? 'Подключено' : 'Подключить кассу'}
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedProvider(null);
-                          setKeys({});
-                        }}
-                        className="text-body-sm font-semibold text-fg-tertiary hover:text-fg-secondary"
-                      >
-                        Позже
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
+        {!hasCashier && (
+          <p className="px-1 text-body-sm text-fg-secondary">
+            Можно работать без кассы — бот соберёт заявки. Чтобы принимать оплату, выберите одну из трёх:
+          </p>
+        )}
+
+        <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${hasCashier ? 'opacity-55' : ''}`}>
+          {PROVIDERS.map((provider) => {
+            const isActiveCashier = hasCashier && bot.paymentProvider === provider.id;
+            const isSelected = selectedProvider === provider.id;
+            return (
+              <button
+                key={provider.id}
+                type="button"
+                aria-pressed={isSelected}
+                disabled={hasCashier && !isActiveCashier}
+                onClick={() => {
+                  setSelectedProvider(isSelected ? null : provider.id);
+                  setKeys({});
+                  setCashierError(null);
+                  setCashierSaved(false);
+                }}
+                className={`flex flex-col rounded-[16px] border p-4 text-left transition-all ${
+                  isActiveCashier
+                    ? 'border-success/60 bg-success-soft/40'
+                    : isSelected
+                      ? 'border-primary/60 ring-2 ring-ring/20'
+                      : 'border-border bg-card hover:border-fg-tertiary/50'
+                }`}
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <span className="flex size-12 items-center justify-center rounded-[14px] bg-white shadow-xs dark:bg-white/95">
+                    <img src={provider.logo} alt={provider.name} className="size-8 object-contain" />
+                  </span>
+                  {isActiveCashier ? (
+                    <span className="flex size-5 items-center justify-center rounded-full bg-success text-white">
+                      <Check className="size-3" aria-hidden />
+                    </span>
+                  ) : isSelected ? (
+                    <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="size-3" aria-hidden />
+                    </span>
+                  ) : null}
+                </span>
+                <span className="mt-3 block text-body font-bold">{provider.name}</span>
+                <span className="mt-1 block text-meta leading-relaxed text-fg-secondary">{provider.desc}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {!hasCashier && activeProvider && (
+          <div className="rounded-[16px] border border-border bg-card p-5">
+            <div className="space-y-4">
+              {activeProvider.fields.map((field) => (
+                <div key={field.key} className="space-y-1.5">
+                  <label htmlFor={`cashier-${field.key}`} className="block text-body-sm font-medium text-fg-primary">
+                    {field.label}
+                  </label>
+                  <input
+                    id={`cashier-${field.key}`}
+                    type="text"
+                    value={keys[field.key] || ''}
+                    onChange={(event) => {
+                      setKeys((prev) => ({ ...prev, [field.key]: event.target.value }));
+                      setCashierError(null);
+                      setCashierSaved(false);
+                    }}
+                    placeholder={field.placeholder}
+                    className="input w-full"
+                  />
+                  <p className="text-meta text-fg-tertiary">Где взять: {field.help}</p>
+                </div>
+              ))}
+              {cashierError && (
+                <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-body-sm text-danger">
+                  {cashierError}
+                </p>
+              )}
+              {cashierSaved && (
+                <p className="flex items-center gap-1.5 text-body-sm text-success">
+                  <Check className="size-4" aria-hidden="true" /> Касса подключена
+                </p>
+              )}
+              <div className="flex items-center gap-3">
+                <Button size="md" disabled={!allFilled || isSavingCashier} onClick={() => void saveCashier()}>
+                  {isSavingCashier ? (
+                    <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+                  ) : cashierSaved ? (
+                    <Check className="size-4" data-icon="inline-start" aria-hidden />
+                  ) : null}
+                  {isSavingCashier ? 'Сохраняем…' : cashierSaved ? 'Подключено' : 'Подключить кассу'}
+                </Button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedProvider(null);
+                    setKeys({});
+                  }}
+                  className="text-body-sm font-semibold text-fg-tertiary hover:text-fg-secondary"
+                >
+                  Позже
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </section>
