@@ -28,8 +28,6 @@ interface AppShellProps {
   onOpenBotSwitcher: () => void;
   activeBot: BotConfig | null;
   isAdmin: boolean;
-  subscriptionStatus: 'none' | 'active' | 'expired';
-  subscriptionUntil: string | null;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
   bottomNavHidden?: boolean;
@@ -47,8 +45,6 @@ export function AppShell({
   onOpenBotSwitcher,
   activeBot,
   isAdmin,
-  subscriptionStatus,
-  subscriptionUntil,
   theme,
   toggleTheme,
   bottomNavHidden,
@@ -62,8 +58,6 @@ export function AppShell({
           route={route}
           onAccountTab={onAccountTab}
           isAdmin={isAdmin}
-          subscriptionStatus={subscriptionStatus}
-          subscriptionUntil={subscriptionUntil}
           theme={theme}
           toggleTheme={toggleTheme}
         />
@@ -97,7 +91,7 @@ export function AppShell({
                   onClick={() => !disabled && onBotView(view.id)}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'nav-tone tab-item shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
+                    'nav-tone tab-item tab-press shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
                     BOT_VIEW_TONES[view.id] ?? 'nav-tone',
                     active
                       ? 'on'

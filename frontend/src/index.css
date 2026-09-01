@@ -831,6 +831,24 @@ html.dark .nav-tone-violet { --nav-tone-soft: rgb(139 92 246 / 0.14); --nav-tone
   color: var(--nav-tone-text);
 }
 
+/* Меню: нажатие слегка увеличивает пункт, а не сжимает */
+.nav-press {
+  transition: transform 0.15s ease-out, background-color 0.15s ease, color 0.15s ease;
+}
+.nav-press:active {
+  transform: scale(1.02);
+}
+.nav-press:hover {
+  transform: scale(1.01);
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-press,
+  .nav-press:hover,
+  .nav-press:active {
+    transform: none;
+  }
+}
+
 .text-gradient {
   background: linear-gradient(94deg, var(--p-500), var(--v-500));
   -webkit-background-clip: text;

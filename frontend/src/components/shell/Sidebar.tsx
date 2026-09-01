@@ -1,4 +1,4 @@
-import { Bot, Moon, Sun } from 'lucide-react';
+import { Bot, Moon, ShieldCheck, Sun } from 'lucide-react';
 import { ACCOUNT_TABS } from '../../routes';
 import type { AppRoute, AccountTab } from '../../routes';
 import { ACCOUNT_TAB_ICONS } from './navModel';
@@ -8,33 +8,13 @@ interface SidebarProps {
   route: AppRoute;
   onAccountTab: (tab: AccountTab) => void;
   isAdmin: boolean;
-  subscriptionStatus: 'none' | 'active' | 'expired';
-  subscriptionUntil: string | null;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
-}
-
-function subscriptionLabel(
-  status: 'none' | 'active' | 'expired',
-  until: string | null,
-): { text: string; tone: string } {
-  if (status === 'active') {
-    const date = until ? new Date(until).toLocaleDateString('ru-RU') : null;
-    return {
-      text: date ? `Подписка до ${date}` : 'Подписка активна',
-      tone: 'text-success bg-success-soft',
-    };
-  }
-  if (status === 'expired') {
-    return { text: 'Подписка истекла', tone: 'text-warning bg-warning-soft' };
-  }
-  return { text: 'Без подписки', tone: 'text-fg-secondary bg-muted' };
 }
 
 /** Локальные тона разделов (DS v2 §5): окрашивают только пункт меню. */
 const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
-  gateways: 'nav-tone-green',
   billing: 'nav-tone-violet',
   profile: 'nav-tone',
   admin: 'nav-tone',
@@ -44,12 +24,10 @@ export function Sidebar({
   route,
   onAccountTab,
   isAdmin,
-  subscriptionStatus,
-  subscriptionUntil,
   theme,
   toggleTheme,
 }: SidebarProps) {
-  const sub = subscriptionLabel(subscriptionStatus, subscriptionUntil);
+  const dark = theme === 'dark';
 
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-border bg-sidebar lg:flex">
@@ -74,7 +52,7 @@ export function Sidebar({
               onClick={() => onAccountTab(tab.id)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'nav-item relative flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-body-sm font-medium transition-colors',
+                'nav-item nav-press relative flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-body-sm font-medium transition-colors',
                 ACCOUNT_TAB_TONES[tab.id] ?? 'nav-tone',
                 active
                   ? 'on'
@@ -89,21 +67,31 @@ export function Sidebar({
       </nav>
 
       <div className="space-y-1 px-3 pb-4">
-        <div
-          className={cn(
-            'mx-1 mb-2 inline-flex items-center rounded-full px-2.5 py-1 text-meta font-medium',
-            sub.tone,
-          )}
-        >
-          {sub.text}
-        </div>
         <button
           type="button"
           onClick={toggleTheme}
-          className="flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-body-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
+          role="switch"
+          aria-checked={dark}
+          aria-label={dark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему'}
+          className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 py-2 text-body-sm font-medium text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
         >
-          {theme === 'dark' ? <Sun className="size-5" /> : <Moon className="size-5" />}
-          {theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
+          <span className="flex items-center gap-3">
+            {dark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+            {dark ? 'Тёмная тема' : 'Светлая тема'}
+          </span>
+          <span
+            className={cn(
+              'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+              dark ? 'bg-primary' : 'bg-muted',
+            )}
+          >
+            <span
+              className={cn(
+                'absolute size-4 rounded-full bg-card shadow-sm transition-all duration-200',
+                dark ? 'left-[18px]' : 'left-0.5',
+              )}
+            />
+          </span>
         </button>
         {isAdmin && (
           <button
@@ -111,16 +99,13 @@ export function Sidebar({
             onClick={() => onAccountTab('admin')}
             aria-current={route.level === 'account' && route.tab === 'admin' ? 'page' : undefined}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-body-sm font-medium transition-colors',
+              'nav-press flex w-full cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-body-sm font-semibold transition-colors',
               route.level === 'account' && route.tab === 'admin'
                 ? 'bg-accent text-accent-foreground'
                 : 'text-fg-secondary hover:bg-muted hover:text-foreground',
             )}
           >
-            {(() => {
-              const Icon = ACCOUNT_TAB_ICONS.admin;
-              return <Icon className="size-5" />;
-            })()}
+            <ShieldCheck className="size-5 shrink-0" />
             Управление сервисом
           </button>
         )}

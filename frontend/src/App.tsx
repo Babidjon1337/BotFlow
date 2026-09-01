@@ -51,7 +51,6 @@ const Subscription = lazy(() => import('./components/tabs/Subscription').then(({
 const Home = lazy(() => import('./components/tabs/Home').then(({ Home: Component }) => ({ default: Component })));
 const BotManagement = lazy(() => import('./components/tabs/BotManagement').then(({ BotManagement: Component }) => ({ default: Component })));
 const AdminStats = lazy(() => import('./components/tabs/AdminStats').then(({ AdminStats: Component }) => ({ default: Component })));
-const GatewayLibrary = lazy(() => import('./components/screens/GatewayLibraryScreen').then(({ GatewayLibraryScreen: Component }) => ({ default: Component })));
 
 const TabLoading = () => (
   <div className="flex min-h-[240px] w-full items-center justify-center" role="status" aria-label="Загрузка раздела">
@@ -327,8 +326,6 @@ export default function App() {
         onOpenBotSwitcher={() => setSheet('bot_switcher')}
         activeBot={appState.activeBot}
         isAdmin={Boolean(appState.isAdmin)}
-        subscriptionStatus={appState.subscriptionStatus}
-        subscriptionUntil={appState.subscriptionUntil}
         theme={theme}
         toggleTheme={toggleTheme}
         bottomNavHidden={isKeyboardOpen || hasFocusedTextField}
@@ -341,9 +338,6 @@ export default function App() {
             )}
             {resolvedRoute.level === 'account' && resolvedRoute.tab === 'billing' && (
               <Subscription key="billing" />
-            )}
-            {resolvedRoute.level === 'account' && resolvedRoute.tab === 'gateways' && (
-              <GatewayLibrary key="gateways" />
             )}
             {resolvedRoute.level === 'account' && resolvedRoute.tab === 'profile' && (
               <Profile key="profile" />

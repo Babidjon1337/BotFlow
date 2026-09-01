@@ -12,7 +12,6 @@ interface BottomNavProps {
 /** Локальные тона разделов (DS v2 §5) — совпадают с Sidebar. */
 const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
-  gateways: 'nav-tone-green',
   billing: 'nav-tone-violet',
   profile: 'nav-tone',
 };

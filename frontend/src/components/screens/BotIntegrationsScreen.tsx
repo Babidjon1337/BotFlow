@@ -121,7 +121,6 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
     ? PROVIDERS.find((p) => p.id === bot.paymentProvider)?.name ?? bot.paymentProvider
     : '';
 
-  const [connectOpen, setConnectOpen] = useState(!bot.mediaSyncDone);
   const [tokenFormOpen, setTokenFormOpen] = useState(false);
   const [token, setToken] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -184,11 +183,43 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
             <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] ${hasToken ? 'bg-[#229ED9] shadow-xs' : 'bg-muted'}`}>
               <TelegramGlyph active={hasToken} />
             </span>
-            <StatusBadge tone={hasToken ? 'success' : 'warning'} label={hasToken ? 'Добавлен' : 'Не подключён'} />
+            <StatusBadge
+              tone={bot.mediaSyncDone ? 'success' : hasToken ? 'warning' : 'warning'}
+              label={bot.mediaSyncDone ? 'Синхронизирован' : hasToken ? 'Жмём START' : 'Не подключён'}
+            />
           </div>
           <h3 className={`mt-3.5 text-body-lg font-bold ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
 
-          {hasToken ? (
+          {hasToken && !bot.mediaSyncDone ? (
+            <div className="mt-2">
+              <p className="text-meta text-fg-secondary">{bot.username}</p>
+              <ol className="mt-3 space-y-2 text-body-sm leading-relaxed text-fg-secondary">
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground">1</span>
+                  Перейдите в своего бота по кнопке ниже
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground">2</span>
+                  Нажмите <b className="text-fg-primary">START</b> в Telegram
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground">3</span>
+                  Вернитесь сюда — статус станет «Синхронизирован»
+                </li>
+              </ol>
+              {bot.botUrl && (
+                <a
+                  href={bot.botUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[#229ED9] px-5 text-body-sm font-bold text-white shadow-sm transition-all hover:opacity-90 active:translate-y-px sm:w-auto"
+                >
+                  Открыть бота в Telegram
+                  <ExternalLink className="size-4" aria-hidden="true" />
+                </a>
+              )}
+            </div>
+          ) : hasToken ? (
             <p className="mt-0.5 truncate text-meta text-fg-secondary">{bot.username}</p>
           ) : tokenFormOpen ? (
             <div className="mt-3 space-y-2.5">
@@ -395,44 +426,7 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
         )}
       </section>
 
-      {/* ── 3. Подключение бота (после токена/кассы) ── */}
-      <section className="flex flex-col gap-3" aria-label="Подключение">
-        <AccordionRow
-          icon={<KeyRound className="size-4" aria-hidden="true" />}
-          title="Подключение бота"
-          badge={
-            bot.mediaSyncDone
-              ? <StatusBadge tone="success" label="Синхронизирован" />
-              : <span className="rounded-full bg-warning-soft px-2.5 py-0.5 text-micro font-bold text-warning">Нажмите START в боте</span>
-          }
-          subtitle="Последний шаг: синхронизируйте бота с платформой"
-          open={connectOpen}
-          onToggle={() => setConnectOpen((v) => !v)}
-        />
-        {connectOpen && (
-          <div className="rounded-[16px] border border-border bg-card p-5">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <p className="max-w-md text-body-sm leading-relaxed text-fg-secondary">
-                Откройте своего бота в Telegram и нажмите <b className="text-fg-primary">START</b> —
-                мы синхронизируем сценарий, медиа и подключим webhook.
-              </p>
-              {bot.botUrl && (
-                <a
-                  href={bot.botUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-11 shrink-0 items-center gap-2 rounded-[var(--radius-control)] bg-[#229ED9] px-5 text-body-sm font-bold text-white shadow-sm transition-all hover:opacity-90 active:translate-y-px"
-                >
-                  Открыть бота в Telegram
-                  <ExternalLink className="size-4" aria-hidden="true" />
-                </a>
-              )}
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* ── 4. Оферта ── */}
+      {/* ── 3. Оферта ── */}
       <section className="flex flex-col gap-3" aria-label="Оферта">
         <AccordionRow
           icon={<FileText className="size-4" aria-hidden="true" />}

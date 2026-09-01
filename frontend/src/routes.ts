@@ -1,4 +1,4 @@
-export type AccountTab = 'bots' | 'gateways' | 'billing' | 'profile' | 'admin';
+export type AccountTab = 'bots' | 'billing' | 'profile' | 'admin';
 
 /** Разделы внутри выбранного бота (design.md §15.1). */
 export type BotView =
@@ -24,7 +24,6 @@ export interface AccountTabDef {
 
 export const ACCOUNT_TABS: AccountTabDef[] = [
   { id: 'bots', label: 'Мои боты', short: 'Боты' },
-  { id: 'gateways', label: 'Платёжные системы', short: 'Кассы' },
   { id: 'billing', label: 'Подписка', short: 'Подписка' },
   { id: 'profile', label: 'Профиль', short: 'Профиль' },
   { id: 'admin', label: 'Управление сервисом', short: 'Админ' },

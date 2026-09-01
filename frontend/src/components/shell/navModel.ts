@@ -9,14 +9,12 @@ import {
   Send,
   User,
   Users,
-  Wallet,
   ShieldCheck,
 } from 'lucide-react'
 import type { AccountTab, BotView } from '../../routes'
 
 export const ACCOUNT_TAB_ICONS: Record<AccountTab, LucideIcon> = {
   bots: Bot,
-  gateways: Wallet,
   billing: Banknote,
   profile: User,
   admin: ShieldCheck,
