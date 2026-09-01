@@ -57,3 +57,4 @@ opencode.json
 # Superdesign temp artifacts
 .superdesign/tmp/
 shots
+frontend/vite-dev.log
