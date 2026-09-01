@@ -91,10 +91,12 @@ def evaluate_funnel_readiness(
         if _visible_length(node.get("content")) == 0:
             reasons.append(f"Заполните текст блока «{title}».")
         else:
+            media_assets = node.get("mediaAssets")
             has_media = bool(
                 node.get("mediaFileId")
                 or node.get("media_file_id")
                 or node.get("media")
+                or (isinstance(media_assets, list) and media_assets)
             )
             max_length = (
                 MAX_MEDIA_CAPTION_CHARACTERS if has_media else MAX_MESSAGE_CHARACTERS

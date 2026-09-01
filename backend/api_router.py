@@ -961,11 +961,18 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         # a new token reuse files uploaded through the previous bot.
         schema = dict(bot.funnel_schema or {})
         for node in schema.get("nodes") or []:
-            if node.get("mediaFileId"):
+            if node.get("mediaFileId") or node.get("mediaAssets"):
                 node["mediaFileId"] = None
                 node["mediaAssetId"] = None
                 node["mediaType"] = None
                 node["media"] = False
+                node["mediaAssets"] = []
+            for tariff in node.get("tariffs") or []:
+                if isinstance(tariff, dict) and tariff.get("mediaFileId"):
+                    tariff["mediaFileId"] = None
+                    tariff["mediaAssetId"] = None
+                    tariff["mediaType"] = None
+                    tariff["media"] = False
         update_data["funnel_schema"] = schema
         token_changed = True
 
@@ -1301,6 +1308,18 @@ async def upload_bot_media(
     media_target["mediaAssetId"] = str(asset.id)
     media_target["mediaType"] = media_type
     media_target["media"] = True
+    # Новый формат: массив медиа на шаге (до 10) — несколько фото/видео.
+    assets_list = media_target.get("mediaAssets")
+    if not isinstance(assets_list, list):
+        assets_list = []
+    # Заменяем прежнюю одиночную запись в массиве (если была) на новую.
+    assets_list = [a for a in assets_list if isinstance(a, dict) and a.get("mediaAssetId") != str(asset.id)]
+    assets_list.append({
+        "mediaFileId": telegram_file_id,
+        "mediaAssetId": str(asset.id),
+        "mediaType": media_type,
+    })
+    media_target["mediaAssets"] = assets_list[-10:]
     current_schema["nodes"] = current_nodes
     await update_bot_funnel(current_bot.id, current_schema, current_bot.funnel_complete)
     return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}

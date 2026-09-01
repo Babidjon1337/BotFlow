@@ -15,6 +15,15 @@ export interface Tariff {
   mediaType?: 'photo' | 'video' | null;
 }
 
+/** Медиа в узле воронки: Telegram file_id + id ассета (до 10 на шаг). */
+export interface NodeMediaAsset {
+  mediaFileId: string;
+  mediaAssetId: string;
+  mediaType: 'photo' | 'video' | 'document';
+  /** Локальное имя файла (для будущего файла, ещё не загруженного в ТГ). */
+  fileName?: string;
+}
+
 export interface FunnelNode {
   id: string;
   step: string;
@@ -35,6 +44,8 @@ export interface FunnelNode {
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaType?: 'photo' | 'video' | 'document' | null;
+  /** Несколько медиа на шаг (фото/видео, до 10) — новый формат. */
+  mediaAssets?: NodeMediaAsset[] | null;
 }
 
 export type TabType = 'home' | 'build' | 'flow' | 'profile' | 'subscription' | 'manage' | 'admin_stats';

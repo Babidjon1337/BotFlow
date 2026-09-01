@@ -23,6 +23,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { EmptyBotState } from "../EmptyBotState";
+import type { NodeMediaAsset } from "../../types";
 import { FunnelCard } from "../FunnelCard";
 import { PaymentBlockEditor } from "../PaymentBlockEditor";
 import { TimerPresets } from "../TimerPresets";
@@ -162,7 +163,7 @@ const SyncedMediaPreview = ({
   );
 };
 
-// --- Rich Text Editor with Telegram Limits & Media ---
+// --- Rich Text Editor with Telegram Limits & Media (массив до 10 на шаг) ---
 export const RichTextEditor = ({
   value,
   onChange,
@@ -171,6 +172,7 @@ export const RichTextEditor = ({
   botId,
   mediaAssetId,
   mediaType,
+  mediaAssets = [],
   onUploadMedia,
   onRemoveMedia,
 }: {
@@ -182,6 +184,7 @@ export const RichTextEditor = ({
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaType?: "photo" | "video" | "document" | null;
+  mediaAssets?: NodeMediaAsset[];
   onUploadMedia?: (file: File) => Promise<void>;
   onRemoveMedia?: () => void;
 }) => {
@@ -245,59 +248,85 @@ export const RichTextEditor = ({
         onChange={handleFileChange}
       />
 
-      {/* Compact Media Asset Card (replaces large preview) */}
+      {/* Compact Media Assets: список до 10 медиа (новый формат) + совместимость со старым одиночным */}
       <AnimatePresence>
-        {hasMedia && (
+        {(hasMedia || mediaAssets.length > 0) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 overflow-hidden"
           >
-            <div className="flex items-center gap-3">
-              {/* 72px thumbnail — click to open full preview */}
-              {mediaType === "document" ? (
-                <div className="w-[72px] h-[72px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
-                  <FileText size={24} className="text-[var(--color-primary)]" />
-                </div>
-              ) : botId && mediaAssetId && mediaType ? (
-                <div className="w-[72px] h-[72px] rounded-lg overflow-hidden shrink-0 border border-[var(--color-border)] shadow-sm">
-                  <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} compact />
-                </div>
-              ) : (
-                <div className="w-[72px] h-[72px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
-                  <ImageIcon size={24} className="text-[var(--color-foreground-tertiary)]" />
-                </div>
+            <ul className="flex flex-col gap-2">
+              {/* Новый формат: массив mediaAssets */}
+              {mediaAssets.map((asset, index) => (
+                <li key={asset.mediaAssetId} className="flex items-center gap-3">
+                  <div className="w-[56px] h-[56px] rounded-lg overflow-hidden shrink-0 border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center">
+                    {botId ? (
+                      <SyncedMediaPreview botId={botId} assetId={asset.mediaAssetId} mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType} compact />
+                    ) : (
+                      <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-[var(--color-foreground)]">
+                      {index + 1}. {asset.mediaType === "document" ? "Документ" : asset.mediaType === "video" ? "Видео" : "Фото"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onMouseDown={keepEditorSelection}
+                    onClick={onRemoveMedia}
+                    className="p-1.5 rounded-lg text-[var(--color-danger)] bg-[var(--color-danger-soft)] hover:bg-[var(--color-danger)] hover:text-white transition-all shrink-0"
+                    title="Удалить медиафайл"
+                    aria-label={`Удалить медиа ${index + 1}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </li>
+              ))}
+              {/* Старый формат (одиночное медиа без массива) */}
+              {mediaAssets.length === 0 && hasMedia && (
+                <li className="flex items-center gap-3">
+                  {mediaType === "document" ? (
+                    <div className="w-[56px] h-[56px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
+                      <FileText size={20} className="text-[var(--color-primary)]" />
+                    </div>
+                  ) : botId && mediaAssetId && mediaType ? (
+                    <div className="w-[56px] h-[56px] rounded-lg overflow-hidden shrink-0 border border-[var(--color-border)] shadow-sm">
+                      <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} compact />
+                    </div>
+                  ) : (
+                    <div className="w-[56px] h-[56px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
+                      <ImageIcon size={20} className="text-[var(--color-foreground-tertiary)]" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-[var(--color-foreground)]">
+                      {isUploading ? "Загружаем…" : mediaType === "document" ? "Документ" : mediaType === "video" ? "Видео" : "Фото"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onMouseDown={keepEditorSelection}
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--color-primary)] hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0 shadow-sm"
+                  >
+                    Заменить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRemoveMedia}
+                    className="p-2 rounded-lg text-[var(--color-danger)] bg-[var(--color-danger-soft)] hover:bg-[var(--color-danger)] hover:text-white active:scale-95 transition-all shrink-0"
+                    title="Удалить медиафайл"
+                    aria-label="Удалить медиафайл"
+                  >
+                    <X size={16} />
+                  </button>
+                </li>
               )}
-              {/* Status */}
-              <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold text-[var(--color-foreground)] truncate">
-                  {isUploading ? "Загружаем…" : mediaType === "document" ? "Документ" : mediaType === "video" ? "Видео" : "Фото"}
-                </p>
-                {isUploading && (
-                  <p className="text-[11px] text-[var(--color-foreground-tertiary)]">Загружаем…</p>
-                )}
-              </div>
-              {/* Actions */}
-              <button
-                type="button"
-                onMouseDown={keepEditorSelection}
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--color-primary)] hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0 shadow-sm"
-              >
-                Заменить
-              </button>
-              <button
-                type="button"
-                onClick={onRemoveMedia}
-                className="p-2 rounded-lg text-[var(--color-danger)] bg-[var(--color-danger-soft)] hover:bg-[var(--color-danger)] hover:text-white active:scale-95 transition-all shrink-0 shadow-sm"
-                title="Удалить медиафайл"
-                aria-label="Удалить медиафайл"
-              >
-                <X size={16} />
-              </button>
-            </div>
+            </ul>
           </motion.div>
         )}
       </AnimatePresence>
@@ -363,7 +392,7 @@ export const RichTextEditor = ({
               </button>
             </div>
             {/* Media upload button in toolbar */}
-            {onUploadMedia && !hasMedia && (
+            {onUploadMedia && (
               <button
                 type="button"
                 onMouseDown={keepEditorSelection}
@@ -404,6 +433,7 @@ const MessageBubble = ({
   button2,
   mediaAssetId,
   mediaType,
+  mediaAssets = [],
   botId,
   theme,
   onButtonClick,
@@ -413,6 +443,7 @@ const MessageBubble = ({
   button2?: string;
   mediaAssetId?: string | null;
   mediaType?: "photo" | "video" | "document" | null;
+  mediaAssets?: NodeMediaAsset[];
   botId?: string;
   theme: "light" | "dark";
   onButtonClick?: (btnIndex: 1 | 2) => void;
@@ -429,7 +460,7 @@ const MessageBubble = ({
       style={{
         background: theme === "dark" ? "#27272a" : "#ffffff",
         color: "var(--color-foreground)",
-        padding: mediaAssetId ? "4px" : "10px 14px",
+        padding: mediaAssetId || mediaAssets.length ? "4px" : "10px 14px",
         borderRadius: "16px",
         borderBottomLeftRadius: "4px",
         fontSize: "14px",
@@ -440,7 +471,24 @@ const MessageBubble = ({
             : "0 1px 2px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.03)",
       }}
     >
-      {mediaAssetId && botId && (mediaType === "photo" || mediaType === "video") && (
+      {/* Медиа-группа: 2+ сетки подряд */}
+      {mediaAssets.length > 1 && botId && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: text ? "8px" : "0" }}>
+          {mediaAssets.map((asset) => (
+            asset.mediaType !== "document" ? (
+              <div key={asset.mediaAssetId} style={{ overflow: "hidden", borderRadius: "10px" }}>
+                <SyncedMediaPreview
+                  botId={botId}
+                  assetId={asset.mediaAssetId}
+                  mediaType={asset.mediaType}
+                  compact={false}
+                />
+              </div>
+            ) : null
+          ))}
+        </div>
+      )}
+      {mediaAssetId && botId && (mediaType === "photo" || mediaType === "video") && mediaAssets.length <= 1 && (
         <div style={{ marginBottom: text ? "8px" : "0", overflow: "hidden", borderRadius: "12px" }}>
           <SyncedMediaPreview
             botId={botId}
@@ -575,6 +623,11 @@ export const Build = () => {
       updateBlock(nodeId, "mediaFileId", media.fileId);
       updateBlock(nodeId, "mediaAssetId", media.id);
       updateBlock(nodeId, "mediaType", media.mediaType);
+      // Новый формат: массив медиа на шаге (до 10) — несколько фото/видео.
+      const node = getBlock(nodeId);
+      const assets = Array.isArray(node?.mediaAssets) ? [...node!.mediaAssets!] : [];
+      assets.push({ mediaFileId: media.fileId, mediaAssetId: media.id, mediaType: media.mediaType });
+      updateBlock(nodeId, "mediaAssets", assets.slice(-10));
       setToastType("success");
       setToastMessage("Файл синхронизирован с Telegram");
     } catch (error) {
@@ -594,6 +647,7 @@ export const Build = () => {
     updateBlock(nodeId, "mediaFileId", null);
     updateBlock(nodeId, "mediaAssetId", null);
     updateBlock(nodeId, "mediaType", null);
+    updateBlock(nodeId, "mediaAssets", []);
   };
 
   const handleTariffMediaUpload = async (tariffId: string, file: File) => {
@@ -980,6 +1034,7 @@ export const Build = () => {
                     mediaFileId={getBlock("start")?.mediaFileId}
                     mediaAssetId={getBlock("start")?.mediaAssetId}
                     mediaType={getBlock("start")?.mediaType}
+                    mediaAssets={getBlock("start")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("start", file)}
                     onRemoveMedia={() => removeMedia("start")}
                   />
@@ -1030,6 +1085,7 @@ export const Build = () => {
                     mediaFileId={getBlock("push1")?.mediaFileId}
                     mediaAssetId={getBlock("push1")?.mediaAssetId}
                     mediaType={getBlock("push1")?.mediaType}
+                    mediaAssets={getBlock("push1")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("push1", file)}
                     onRemoveMedia={() => removeMedia("push1")}
                   />
@@ -1088,6 +1144,7 @@ export const Build = () => {
                     mediaFileId={getBlock("push2")?.mediaFileId}
                     mediaAssetId={getBlock("push2")?.mediaAssetId}
                     mediaType={getBlock("push2")?.mediaType}
+                    mediaAssets={getBlock("push2")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("push2", file)}
                     onRemoveMedia={() => removeMedia("push2")}
                   />
@@ -1378,6 +1435,7 @@ export const Build = () => {
                             }
                             mediaAssetId={getBlock("start")?.mediaAssetId}
                             mediaType={getBlock("start")?.mediaType}
+                    mediaAssets={getBlock("start")?.mediaAssets ?? []}
                             botId={appState.activeBot.id}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
@@ -1412,6 +1470,7 @@ export const Build = () => {
                             }
                             mediaAssetId={getBlock("push1")?.mediaAssetId}
                             mediaType={getBlock("push1")?.mediaType}
+                    mediaAssets={getBlock("push1")?.mediaAssets ?? []}
                             botId={appState.activeBot.id}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
@@ -1446,6 +1505,7 @@ export const Build = () => {
                             }
                             mediaAssetId={getBlock("push2")?.mediaAssetId}
                             mediaType={getBlock("push2")?.mediaType}
+                    mediaAssets={getBlock("push2")?.mediaAssets ?? []}
                             botId={appState.activeBot.id}
                             theme={theme}
                             onButtonClick={handlePreviewButtonClick}
