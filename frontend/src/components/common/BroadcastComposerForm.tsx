@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { CalendarClock, ImagePlus, Play, Send, X } from 'lucide-react';
+import { CalendarClock, ImagePlus, Link2, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
+import type { BroadcastButton } from '../../services/api';
 import type {
   AudienceFilter,
   AudienceSummary,
@@ -36,8 +37,17 @@ interface BroadcastComposerFormProps {
   onCreated: () => void;
   /** Готов ли бот к медиа (токен + синхронизация выполнены). */
   mediaReady: boolean;
+  /** Тарифы воронки для кнопок рассылки: id → {name, price, actionType, actionData}. */
+  tariffs?: BroadcastTariffOption[];
   /** id-префикс, чтобы sheet и inline-вариант не конфликтовали по label/for. */
   idPrefix?: string;
+}
+
+export interface BroadcastTariffOption {
+  id: string;
+  name: string;
+  price: string;
+  isLink: boolean;
 }
 
 /** datetime-local (локальная зона) → ISO с таймзоной или null. */
@@ -52,6 +62,7 @@ export function BroadcastComposerForm({
   counts,
   onCreated,
   mediaReady,
+  tariffs = [],
   idPrefix = 'broadcast',
 }: BroadcastComposerFormProps) {
   const { showConfirm, showAlert } = useAlert();
@@ -64,6 +75,11 @@ export function BroadcastComposerForm({
   // Медиа: привязанные asset id (загружены) или локальные файлы (ждут привязки).
   const [assetIds, setAssetIds] = useState<string[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingMedia[]>([]);
+  // Кнопка под сообщением: нет | ссылка-консультация | выбранные тарифы.
+  const [buttonMode, setButtonMode] = useState<'none' | 'consult' | 'tariffs'>('none');
+  const [consultUrl, setConsultUrl] = useState('');
+  const [consultText, setConsultText] = useState('Записаться на консультацию');
+  const [tariffIds, setTariffIds] = useState<string[]>([]);
 
   const trimmed = text.trim();
   const scheduledIso = scheduleMode === 'later' ? toIsoOrNull(scheduleAt) : null;
@@ -72,8 +88,23 @@ export function BroadcastComposerForm({
   const isValid =
     (trimmed.length > 0 || assetIds.length > 0 || (mediaPendingLocal && mediaReady)) &&
     text.length <= MAX_LENGTH &&
-    (scheduleMode === 'now' || (!scheduleEmpty && scheduleError === null));
+    (scheduleMode === 'now' || (!scheduleEmpty && scheduleError === null)) &&
+    (buttonMode === 'none'
+      ? true
+      : buttonMode === 'tariffs'
+        ? tariffIds.length > 0
+        : /^https:\/\/\S+\.\S+/.test(consultUrl.trim()));
   const recipients = counts ? counts[audience] : null;
+
+  const buildButton = (): BroadcastButton | undefined => {
+    if (buttonMode === 'consult') {
+      return { type: 'consult', text: consultText.trim() || 'Написать автору', url: consultUrl.trim() };
+    }
+    if (buttonMode === 'tariffs') {
+      return { type: 'tariffs', tariffIds };
+    }
+    return undefined;
+  };
 
   const countFor = (value: AudienceFilter) =>
     counts ? counts[value].toLocaleString('ru-RU') : '—';
@@ -149,6 +180,7 @@ export function BroadcastComposerForm({
       await apiService.createBroadcast(botId, trimmed, audience, {
         scheduledAt: scheduledIso ?? undefined,
         mediaAssetIds: finalAssetIds,
+        button: buildButton(),
       });
       pendingFiles.forEach((item) => URL.revokeObjectURL(item.url));
       onCreated();
@@ -325,6 +357,126 @@ export function BroadcastComposerForm({
           {text.length.toLocaleString('ru-RU')} /{' '}
           {MAX_LENGTH.toLocaleString('ru-RU')}
         </p>
+      </div>
+
+      {/* ── Кнопка под сообщением ── */}
+      <div>
+        <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+          Кнопка под сообщением
+        </p>
+        <div className="mt-2 flex gap-1 rounded-xl bg-muted p-1">
+          {(
+            [
+              { value: 'none', label: 'Нет' },
+              { value: 'tariffs', label: 'Тарифы' },
+              { value: 'consult', label: 'Консультация' },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={buttonMode === option.value}
+              onClick={() => setButtonMode(option.value)}
+              className={`flex h-9 flex-1 items-center justify-center rounded-lg text-body-sm font-semibold transition-colors ${
+                buttonMode === option.value
+                  ? 'bg-card text-fg-primary shadow-xs'
+                  : 'text-fg-secondary hover:text-fg-primary'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {buttonMode === 'consult' && (
+          <div className="mt-2.5 space-y-2.5">
+            <div>
+              <label htmlFor={`${idPrefix}-btn-text`} className="block text-body-sm font-medium text-fg-primary">
+                Надпись на кнопке
+              </label>
+              <input
+                id={`${idPrefix}-btn-text`}
+                type="text"
+                value={consultText}
+                maxLength={64}
+                onChange={(event) => setConsultText(event.target.value.slice(0, 64))}
+                placeholder="Записаться на консультацию"
+                className="input mt-1 w-full"
+              />
+            </div>
+            <div>
+              <label htmlFor={`${idPrefix}-btn-url`} className="block text-body-sm font-medium text-fg-primary">
+                Ссылка (Telegram или сайт)
+              </label>
+              <input
+                id={`${idPrefix}-btn-url`}
+                type="url"
+                value={consultUrl}
+                onChange={(event) => setConsultUrl(event.target.value)}
+                placeholder="https://t.me/ваш_юзернейм"
+                className="input mt-1 w-full"
+              />
+              <p className="mt-1 text-meta text-fg-tertiary">
+                Ссылка на ваш Telegram-профиль или чат — клиент напишет напрямую.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {buttonMode === 'tariffs' && (
+          <div className="mt-2.5">
+            {tariffs.length === 0 ? (
+              <p className="rounded-xl border border-border bg-muted/40 px-3 py-2.5 text-meta text-fg-tertiary">
+                Тарифов с ссылкой оплаты нет. Добавьте их в сценарии — блок «Оплата».
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {tariffs.map((tariff) => {
+                  const checked = tariffIds.includes(tariff.id);
+                  return (
+                    <li key={tariff.id}>
+                      <label
+                        className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors ${
+                          checked ? 'border-primary/60 bg-accent/5' : 'border-border hover:border-fg-tertiary/50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setTariffIds((prev) =>
+                              checked
+                                ? prev.filter((id) => id !== tariff.id)
+                                : [...prev, tariff.id],
+                            )
+                          }
+                          className="size-4 accent-[var(--color-primary)]"
+                        />
+                        <span className="min-w-0 flex-1 truncate text-body-sm font-medium text-fg-primary">
+                          {tariff.name}
+                        </span>
+                        {tariff.price && (
+                          <span className="shrink-0 text-body-sm font-semibold tabular-nums text-fg-secondary">
+                            {tariff.price} ₽
+                          </span>
+                        )}
+                        {!tariff.isLink && (
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-fg-tertiary">
+                            нет ссылки
+                          </span>
+                        )}
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <p className="mt-1.5 flex items-start gap-1 text-meta text-fg-tertiary">
+              <Link2 className="mt-px size-3.5 shrink-0" aria-hidden />
+              Кнопки появятся у каждого получателя — ведут на ссылку оплаты тарифа.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ── Аудитория: мини-переключатель в одну строку ── */}

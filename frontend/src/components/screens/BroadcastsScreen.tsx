@@ -22,6 +22,7 @@ import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { StatusBadge, type StatusTone } from '../common/StatusBadge';
 import { StoryEmptyState } from '../common/StoryEmptyState';
+import type { BroadcastTariffOption } from '../common/BroadcastComposerForm';
 import { PageHeader } from '../common/PageHeader';
 import { BroadcastComposerForm } from '../common/BroadcastComposerForm';
 import { useAlert } from '../AlertProvider';
@@ -343,6 +344,39 @@ function BroadcastsTabContent({
   onCompose: () => void;
 }) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
+  const [tariffs, setTariffs] = useState<BroadcastTariffOption[]>([]);
+
+  // Тарифы воронки — для кнопок рассылки (только actionType link).
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getFunnel(botId)
+      .then((funnel) => {
+        if (cancelled) return;
+        const options: BroadcastTariffOption[] = [];
+        for (const node of funnel.nodes ?? []) {
+          for (const tariff of (node as { tariffs?: unknown[] }).tariffs ?? []) {
+            const t = tariff as {
+              id?: string; name?: string; price?: string; actionType?: string; actionData?: string;
+            };
+            if (!t.id) continue;
+            options.push({
+              id: t.id,
+              name: t.name || 'Тариф',
+              price: t.price || '',
+              isLink: t.actionType === 'link' && /^https:\/\//.test(t.actionData || ''),
+            });
+          }
+        }
+        setTariffs(options);
+      })
+      .catch(() => {
+        if (!cancelled) setTariffs([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId]);
   const [error, setError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -475,7 +509,7 @@ function BroadcastsTabContent({
   }
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* Конструктор — закреплённая карточка (desktop) */}
       <aside className="lg:sticky lg:top-[calc(72px+16px)] lg:self-start" aria-label="Создание рассылки">
         <div className="rounded-3xl border border-border bg-card p-4 sm:p-5">
@@ -494,6 +528,7 @@ function BroadcastsTabContent({
               counts={counts}
               onCreated={onCompose}
               mediaReady={mediaReady}
+              tariffs={tariffs}
               idPrefix="broadcast-inline"
             />
           ) : (

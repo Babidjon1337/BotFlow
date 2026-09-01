@@ -17,7 +17,6 @@ import { StatusBadge } from '../common/StatusBadge';
 import { DeltaBadge } from '../common/DeltaBadge';
 import { CheckStepList, type CheckStepItem } from '../common/CheckStep';
 import { Overline, SectionHeader } from '../common/SectionHeader';
-import { StoryEmptyState } from '../common/StoryEmptyState';
 
 interface BotOverviewScreenProps {
   bot: BotConfig;

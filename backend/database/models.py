@@ -432,6 +432,12 @@ class Broadcast(Base):
         JSONB, nullable=False, server_default="'[]'::jsonb"
     )
 
+    # Кнопка под сообщением рассылки (URL-кнопки, InlineKeyboardMarkup):
+    # {"type":"consult","text":"Записаться на консультацию","url":"https://t.me/owner"}
+    # или {"type":"tariffs","tariffIds":["t1","t2"]} — кнопки тарифов воронки.
+    # None — кнопки нет.
+    button: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     total_recipients: Mapped[int] = mapped_column(Integer, default=0)
     sent_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)

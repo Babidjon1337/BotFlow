@@ -15,7 +15,7 @@ from aiogram.exceptions import (
     TelegramForbiddenError,
     TelegramRetryAfter,
 )
-from aiogram.types import InputMediaPhoto, InputMediaVideo
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaVideo
 
 from config import PROXY_URL
 from database.models import BotConfig
@@ -65,12 +65,16 @@ def _friendly_error(exc: Exception) -> str:
     return str(exc)[:500]
 
 
-async def _deliver_one(bot: Bot, telegram_id: int, text: str) -> None:
+async def _deliver_one(
+    bot: Bot, telegram_id: int, text: str, keyboard: InlineKeyboardMarkup | None = None
+) -> None:
     """Отправка одному получателю с ожиданием flood-limits."""
     flood_waits = 0
     while True:
         try:
-            await bot.send_message(chat_id=telegram_id, text=text)
+            await bot.send_message(
+                chat_id=telegram_id, text=text, reply_markup=keyboard
+            )
             return
         except TelegramRetryAfter as exc:
             flood_waits += 1
@@ -80,12 +84,14 @@ async def _deliver_one(bot: Bot, telegram_id: int, text: str) -> None:
 
 
 async def _deliver_media_then_text(
-    bot: Bot, telegram_id: int, media_assets: list, text: str
+    bot: Bot, telegram_id: int, media_assets: list, text: str,
+    keyboard: InlineKeyboardMarkup | None = None,
 ) -> None:
     """Медиа-группа (file_id) отдельным сообщением, затем текст.
 
     В Telegram подпись медиа-группы ограничена 1024 символами и по ТЗ
     текст идёт отдельным сообщением — как обычное сообщение без медиа.
+    Кнопка прикрепляется к текстовому сообщению.
     """
     flood_waits = 0
     while True:
@@ -113,21 +119,71 @@ async def _deliver_media_then_text(
             await asyncio.sleep(exc.retry_after + 1)
 
     if text:
-        await _deliver_one(bot, telegram_id, text)
+        await _deliver_one(bot, telegram_id, text, keyboard)
+
+
+def _tariff_button_rows(tariffs: list[dict]) -> list[list[InlineKeyboardButton]]:
+    """Кнопки тарифов воронки: «Название — цена» со ссылкой оплаты (actionType link)."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for tariff in tariffs:
+        if not isinstance(tariff, dict) or tariff.get("actionType") != "link":
+            continue
+        url = str(tariff.get("actionData") or "").strip()
+        if not url.startswith(("https://", "http://")):
+            continue
+        name = str(tariff.get("name") or "Тариф").strip()[:48]
+        price = str(tariff.get("price") or "").strip()
+        label = f"{name} — {price} ₽" if price else name
+        rows.append([InlineKeyboardButton(text=label[:64], url=url[:256])])
+    return rows
+
+
+async def _broadcast_keyboard(broadcast, bot_config) -> InlineKeyboardMarkup | None:
+    """Inline-клавиатура рассылки: ссылка-консультация или кнопки тарифов."""
+    button = broadcast.button if isinstance(broadcast.button, dict) else None
+    if not button:
+        return None
+    try:
+        if button.get("type") == "consult":
+            url = str(button.get("url") or "")
+            label = str(button.get("text") or "Написать автору")
+            if url.startswith(("https://", "http://")):
+                return InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text=label[:64], url=url[:256])]]
+                )
+        if button.get("type") == "tariffs":
+            tariff_ids = [str(t) for t in (button.get("tariffIds") or [])]
+            schema = bot_config.funnel_schema or {}
+            tariffs: list[dict] = []
+            for node in schema.get("nodes") or []:
+                if node.get("type") == "payment":
+                    tariffs.extend(t for t in (node.get("tariffs") or []) if isinstance(t, dict))
+            by_id = {str(t.get("id")): t for t in tariffs}
+            rows = _tariff_button_rows([by_id[i] for i in tariff_ids if i in by_id])
+            if rows:
+                return InlineKeyboardMarkup(inline_keyboard=rows)
+    except Exception as exc:  # кнопка не должна ломать доставку текста
+        logger.warning("Рассылка %s: не удалось собрать клавиатуру: %s", broadcast.id, exc)
+    return None
 
 
 async def _send_pending_chunk(
-    bot: Bot, broadcast_id: UUID, text: str, chunk: list, media_assets: list | None = None
+    bot: Bot,
+    broadcast_id: UUID,
+    text: str,
+    chunk: list,
+    media_assets: list | None = None,
+    keyboard: InlineKeyboardMarkup | None = None,
 ) -> None:
     media_assets = media_assets or []
     for recipient in chunk:
         try:
             if media_assets:
                 await _deliver_media_then_text(
-                    bot, recipient.telegram_id, media_assets, text
+                    bot, recipient.telegram_id, media_assets, text, keyboard=keyboard
                 )
             else:
-                await _deliver_one(bot, recipient.telegram_id, text)
+                await _deliver_one(bot, recipient.telegram_id, text, keyboard=keyboard)
             await mark_recipient_sent(recipient.id, broadcast_id)
         except Exception as exc:  # один получатель не должен остановить рассылку
             await mark_recipient_failed(
@@ -171,7 +227,8 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
     )
     # Текст рассылки может содержать HTML из композера (жирный/курсив/ссылки).
     # Санитизируем до недопустимых Telegram-тегов и отправляем одним текстом.
-    text = to_telegram_html(text)
+    text = to_telegram_html(broadcast.text)
+    keyboard = await _broadcast_keyboard(broadcast, bot_config)
     media_assets = await get_broadcast_media(broadcast)
     try:
         while True:
@@ -179,7 +236,12 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
             if not chunk:
                 break
             await _send_pending_chunk(
-                bot, broadcast_id, broadcast.text, chunk, media_assets=media_assets
+                bot,
+                broadcast_id,
+                text,
+                chunk,
+                media_assets=media_assets,
+                keyboard=keyboard,
             )
     finally:
         final_status = await finalize_broadcast(broadcast_id)

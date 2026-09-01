@@ -289,6 +289,8 @@ class BroadcastCreateRequest(BaseModel):
     scheduled_at: Optional[datetime] = Field(None, alias="scheduledAt")
     # Фото/видео (id из media_assets); текст идёт отдельным сообщением
     media_asset_ids: List[str] = Field(default_factory=list, alias="mediaAssetIds")
+    # Кнопка под сообщением: {"type":"consult","text","url"} или {"type":"tariffs","tariffIds"}
+    button: Optional[dict] = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -304,6 +306,7 @@ class BroadcastApiResponse(BaseModel):
     failed_count: int = Field(..., alias="failedCount")
     scheduled_at: Optional[str] = Field(None, alias="scheduledAt")
     media_asset_ids: List[str] = Field(default_factory=list, alias="mediaAssetIds")
+    button: Optional[dict] = None
     created_at: Optional[str] = Field(None, alias="createdAt")
     completed_at: Optional[str] = Field(None, alias="completedAt")
     last_error: Optional[str] = Field(None, alias="lastError")
@@ -325,6 +328,7 @@ class BroadcastApiResponse(BaseModel):
                 broadcast.scheduled_at.isoformat() if broadcast.scheduled_at else None
             ),
             media_asset_ids=[str(a) for a in (broadcast.media_asset_ids or [])],
+            button=broadcast.button if isinstance(broadcast.button, dict) else None,
             created_at=(
                 broadcast.created_at.isoformat() if broadcast.created_at else None
             ),

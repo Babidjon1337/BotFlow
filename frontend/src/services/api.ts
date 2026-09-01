@@ -59,6 +59,10 @@ export type BroadcastStatus =
   | "failed"
   | "cancelled";
 
+export type BroadcastButton =
+  | { type: "consult"; text: string; url: string }
+  | { type: "tariffs"; tariffIds: string[] };
+
 export interface Broadcast {
   id: string;
   status: BroadcastStatus;
@@ -72,6 +76,7 @@ export interface Broadcast {
   createdAt: string | null;
   completedAt: string | null;
   lastError: string | null;
+  button?: BroadcastButton | null;
 }
 
 export interface AdminOverview {
@@ -622,12 +627,13 @@ export const apiService = {
     botId: string | number,
     text: string,
     audience: AudienceFilter,
-    options: { scheduledAt?: string; mediaAssetIds?: string[] } = {}
+    options: { scheduledAt?: string; mediaAssetIds?: string[]; button?: BroadcastButton } = {}
   ) {
-    const { scheduledAt, mediaAssetIds } = options;
+    const { scheduledAt, mediaAssetIds, button } = options;
     const payload: Record<string, unknown> = { text, audience };
     if (scheduledAt) payload.scheduledAt = scheduledAt;
     if (mediaAssetIds?.length) payload.mediaAssetIds = mediaAssetIds;
+    if (button) payload.button = button;
     return fetchApi<Broadcast>(`/api/bots/${botId}/broadcasts`, {
       method: "POST",
       body: JSON.stringify(payload),

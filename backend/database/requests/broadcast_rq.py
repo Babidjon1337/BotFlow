@@ -28,6 +28,34 @@ def audience_condition(audience: str):
     return None
 
 
+def normalize_broadcast_button(button: Optional[dict]) -> Optional[dict]:
+    """Валидирует кнопку рассылки; возвращает нормализованный dict или None.
+
+    Форматы:
+      {"type": "consult", "text": "…", "url": "https://…"} — URL-кнопка
+      {"type": "tariffs", "tariffIds": ["t1", …]} — кнопки тарифов воронки
+    """
+    if not isinstance(button, dict):
+        return None
+    kind = button.get("type")
+    if kind == "consult":
+        url = str(button.get("url") or "").strip()
+        text = str(button.get("text") or "Написать автору").strip() or "Написать автору"
+        if not url.startswith(("https://", "http://")):
+            raise ValueError("Ссылка кнопки должна начинаться с https://")
+        if len(url) > 256 or len(text) > 64:
+            raise ValueError("Слишком длинная ссылка или надпись кнопки")
+        return {"type": "consult", "text": text[:64], "url": url[:256]}
+    if kind == "tariffs":
+        tariff_ids = [str(t) for t in (button.get("tariffIds") or [])][:8]
+        if not tariff_ids:
+            raise ValueError("Не выбраны тарифы для кнопок рассылки")
+        return {"type": "tariffs", "tariffIds": tariff_ids}
+    if kind is None:
+        return None
+    raise ValueError("Неизвестный тип кнопки рассылки")
+
+
 async def get_audience_summary(bot_id: int) -> dict:
     """Честные счётчики активной (не архивной) аудитории бота."""
     async with async_session() as session:
@@ -105,6 +133,7 @@ async def create_broadcast(
     audience: str,
     scheduled_at: Optional[datetime] = None,
     media_asset_ids: Optional[list[str]] = None,
+    button: Optional[dict] = None,
 ) -> Broadcast:
     """Создаёт рассылку и мгновенный снимок получателей; ставит в очередь.
 
@@ -131,6 +160,9 @@ async def create_broadcast(
         asset_uuids = [UUID(a) for a in asset_ids]
     except ValueError as exc:
         raise ValueError("Некорректный идентификатор медиафайла") from exc
+
+    # Кнопка под сообщением: ссылка-консультация или кнопки тарифов.
+    button_data = normalize_broadcast_button(button)
 
     async with async_session() as session:
         leads_query = select(Lead).where(
@@ -165,6 +197,7 @@ async def create_broadcast(
             total_recipients=len(leads),
             scheduled_at=scheduled_at,
             media_asset_ids=asset_ids,
+            button=button_data,
         )
         session.add(broadcast)
         await session.flush()

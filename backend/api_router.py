@@ -1523,6 +1523,7 @@ async def create_broadcast_endpoint(
             body.audience,
             scheduled_at=body.scheduled_at,
             media_asset_ids=body.media_asset_ids,
+            button=body.button,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

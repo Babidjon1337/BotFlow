@@ -35,6 +35,7 @@ def _broadcast(**overrides):
         "failed_count": 0,
         "scheduled_at": None,
         "media_asset_ids": [],
+        "button": None,
         "claimed_at": None,
         "started_at": None,
         "completed_at": None,
@@ -52,6 +53,20 @@ def test_broadcast_create_rejects_bad_input_before_touching_db():
         asyncio.run(broadcast_rq.create_broadcast(1, "x" * 4097, "all"))
     with pytest.raises(ValueError, match="аудитории"):
         asyncio.run(broadcast_rq.create_broadcast(1, "Привет", "vip"))
+
+
+def test_broadcast_button_normalization():
+    # Consult: без текста подставляется дефолт, url валидируется.
+    btn = broadcast_rq.normalize_broadcast_button({'type': 'consult', 'url': 'https://t.me/owner'})
+    assert btn == {'type': 'consult', 'text': 'Написать автору', 'url': 'https://t.me/owner'}
+    with pytest.raises(ValueError, match='https'):
+        broadcast_rq.normalize_broadcast_button({'type': 'consult', 'url': 't.me/owner'})
+    # Tariffs: пустой список запрещён.
+    with pytest.raises(ValueError, match='тарифы'):
+        broadcast_rq.normalize_broadcast_button({'type': 'tariffs', 'tariffIds': []})
+    assert broadcast_rq.normalize_broadcast_button(None) is None
+    with pytest.raises(ValueError, match='Неизвестный тип'):
+        broadcast_rq.normalize_broadcast_button({'type': 'nope'})
 
 
 def test_broadcast_response_uses_camel_case_and_hides_nothing_sensitive():
