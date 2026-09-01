@@ -61,6 +61,11 @@ const BOT_VIEW_ALIASES: Record<string, BotView> = {
   analytics: 'overview',
 };
 
+/** Старые аккаунт-табы, которых больше нет (gateways удалён). */
+const ACCOUNT_TAB_ALIASES: Record<string, AccountTab> = {
+  gateways: 'bots',
+};
+
 export function loadStoredRoute(): AppRoute {
   try {
     const raw = localStorage.getItem(ROUTE_KEY);
@@ -83,9 +88,10 @@ export function loadStoredRoute(): AppRoute {
       'level' in parsed &&
       parsed.level === 'account' &&
       'tab' in parsed &&
-      isAccountTab(parsed.tab)
+      typeof parsed.tab === 'string'
     ) {
-      return { level: 'account', tab: parsed.tab };
+      const rawTab = isAccountTab(parsed.tab) ? parsed.tab : ACCOUNT_TAB_ALIASES[parsed.tab];
+      if (rawTab) return { level: 'account', tab: rawTab };
     }
   } catch {
     // повреждённый маршрут игнорируем

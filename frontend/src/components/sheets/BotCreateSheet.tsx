@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bot, Check, Plus, Rocket, X } from 'lucide-react';
+import { Bot, Check, Plus, Rocket, ShieldCheck, X } from 'lucide-react';
 import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
 import { PlatformGlyph } from '../common/platform';
+import { useAppState } from '../../providers/AppStateProvider';
 
 interface BotCreateSheetProps {
   onClose: () => void;
@@ -36,6 +37,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState('');
   const viewportHeight = useViewportHeight();
+  const { isAdmin } = useAppState();
 
   const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
     window.setTimeout(() => event.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
@@ -126,6 +128,17 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                 </div>
               </fieldset>
 
+              {isAdmin ? (
+                <div className="mt-6 flex items-start gap-3 rounded-[var(--radius-card)] border border-success/40 bg-success-soft/50 p-4">
+                  <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden="true" />
+                  <div>
+                    <p className="text-body-sm font-bold text-[var(--color-foreground)]">Администратор платформы</p>
+                    <p className="mt-0.5 text-meta leading-relaxed text-fg-secondary">
+                      Боты создаются бесплатно и без лимитов, публикация без списаний.
+                    </p>
+                  </div>
+                </div>
+              ) : (
               <div className="mt-6 rounded-[var(--radius-card)] border border-border bg-muted p-4" role="img" aria-label="Сейчас черновик — 0 рублей; после публикации подписка бота — от 990 рублей в месяц, каждая дополнительная платформа плюс 500 рублей в месяц, без лимитов">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-body-sm text-fg-secondary">Сейчас (черновик)</span>
@@ -154,6 +167,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   позже — черновик никуда не денется.
                 </p>
               </div>
+              )}
             </div>
           </div>
 

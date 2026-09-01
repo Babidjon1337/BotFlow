@@ -285,10 +285,14 @@ export const Subscription = () => {
 
             {/* Боты в подписке */}
             <div className="card-saas rounded-[20px] p-6">
-              <h3 className="text-[16px] font-bold text-[var(--color-foreground)]">Боты в подписке</h3>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-[16px] font-bold text-[var(--color-foreground)]">Боты в подписке</h3>
+                <span className="text-meta font-semibold text-fg-secondary">
+                  {appState.bots.filter((bot) => bot.status === "active").length * 990} ₽ / мес
+                </span>
+              </div>
               <p className="mt-1 text-[13px] text-fg-secondary">
-                Подписка одна на аккаунт и покрывает право публикации. Отдельные
-                подписки на каждого бота — скоро.
+                Оплачиваются только опубликованные боты. Черновики — бесплатны.
               </p>
               <ul className="mt-4 divide-y divide-[var(--color-border)]">
                 {appState.bots.map((bot) => (
@@ -301,20 +305,33 @@ export const Subscription = () => {
                       {bot.name}
                     </span>
                     <span className="ml-auto text-meta text-fg-tertiary">
-                      {bot.status === "active"
-                        ? "Работает в подписке"
-                        : "Публикация — 990 ₽/мес"}
+                      {bot.status === "active" ? (
+                        <span className="font-accent font-semibold text-[var(--color-foreground)]">990 ₽/мес</span>
+                      ) : (
+                        "0 ₽ — не тарифицируется"
+                      )}
                     </span>
                   </li>
                 ))}
+                {appState.bots.length === 0 && (
+                  <li className="py-3 text-body-sm text-fg-tertiary">Пока нет ни одного бота</li>
+                )}
               </ul>
-              <div className="mt-4">
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <button
                   onClick={() => onGoToBots()}
-                  className="btn-primary-saas w-full py-3.5 rounded-[14px] text-[15px] font-bold flex items-center justify-center gap-2"
+                  className="btn-primary-saas flex-1 py-3.5 rounded-[14px] text-[15px] font-bold flex items-center justify-center gap-2"
                 >
                   К моим ботам
                 </button>
+                {!isAdmin && appState.subscriptionStatus === "active" && (
+                  <button
+                    onClick={() => setShowCancelModal(true)}
+                    className="flex-1 py-3.5 rounded-[14px] text-[15px] font-bold flex items-center justify-center border border-danger/40 text-[var(--color-danger)] transition-colors hover:bg-danger-soft"
+                  >
+                    Отменить подписку
+                  </button>
+                )}
               </div>
             </div>
           </div>
