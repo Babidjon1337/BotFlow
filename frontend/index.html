@@ -9,8 +9,7 @@
     />
     <title>BotFlow</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- DEV-ONLY: мок API для локального теста без Telegram (активен при ?mock=1). Не для продакшена. -->
-    <script src="/mock-api.js"></script>
+    <!-- Мок в dev подставляет Vite-плагин botflow-dev-mock (vite.config.ts), в проде его нет. -->
     <script>
       // Глобальный перехватчик вообще всех ошибок до запуска React
       window.addEventListener("error", function (e) {
