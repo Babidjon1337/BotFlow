@@ -23,7 +23,6 @@ interface AppShellProps {
   onAccountTab: (tab: AccountTab) => void;
   onBotView: (view: BotView) => void;
   onBackToBots: () => void;
-  onCreateBot: () => void;
   onOpenBotSettings: () => void;
   onOpenBotSwitcher: () => void;
   activeBot: BotConfig | null;
@@ -40,7 +39,6 @@ export function AppShell({
   onAccountTab,
   onBotView,
   onBackToBots,
-  onCreateBot,
   onOpenBotSettings,
   onOpenBotSwitcher,
   activeBot,
@@ -69,8 +67,7 @@ export function AppShell({
             route={route}
             activeBot={activeBot}
             onBackToBots={onBackToBots}
-            onCreateBot={onCreateBot}
-            onOpenBotSettings={onOpenBotSettings}
+              onOpenBotSettings={onOpenBotSettings}
             onOpenBotSwitcher={onOpenBotSwitcher}
           />
         )}

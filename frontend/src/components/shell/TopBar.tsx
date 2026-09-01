@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronsUpDown, Plus, Settings2 } from 'lucide-react';
+import { ChevronLeft, ChevronsUpDown, Settings2 } from 'lucide-react';
 import type { AppRoute } from '../../routes';
 import { ACCOUNT_TABS } from '../../routes';
 import type { BotConfig } from '../../types';
@@ -8,7 +8,6 @@ interface TopBarProps {
   route: AppRoute;
   activeBot: BotConfig | null;
   onBackToBots: () => void;
-  onCreateBot: () => void;
   onOpenBotSettings: () => void;
   onOpenBotSwitcher: () => void;
 }
@@ -33,7 +32,6 @@ export function TopBar({
   route,
   activeBot,
   onBackToBots,
-  onCreateBot,
   onOpenBotSettings,
   onOpenBotSwitcher,
 }: TopBarProps) {
@@ -81,19 +79,7 @@ export function TopBar({
           </button>
         </>
       ) : (
-        <>
-          <h1 className="flex-1 truncate text-title font-semibold">{title}</h1>
-          {route.level === 'account' && route.tab === 'bots' && (
-            <button
-              type="button"
-              onClick={onCreateBot}
-              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md bg-primary px-3.5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
-            >
-              <Plus className="size-4" />
-              Создать бота
-            </button>
-          )}
-        </>
+        <h1 className="flex-1 truncate text-title font-semibold">{title}</h1>
       )}
     </header>
   );

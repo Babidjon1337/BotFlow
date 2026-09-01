@@ -2,19 +2,14 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAlert } from "../AlertProvider";
 import {
-  Bot,
   Plus,
   Settings,
-  Users,
-  TrendingUp,
   ArrowRight,
-  Activity,
   Power,
   RefreshCw,
   Trash2,
 } from "lucide-react";
 import { WelcomeScreen } from "../screens/WelcomeScreen";
-import { PageHeader } from "../common/PageHeader";
 import { StatusBadge } from "../common/StatusBadge";
 import { Button } from "../ui/button";
 import { useAppState } from "../../providers/AppStateProvider";
@@ -49,8 +44,9 @@ export const BotManagement = () => {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [openMenuId]);
 
-  const tg = (window as Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number } }; HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
+  const tg = (window as Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: { id?: number; first_name?: string } }; HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id || 123456;
+  const userName = tg?.initDataUnsafe?.user?.first_name || '';
 
   if (!hasBots) {
     return <WelcomeScreen onCreateBot={onCreateBot} />;
@@ -137,71 +133,46 @@ export const BotManagement = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.25 }}
       >
-        {/* Top Header */}
-        <div className="mb-8">
-          <PageHeader
-            kicker="Аккаунт"
-            tone="blue"
-            title="Мои боты"
-            hint="Ваши проекты и их статистика"
-            action={
-              <Button onClick={onCreateBot} size="md">
-                <Plus data-icon="inline-start" aria-hidden />
-                Создать бота
-              </Button>
-            }
-          />
-          <p className="mt-4 text-body-sm text-fg-tertiary">
-            Заработано вашими ботами:{' '}
-            <b className="font-accent text-[15px] font-semibold tabular-nums text-[var(--color-success)]">
-              {totalRevenue.toLocaleString('ru-RU')} ₽
-            </b>
+        {/* Greeting + hero-выручка: страница отвечает на главный вопрос сразу */}
+        <div className="mb-6 md:mb-8">
+          <p className="text-body-sm font-medium text-fg-secondary">
+            Добрый день{userName ? `, ${userName}` : ''} 👋
           </p>
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-0">
+              <p className="kicker font-accent text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-tertiary">
+                Общая выручка
+              </p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-3">
+                <span className="font-accent text-[34px] font-bold leading-none tracking-tight tabular-nums text-[var(--color-foreground)] md:text-[44px]">
+                  {totalRevenue.toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+            </div>
+            <Button onClick={onCreateBot} size="md" className="shrink-0">
+              <Plus data-icon="inline-start" aria-hidden />
+              Создать бота
+            </Button>
+          </div>
         </div>
 
-        {/* Stats Section */}
-        <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[16px] md:rounded-[20px] shadow-sm flex items-center justify-between p-3 md:p-5 mb-6 md:mb-8 divide-x divide-[var(--color-border)]">
+        {/* KPI: Боты / Работают / Подписчики */}
+        <div className="mb-8 grid grid-cols-3 gap-3">
           {[
-            {
-              label: "Боты",
-              value: bots.length,
-              icon: Bot,
-              color: "var(--color-primary)",
-            },
-            {
-              label: "Актив",
-              value: activeBots,
-              icon: Activity,
-              color: "var(--color-success)",
-            },
-            {
-              label: "Лиды",
-              value: totalUsers,
-              icon: Users,
-              color: "var(--color-accent)",
-            },
-            {
-              label: "Выручка",
-              value: `${totalRevenue.toLocaleString("ru-RU")} ₽`,
-              icon: TrendingUp,
-              color: "var(--color-success)",
-            },
-          ].map((stat, i) => (
+            { label: "Боты", value: String(bots.length) },
+            { label: "Работают", value: String(activeBots) },
+            { label: "Подписчики", value: totalUsers.toLocaleString("ru-RU") },
+          ].map((stat) => (
             <div
-              key={i}
-              className="flex flex-col items-center flex-1 px-1 md:px-4 min-w-0"
+              key={stat.label}
+              className="rounded-[16px] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 md:px-5 md:py-4"
             >
-              <div className="text-[20px] sm:text-[24px] md:text-[28px] font-black text-[var(--color-foreground)] leading-none mb-1 md:mb-1.5">
+              <p className="font-accent text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-tertiary">
+                {stat.label}
+              </p>
+              <p className="mt-1.5 font-accent text-[22px] font-bold leading-none tabular-nums text-[var(--color-foreground)] md:text-[26px]">
                 {stat.value}
-              </div>
-              <div className="text-[11px] sm:text-[12px] md:text-[13px] font-semibold text-[var(--color-foreground-secondary)] flex items-center justify-center gap-1 md:gap-1.5 w-full">
-                <stat.icon
-                  size={16}
-                  style={{ color: stat.color }}
-                  className="shrink-0"
-                />
-                <span className="truncate">{stat.label}</span>
-              </div>
+              </p>
             </div>
           ))}
         </div>

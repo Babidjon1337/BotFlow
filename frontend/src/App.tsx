@@ -321,7 +321,6 @@ export default function App() {
         onAccountTab={goAccountTab}
         onBotView={(view) => setRoute({ level: 'bot', view })}
         onBackToBots={goBackToBots}
-        onCreateBot={handleCreateBotClick}
         onOpenBotSettings={() => setSheet('bot_settings')}
         onOpenBotSwitcher={() => setSheet('bot_switcher')}
         activeBot={appState.activeBot}
