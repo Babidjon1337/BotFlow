@@ -261,6 +261,7 @@ function LaunchedOverview({ bot }: { bot: BotConfig }) {
         {leads.length === 0 ? (
           <StoryEmptyState
             icon={Send}
+            image={{ src: '/visuals/empty/empty-bots.png', alt: '', size: 140 }}
             title="Пока тихо"
             description="Как только клиенты напишут боту, их заявки появятся здесь."
             className="rounded-xl border border-dashed border-border-strong py-10"
