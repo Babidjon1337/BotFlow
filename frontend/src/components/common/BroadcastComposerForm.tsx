@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarClock, ImagePlus, Play, Send, X } from 'lucide-react';
+import { Bold, CalendarClock, ImagePlus, Italic, Link2, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
 import type {
@@ -16,12 +16,11 @@ const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60 * 1000;
 
 const AUDIENCE_OPTIONS: {
   value: AudienceFilter;
-  title: string;
-  desc: string;
+  label: string;
 }[] = [
-  { value: 'all', title: 'Все подписчики', desc: 'Каждый, кто писал боту' },
-  { value: 'paid', title: 'Только оплатившие', desc: 'Клиенты с покупкой' },
-  { value: 'unpaid', title: 'Без оплаты', desc: 'Дошли по воронке, но не купили' },
+  { value: 'all', label: 'Все' },
+  { value: 'paid', label: 'Оплатившие' },
+  { value: 'unpaid', label: 'Без оплаты' },
 ];
 
 export type PendingMedia = {

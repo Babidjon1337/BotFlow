@@ -6,7 +6,6 @@ import {
   FileText,
   Plug,
   Rocket,
-  Send,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
 import type { BotView } from '../../routes';
@@ -32,12 +31,6 @@ type Stats = {
   clicks: number;
   sales: number;
   revenue: number;
-};
-
-type LeadItem = {
-  name: string;
-  time: string;
-  paid: boolean;
 };
 
 /**
@@ -192,17 +185,15 @@ function LaunchChecklist({
 function LaunchedOverview({ bot }: { bot: BotConfig }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [chart, setChart] = useState<Array<{ date: string; sales: number }>>([]);
-  const [leads, setLeads] = useState<LeadItem[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const { apiService } = await import('../../services/api');
-        const [statsRes, chartRes, leadsRes] = await Promise.all([
+        const [statsRes, chartRes] = await Promise.all([
           apiService.getStats(bot.id),
           apiService.getBotChartData(bot.id, 'week'),
-          apiService.getLeads(bot.id, '', 1, 5),
         ]);
         if (cancelled) return;
         setStats({
@@ -212,16 +203,6 @@ function LaunchedOverview({ bot }: { bot: BotConfig }) {
           revenue: statsRes.revenue,
         });
         setChart(chartRes.points ?? []);
-        setLeads(
-          (leadsRes.leads ?? []).slice(0, 5).map(lead => ({
-            name:
-              (lead.first_name as string) ||
-              (lead.username as string) ||
-              `id${lead.telegram_id}`,
-            time: formatDate((lead.created_at as string) ?? ''),
-            paid: Boolean(lead.has_purchased),
-          })),
-        );
       } catch {
         // Спокойно показываем нули — экран не должен падать из-за статистики
         if (!cancelled) {
@@ -255,30 +236,6 @@ function LaunchedOverview({ bot }: { bot: BotConfig }) {
         <Kpi label="Заявки" value={stats?.clicks} />
         <Kpi label="Продажи" value={stats?.sales} />
       </dl>
-
-      <section className="flex flex-col gap-3">
-        <Overline>Последняя активность</Overline>
-        {leads.length === 0 ? (
-          <StoryEmptyState
-            icon={Send}
-            title="Пока тихо"
-            description="Как только клиенты напишут боту, их заявки появятся здесь."
-            className="rounded-xl border border-dashed border-border-strong py-10"
-          />
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border bg-card px-5">
-            {leads.map((lead, index) => (
-              <li key={`${lead.name}-${index}`} className="flex items-center justify-between py-3 first:pt-4 last:pb-4">
-                <span className="truncate text-body font-medium">{lead.name}</span>
-                <span className="ml-4 flex shrink-0 items-center gap-3">
-                  {lead.paid && <StatusBadge tone="success" label="Оплата" />}
-                  <span className="text-meta text-fg-tertiary tnum">{lead.time}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       <QuickLinks hasPayment={Boolean(bot.hasPaymentCredentials)} />
     </div>
@@ -373,9 +330,4 @@ function Sparkline({ points }: { points: number[] }) {
       <path d={line} fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
-}
-
-function formatDate(value: string): string {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 }
