@@ -359,14 +359,11 @@ export function AdminStats() {
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0">
-            <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-[var(--color-foreground-tertiary)]">
-              <ShieldCheck size={15} className="text-[var(--color-primary)]" aria-hidden="true" />
-              Внутренняя зона управления
-            </div>
-            <h1 id="admin-title" className="text-2xl font-bold tracking-[-0.03em] text-[var(--color-foreground)] md:text-3xl">
+            <p className="kicker">Админ</p>
+            <h1 id="admin-title" className="mt-2 text-page-title font-extrabold text-[var(--color-foreground)]">
               {activeSection}
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--color-foreground-secondary)]">
+            <p className="mt-1 text-body-sm text-[var(--color-foreground-secondary)]">
               Реальные данные платформы. Финансовые статусы подтверждаются только платёжными провайдерами.
             </p>
           </div>
@@ -374,7 +371,7 @@ export function AdminStats() {
             type="button"
             onClick={() => void refreshSection()}
             disabled={state === "loading"}
-            className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60 xl:self-auto"
+            className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-body-sm font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:cursor-wait disabled:opacity-60 xl:self-auto"
           >
             <RefreshCw size={16} className={state === "loading" ? "animate-spin" : ""} aria-hidden="true" />
             Обновить
@@ -429,9 +426,9 @@ function Overview({ overview, operations, loading, onNavigate, onRetryOperation,
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(({ label, value, icon: Icon, note }) => (
           <article key={label} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-            <Icon size={18} className="mb-7 text-[var(--color-primary)]" aria-hidden="true" />
-            <p className="text-2xl font-bold tracking-[-0.03em] tabular-nums text-[var(--color-foreground)]">{loading || value === null ? "—" : value}</p>
-            <h2 className="mt-1 text-sm font-semibold text-[var(--color-foreground)]">{label}</h2>
+            <Icon size={18} className="mb-5 text-[var(--color-primary)]" aria-hidden="true" />
+            <p className="font-accent text-[22px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-[var(--color-foreground)]">{loading || value === null ? "—" : value}</p>
+            <h2 className="mt-2 text-sm font-semibold text-[var(--color-foreground)]">{label}</h2>
             <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">{note}</p>
           </article>
         ))}
