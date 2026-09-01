@@ -191,7 +191,6 @@ function AudienceTab({
       <div className="rounded-3xl border border-border bg-card">
         <StoryEmptyState
           icon={Users}
-          image={{ src: '/visuals/empty/empty-bots.png', alt: '', size: 170 }}
           title="Аудитория пока пуста"
           description="Здесь появятся все, кто напишет вашему боту. Опубликуйте бота — и подписчики подтянутся."
         />
@@ -462,7 +461,6 @@ function BroadcastsTabContent({
       <div className="rounded-3xl border border-border bg-card">
         <StoryEmptyState
           icon={Megaphone}
-          image={{ src: '/visuals/empty/empty-broadcasts.png', alt: '', size: 170 }}
           title="Рассылок ещё нет"
           description="Выберите сегмент аудитории и отправьте первое сообщение — история появится здесь."
           action={
