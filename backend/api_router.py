@@ -99,6 +99,10 @@ from services.chat_access import ChatAccessError, verify_chat_delivery
 
 api_router = APIRouter()
 
+# Медиа рассылок не принадлежит узлам воронки: у него отдельный node_id-маркер,
+# по которому upload не ищет блок в funnel_schema.
+BROADCAST_MEDIA_NODE_ID = "broadcast"
+
 # Telegram does not send chat_member updates by default. They are required to
 # recognise that the buyer joined through their one-use paid invite.
 CLIENT_BOT_ALLOWED_UPDATES = [
@@ -1218,11 +1222,21 @@ async def upload_bot_media(
     )
     if not media_type:
         raise HTTPException(status_code=415, detail="Не удалось определить тип файла.")
+    # Медиа рассылки не принадлежит узлу воронки: это самостоятельный ассет бота,
+    # который затем передаётся в media_asset_ids конкретной рассылки.
+    is_broadcast_media = node_id == BROADCAST_MEDIA_NODE_ID
+    if is_broadcast_media and media_type == "document":
+        raise HTTPException(
+            status_code=415,
+            detail="В рассылке можно отправить только фото или видео.",
+        )
     schema = dict(bot.funnel_schema or {})
     nodes = list(schema.get("nodes") or [])
-    target_node = next((node for node in nodes if node.get("id") == node_id), None)
+    target_node = None if is_broadcast_media else next(
+        (node for node in nodes if node.get("id") == node_id), None
+    )
     target_tariff_id: str | None = None
-    if target_node is None and node_id.startswith("payment:tariff:"):
+    if not is_broadcast_media and target_node is None and node_id.startswith("payment:tariff:"):
         target_tariff_id = node_id.removeprefix("payment:tariff:")
         payment_node = next((node for node in nodes if node.get("id") == "payment"), None)
         tariffs = payment_node.get("tariffs") if isinstance(payment_node, dict) else None
@@ -1230,7 +1244,7 @@ async def upload_bot_media(
             str(tariff.get("id")) == target_tariff_id for tariff in tariffs if isinstance(tariff, dict)
         ):
             target_tariff_id = None
-    if target_node is None and target_tariff_id is None:
+    if not is_broadcast_media and target_node is None and target_tariff_id is None:
         raise HTTPException(status_code=404, detail="Блок воронки не найден")
     if target_tariff_id is not None and media_type == "document":
         raise HTTPException(status_code=415, detail="Для тарифа можно использовать только фото или видео.")
@@ -1280,7 +1294,9 @@ async def upload_bot_media(
 
     current_schema = dict(current_bot.funnel_schema or {})
     current_nodes = list(current_schema.get("nodes") or [])
-    current_node = next((node for node in current_nodes if node.get("id") == node_id), None)
+    current_node = None if is_broadcast_media else next(
+        (node for node in current_nodes if node.get("id") == node_id), None
+    )
     current_payment_node = next((node for node in current_nodes if node.get("id") == "payment"), None)
     current_tariff = None
     if target_tariff_id and isinstance(current_payment_node, dict):
@@ -1291,7 +1307,7 @@ async def upload_bot_media(
             ),
             None,
         )
-    if current_node is None and current_tariff is None:
+    if not is_broadcast_media and current_node is None and current_tariff is None:
         raise HTTPException(
             status_code=409,
             detail="Воронка была изменена. Обновите страницу и повторите загрузку.",
@@ -1305,6 +1321,10 @@ async def upload_bot_media(
         mime_type=content_type,
         file_name=file.filename,
     )
+    # Медиа рассылки не пишется в воронку: рассылка ссылается на ассет по id.
+    if is_broadcast_media:
+        return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
+
     media_target = current_tariff if current_tariff is not None else current_node
     assert media_target is not None
     media_target["mediaFileId"] = telegram_file_id

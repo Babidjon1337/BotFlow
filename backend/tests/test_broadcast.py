@@ -55,6 +55,17 @@ def test_broadcast_create_rejects_bad_input_before_touching_db():
         asyncio.run(broadcast_rq.create_broadcast(1, "Привет", "vip"))
 
 
+def test_broadcast_media_upload_does_not_require_funnel_node():
+    # Регресс: медиа рассылки (node_id=broadcast) не принадлежит блокам воронки,
+    # поэтому загрузка не должна падать с 404 «Блок воронки не найден».
+    assert api_router.BROADCAST_MEDIA_NODE_ID == 'broadcast'
+    source = Path(api_router.__file__).read_text(encoding='utf-8')
+    upload_src = source.split('async def upload_bot_media(', 1)[1].split('@api_router', 1)[0]
+    assert 'is_broadcast_media = node_id == BROADCAST_MEDIA_NODE_ID' in upload_src
+    # 404 поднимается только когда это НЕ медиа рассылки.
+    assert 'if not is_broadcast_media and target_node is None and target_tariff_id is None:' in upload_src
+
+
 def test_broadcast_button_normalization():
     # Consult: без текста подставляется дефолт, url валидируется.
     btn = broadcast_rq.normalize_broadcast_button({'type': 'consult', 'url': 'https://t.me/owner'})
