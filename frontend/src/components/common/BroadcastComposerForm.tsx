@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bold, CalendarClock, ImagePlus, Italic, Link2, Play, Send, X } from 'lucide-react';
+import { CalendarClock, ImagePlus, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
 import type {
@@ -212,7 +212,7 @@ export function BroadcastComposerForm({
 
   return (
     <div className="space-y-5">
-      {/* ── Медиа ── */}
+      {/* ── Медиа: одна крупная зона + превью-чипы ── */}
       <div>
         <div className="flex items-center justify-between">
           <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
@@ -264,42 +264,32 @@ export function BroadcastComposerForm({
                 </button>
               </li>
             ))}
-            {assetIds.length + pendingFiles.length < MAX_MEDIA && (
-              <li>
-                <label
-                  htmlFor={`${idPrefix}-media`}
-                  className="flex h-16 w-16 cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border-strong text-fg-tertiary transition-colors hover:border-primary hover:text-primary"
-                >
-                  <ImagePlus className="size-5" aria-hidden />
-                  <span className="text-[9px] font-semibold">добавить</span>
-                </label>
-                <input
-                  id={`${idPrefix}-media`}
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  className="sr-only"
-                  onChange={(event) => {
-                    addFiles(event.target.files);
-                    event.target.value = '';
-                  }}
-                />
-              </li>
-            )}
           </ul>
         )}
 
         {assetIds.length + pendingFiles.length < MAX_MEDIA && (
           <label
-            htmlFor={`${idPrefix}-media-additional`}
-            className="mt-2 inline-flex cursor-pointer items-center gap-1.5 text-meta font-medium text-primary hover:underline"
+            htmlFor={`${idPrefix}-media`}
+            className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border-strong bg-muted/40 px-4 py-6 text-center transition-colors hover:border-primary hover:text-primary"
           >
-            <ImagePlus className="size-3.5" aria-hidden />
-            Добавить фото или видео
+            <ImagePlus className="size-6" aria-hidden />
+            <span className="text-body-sm font-semibold">
+              {assetIds.length + pendingFiles.length === 0
+                ? 'Добавить фото или видео'
+                : 'Добавить ещё'}
+            </span>
+            <span className="text-meta text-fg-tertiary">
+              уйдут одним сообщением, текст — следующим · до 10 файлов по 20 МБ
+            </span>
+            {mediaPendingLocal && (
+              <span className="rounded-full bg-warning-soft px-2.5 py-0.5 text-micro font-bold text-warning">
+                прикрепится после привязки бота
+              </span>
+            )}
           </label>
         )}
         <input
-          id={`${idPrefix}-media-additional`}
+          id={`${idPrefix}-media`}
           type="file"
           accept="image/*,video/*"
           multiple
@@ -309,13 +299,6 @@ export function BroadcastComposerForm({
             event.target.value = '';
           }}
         />
-
-        <p className="mt-1.5 text-meta text-fg-tertiary">
-          {mediaPendingLocal
-            ? 'Медиа прикрепится автоматически после привязки бота к Telegram.'
-            : 'Фото и видео уйдут одним сообщением, текст — следующим.'}{' '}
-          До 10 файлов, каждый до 20 МБ.
-        </p>
       </div>
 
       {/* ── Текст ── */}
@@ -324,13 +307,13 @@ export function BroadcastComposerForm({
           htmlFor={`${idPrefix}-text`}
           className="text-micro font-medium uppercase tracking-wide text-fg-tertiary"
         >
-          Текст сообщения (отдельным сообщением после медиа)
+          Текст сообщения
         </label>
         <textarea
           id={`${idPrefix}-text`}
           value={text}
           onChange={(event) => setText(event.target.value.slice(0, MAX_LENGTH))}
-          rows={5}
+          rows={7}
           placeholder="Например: скидка 20% на курс до конца недели…"
           className="mt-2 w-full resize-none rounded-2xl border border-border bg-background px-4 py-3 text-body leading-relaxed text-fg-primary outline-none transition-colors placeholder:text-fg-tertiary focus:border-ring focus:ring-3 focus:ring-ring/30"
         />
@@ -344,7 +327,7 @@ export function BroadcastComposerForm({
         </p>
       </div>
 
-      {/* ── Аудитория ── */}
+      {/* ── Аудитория: мини-переключатель в одну строку ── */}
       <div>
         <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
           Кому отправить
@@ -352,7 +335,7 @@ export function BroadcastComposerForm({
         <div
           role="radiogroup"
           aria-label="Сегмент аудитории"
-          className="mt-2 space-y-2"
+          className="mt-2 flex gap-1 rounded-xl bg-muted p-1"
         >
           {AUDIENCE_OPTIONS.map((option) => {
             const selected = audience === option.value;
@@ -363,25 +346,16 @@ export function BroadcastComposerForm({
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setAudience(option.value)}
-                className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-all ${
+                className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-body-sm font-semibold transition-colors ${
                   selected
-                    ? 'border-primary/60 bg-accent/5 ring-2 ring-ring/20'
-                    : 'border-border hover:border-fg-tertiary/50'
+                    ? 'bg-card text-fg-primary shadow-xs'
+                    : 'text-fg-secondary hover:text-fg-primary'
                 }`}
               >
-                <span className="min-w-0">
-                  <span className="block text-body font-medium text-fg-primary">
-                    {option.title}
-                  </span>
-                  <span className="mt-0.5 block text-meta text-fg-tertiary">
-                    {option.desc}
-                  </span>
-                </span>
+                {option.label}
                 <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-micro font-semibold tabular-nums ${
-                    selected
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-muted text-fg-secondary'
+                  className={`rounded-full px-1.5 py-px text-micro font-bold tabular-nums ${
+                    selected ? 'bg-primary/10 text-primary' : 'bg-card/70 text-fg-tertiary'
                   }`}
                 >
                   {countFor(option.value)}

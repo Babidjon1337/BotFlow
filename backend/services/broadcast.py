@@ -8,6 +8,7 @@ import asyncio
 from uuid import UUID
 
 from aiogram import Bot
+from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.exceptions import (
     TelegramBadRequest,
@@ -28,6 +29,7 @@ from database.requests.broadcast_rq import (
     mark_recipient_sent,
 )
 from loggers import logger
+from services.funnel_message import to_telegram_html
 from services.security import crypto
 
 # Порция получателей на один заход в БД.
@@ -162,7 +164,14 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
         return await finalize_broadcast(broadcast_id)
 
     token = crypto.decrypt(bot_config.bot_token_enc)
-    bot = Bot(token=token, session=bot_session or _get_session())
+    bot = Bot(
+        token=token,
+        session=bot_session or _get_session(),
+        default=DefaultBotProperties(parse_mode="HTML"),
+    )
+    # Текст рассылки может содержать HTML из композера (жирный/курсив/ссылки).
+    # Санитизируем до недопустимых Telegram-тегов и отправляем одним текстом.
+    text = to_telegram_html(text)
     media_assets = await get_broadcast_media(broadcast)
     try:
         while True:
