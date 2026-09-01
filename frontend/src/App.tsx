@@ -380,7 +380,7 @@ export default function App() {
             )}
             {resolvedRoute.level === 'bot' && (resolvedRoute.view === 'audience' || resolvedRoute.view === 'broadcasts') && appState.activeBot && (
               <BroadcastsScreen
-                key="audience-broadcasts"
+                key={`audience-broadcasts-${resolvedRoute.view}`}
                 bot={appState.activeBot}
                 initialTab={resolvedRoute.view === 'audience' ? 'audience' : 'broadcasts'}
               />

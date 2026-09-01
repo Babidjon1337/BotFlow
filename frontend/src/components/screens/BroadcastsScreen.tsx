@@ -91,11 +91,13 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
   return (
     <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-6 sm:px-6">
       <PageHeader
-        kicker="Рассылки"
-        tone="orange"
-        title="Рассылки"
-        hint={`${bot.name} · Сегменты аудитории и рассылки по ним`}
-        action={
+        kicker={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
+        tone={tab === 'audience' ? 'indigo' : 'orange'}
+        title={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
+        hint={tab === 'audience'
+          ? `${bot.name} · Кто пишет боту и кто оплатил`
+          : `${bot.name} · Сегменты аудитории и рассылки по ним`}
+        action={tab !== 'audience' ? (
           <Button
             onClick={() => setComposerOpen(true)}
             disabled={summaryLoading || !summary || summary.all === 0}
@@ -105,36 +107,8 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
             <Plus data-icon="inline-start" aria-hidden />
             Новая
           </Button>
-        }
+        ) : undefined}
       />
-
-      <div
-        role="tablist"
-        aria-label="Разделы рассылок"
-        className="mt-5 inline-flex rounded-full bg-muted p-1"
-      >
-        {(
-          [
-            { id: 'audience' as const, label: 'Аудитория' },
-            { id: 'broadcasts' as const, label: 'Рассылки' },
-          ]
-        ).map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            onClick={() => setTab(item.id)}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
-              tab === item.id
-                ? 'bg-card text-fg-primary shadow-sm'
-                : 'text-fg-secondary hover:text-fg-primary'
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
 
       <div className="mt-6">
         {tab === 'audience' ? (
