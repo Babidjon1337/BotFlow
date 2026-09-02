@@ -79,7 +79,7 @@ show_help() {
 git_update() {
     info "Получаю обновления из Git..."
 
-    if GIT_TERMINAL_PROMPT=0 git fetch origin main && git reset --hard origin/main; then
+    if GIT_TERMINAL_PROMPT=0 git -c http.version=HTTP/1.1 fetch origin main && git reset --hard origin/main; then
         success "Git обновлён"
     else
         fail "Ошибка при обновлении Git"
