@@ -62,11 +62,32 @@ const formatDate = (iso: string | null) =>
 
 const formatNumber = (value: number) => value.toLocaleString('ru-RU');
 
+/** Тарифы воронки → опции кнопок рассылки/счёта (ссылка оплаты обязательна). */
+function collectTariffOptions(nodes: unknown[]): BroadcastTariffOption[] {
+  const options: BroadcastTariffOption[] = [];
+  for (const node of nodes) {
+    for (const tariff of (node as { tariffs?: unknown[] }).tariffs ?? []) {
+      const t = tariff as {
+        id?: string; name?: string; price?: string; actionType?: string; actionData?: string;
+      };
+      if (!t.id) continue;
+      options.push({
+        id: t.id,
+        name: t.name || 'Тариф',
+        price: t.price || '',
+        isLink: t.actionType === 'link' && /^https:\/\//.test(t.actionData || ''),
+      });
+    }
+  }
+  return options;
+}
+
 export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotConfig; initialTab?: BroadcastsTab }) {
   const [tab, setTab] = useState<BroadcastsTab>(initialTab);
   const [summary, setSummary] = useState<AudienceSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [sheetTariffs, setSheetTariffs] = useState<BroadcastTariffOption[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +101,23 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
       })
       .finally(() => {
         if (!cancelled) setSummaryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bot.id]);
+
+  // Тарифы для кнопок рассылки — нужны и мобильному шиту, и счёту в Аудитории.
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getFunnel(bot.id)
+      .then((funnel) => {
+        if (cancelled) return;
+        setSheetTariffs(collectTariffOptions(funnel.nodes ?? []));
+      })
+      .catch(() => {
+        if (!cancelled) setSheetTariffs([]);
       });
     return () => {
       cancelled = true;
@@ -126,12 +164,14 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
         )}
       </div>
 
+      {/* Композер-шит нужен только на мобиле: на desktop форма уже в левой колонке */}
       <AnimatePresence>
         {composerOpen && (
           <BroadcastComposerSheet
             botId={bot.id}
             counts={summary}
             mediaReady={Boolean(bot.mediaSyncDone)}
+            tariffs={sheetTariffs}
             onClose={() => setComposerOpen(false)}
             onCreated={handleCreated}
           />
@@ -170,22 +210,7 @@ function AudienceTab({
       .getFunnel(botId)
       .then((funnel) => {
         if (cancelled) return;
-        const options: BroadcastTariffOption[] = [];
-        for (const node of funnel.nodes ?? []) {
-          for (const tariff of (node as { tariffs?: unknown[] }).tariffs ?? []) {
-            const t = tariff as {
-              id?: string; name?: string; price?: string; actionType?: string; actionData?: string;
-            };
-            if (!t.id) continue;
-            options.push({
-              id: t.id,
-              name: t.name || 'Тариф',
-              price: t.price || '',
-              isLink: t.actionType === 'link' && /^https:\/\//.test(t.actionData || ''),
-            });
-          }
-        }
-        setTariffs(options);
+        setTariffs(collectTariffOptions(funnel.nodes ?? []));
       })
       .catch(() => {
         if (!cancelled) setTariffs([]);
@@ -551,22 +576,7 @@ function BroadcastsTabContent({
       .getFunnel(botId)
       .then((funnel) => {
         if (cancelled) return;
-        const options: BroadcastTariffOption[] = [];
-        for (const node of funnel.nodes ?? []) {
-          for (const tariff of (node as { tariffs?: unknown[] }).tariffs ?? []) {
-            const t = tariff as {
-              id?: string; name?: string; price?: string; actionType?: string; actionData?: string;
-            };
-            if (!t.id) continue;
-            options.push({
-              id: t.id,
-              name: t.name || 'Тариф',
-              price: t.price || '',
-              isLink: t.actionType === 'link' && /^https:\/\//.test(t.actionData || ''),
-            });
-          }
-        }
-        setTariffs(options);
+        setTariffs(collectTariffOptions(funnel.nodes ?? []));
       })
       .catch(() => {
         if (!cancelled) setTariffs([]);

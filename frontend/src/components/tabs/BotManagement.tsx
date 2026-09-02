@@ -191,9 +191,9 @@ export const BotManagement = () => {
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className={!isActive ? "pt-3 md:pt-4" : ""}
+                className={!isActive ? "pt-2 md:pt-2.5" : ""}
               >
-                <div className="relative group bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[20px] p-5 md:p-6 flex flex-col gap-4 md:gap-5 transition-all hover:shadow-xl hover:border-[var(--color-primary)]/30">
+                <div className="relative group bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[18px] p-4 md:p-5 flex flex-col gap-3 md:gap-3.5 transition-all hover:shadow-lg hover:border-[var(--color-primary)]/30">
                   {/* --- HEADER --- */}
                   <div className="flex items-start justify-between gap-4">
                     {/* Left: Avatar + Info */}
@@ -201,7 +201,7 @@ export const BotManagement = () => {
                       {/* Avatar */}
                       <div className="relative shrink-0">
                         <div
-                          className="w-[48px] h-[48px] md:w-[52px] md:h-[52px] rounded-[14px] md:rounded-[16px] text-white flex items-center justify-center text-[18px] font-black shadow-sm"
+                          className="w-[44px] h-[44px] md:w-[48px] md:h-[48px] rounded-[13px] md:rounded-[14px] text-white flex items-center justify-center text-[16px] font-black shadow-sm"
                           style={{ background: `linear-gradient(135deg, ${color1}, ${color2})` }}
                         >
                           {initials}
@@ -217,7 +217,7 @@ export const BotManagement = () => {
                       {/* Text */}
                       <div className="flex flex-col min-w-0 pt-0.5 md:pt-1 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 mb-0.5 md:mb-1 w-full min-w-0">
-                          <h3 className="text-[17px] md:text-[19px] font-black text-[var(--color-foreground)] leading-tight truncate">
+                          <h3 className="text-[16px] md:text-[18px] font-extrabold text-[var(--color-foreground)] leading-tight truncate">
                             {bot.name}
                           </h3>
                           <StatusBadge tone={isActive ? "success" : "neutral"} label={isActive ? "Работает" : "Черновик"} />
@@ -329,54 +329,41 @@ export const BotManagement = () => {
                     </div>
                   </div>
 
-                  {/* --- STATS: фикс-зоны, у всех карточек на одном уровне --- */}
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 rounded-[16px] bg-[var(--color-surface-2)] px-4 py-3.5 md:px-5">
-                    <div className="flex flex-col justify-between gap-2 min-w-0">
-                      <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
-                        Лиды
-                      </span>
-                      <span className="font-accent text-[16px] md:text-[18px] font-semibold tabular-nums leading-none text-[var(--color-foreground)]">
-                        {bot.usersCount}
-                      </span>
-                    </div>
-                    <div className="flex flex-col justify-between gap-2 min-w-0">
-                      <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
-                        Продажи
-                      </span>
-                      <span className="font-accent text-[16px] md:text-[18px] font-semibold tabular-nums leading-none text-[var(--color-foreground)]">
-                        {bot.sales || 0}
-                      </span>
-                    </div>
-                    <div className="col-span-2 flex items-end justify-between gap-4 border-t border-[var(--color-border)] pt-3 min-w-0">
-                      <div className="flex flex-col justify-between gap-2 min-w-0">
-                        <span className="text-[11px] md:text-[12px] font-semibold text-[var(--color-foreground-tertiary)]">
-                          Выручка всего
-                        </span>
-                        {bot.paymentProvider ? (
-                          <span className="font-accent text-[20px] md:text-[22px] font-semibold tabular-nums leading-none text-[var(--color-success)]">
-                            {(bot.revenue || 0).toLocaleString("ru-RU")} ₽
-                          </span>
-                        ) : (
-                          <span className="inline-flex w-fit px-2 py-1 rounded-md text-[10px] md:text-[11px] font-bold text-[var(--color-warning)] bg-[var(--color-warning-soft)]">
-                            Нет кассы — подключите в Монетизации
-                          </span>
-                        )}
+                  {/* --- STATS: три метрики в одну строку + спарклайн справа --- */}
+                  <div className="flex items-center justify-between gap-3 rounded-[14px] bg-[var(--color-surface-2)] px-4 py-3">
+                    <dl className="flex min-w-0 items-center gap-5 md:gap-7">
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-semibold text-[var(--color-foreground-tertiary)]">Лиды</dt>
+                        <dd className="font-accent text-[16px] font-semibold tabular-nums leading-tight text-[var(--color-foreground)]">
+                          {bot.usersCount}
+                        </dd>
                       </div>
-                      {/* Спарклайн: у активных ботов с кассой, иначе заглушка той же высоты */}
-                      {isActive && bot.paymentProvider ? (
-                        <MiniSparkline />
-                      ) : (
-                        <span className="inline-flex h-8 items-center text-[11px] font-medium text-[var(--color-foreground-tertiary)]">
-                          Статистика появится после запуска
-                        </span>
-                      )}
-                    </div>
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-semibold text-[var(--color-foreground-tertiary)]">Продажи</dt>
+                        <dd className="font-accent text-[16px] font-semibold tabular-nums leading-tight text-[var(--color-foreground)]">
+                          {bot.sales || 0}
+                        </dd>
+                      </div>
+                      <div className="min-w-0">
+                        <dt className="text-[11px] font-semibold text-[var(--color-foreground-tertiary)]">Выручка</dt>
+                        <dd className="font-accent text-[16px] font-semibold tabular-nums leading-tight text-[var(--color-success)]">
+                          {bot.paymentProvider ? `${(bot.revenue || 0).toLocaleString("ru-RU")} ₽` : "—"}
+                        </dd>
+                      </div>
+                    </dl>
+                    {isActive && bot.paymentProvider ? (
+                      <MiniSparkline />
+                    ) : !bot.paymentProvider ? (
+                      <span className="shrink-0 rounded-md bg-[var(--color-warning-soft)] px-2 py-1 text-[10px] font-bold text-[var(--color-warning)]">
+                        Нет кассы
+                      </span>
+                    ) : null}
                   </div>
 
                   {/* --- MAIN ACTION --- */}
                   <button
                     onClick={() => onEditBot(bot.id)}
-                    className="w-full h-[46px] md:h-[48px] rounded-[14px] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)] font-bold text-[14px] md:text-[15px] flex items-center justify-center gap-2 transition-colors duration-200"
+                    className="w-full h-[42px] md:h-[44px] rounded-[12px] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-primary-soft)] hover:text-[var(--color-primary)] font-bold text-[14px] flex items-center justify-center gap-2 transition-colors duration-200"
                   >
                     Открыть бота <ArrowRight size={16} />
                   </button>

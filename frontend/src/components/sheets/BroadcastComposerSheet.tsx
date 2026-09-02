@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useViewportHeight } from '../../hooks';
-import { BroadcastComposerForm } from '../common/BroadcastComposerForm';
+import { BroadcastComposerForm, type BroadcastTariffOption } from '../common/BroadcastComposerForm';
 import type { AudienceSummary } from '../../services/api';
 
 interface BroadcastComposerSheetProps {
@@ -9,6 +9,8 @@ interface BroadcastComposerSheetProps {
   counts: AudienceSummary | null;
   /** Готов ли бот к загрузке медиа (токен + START выполнены). */
   mediaReady: boolean;
+  /** Тарифы воронки для кнопок под сообщением. */
+  tariffs?: BroadcastTariffOption[];
   onClose: () => void;
   onCreated: () => void;
 }
@@ -18,6 +20,7 @@ export const BroadcastComposerSheet = ({
   botId,
   counts,
   mediaReady,
+  tariffs = [],
   onClose,
   onCreated,
 }: BroadcastComposerSheetProps) => {
@@ -67,7 +70,7 @@ export const BroadcastComposerSheet = ({
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-5">
-          <BroadcastComposerForm botId={botId} counts={counts} onCreated={onCreated} mediaReady={mediaReady} />
+          <BroadcastComposerForm botId={botId} counts={counts} onCreated={onCreated} mediaReady={mediaReady} tariffs={tariffs} />
         </div>
       </motion.div>
     </div>

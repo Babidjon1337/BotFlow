@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { CalendarClock, ImagePlus, Link2, Play, Send, X } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { CalendarClock, Check, ImagePlus, Link2, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
 import type { BroadcastButton } from '../../services/api';
@@ -57,6 +57,44 @@ function toIsoOrNull(localValue: string): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+/** Date → значение для input[type=datetime-local] в локальной зоне. */
+function toLocalInputValue(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Быстрый выбор времени отправки — без ручного ввода даты. */
+const SCHEDULE_PRESETS: { label: string; at: () => Date }[] = [
+  { label: 'Через час', at: () => new Date(Date.now() + 60 * 60 * 1000) },
+  {
+    label: 'Сегодня 19:00',
+    at: () => {
+      const date = new Date();
+      date.setHours(19, 0, 0, 0);
+      if (date.getTime() < Date.now() + MIN_SCHEDULE_LEAD_MS) date.setDate(date.getDate() + 1);
+      return date;
+    },
+  },
+  {
+    label: 'Завтра 12:00',
+    at: () => {
+      const date = new Date();
+      date.setDate(date.getDate() + 1);
+      date.setHours(12, 0, 0, 0);
+      return date;
+    },
+  },
+  {
+    label: 'Через неделю',
+    at: () => {
+      const date = new Date();
+      date.setDate(date.getDate() + 7);
+      date.setHours(12, 0, 0, 0);
+      return date;
+    },
+  },
+];
+
 export function BroadcastComposerForm({
   botId,
   counts,
@@ -109,17 +147,23 @@ export function BroadcastComposerForm({
   const countFor = (value: AudienceFilter) =>
     counts ? counts[value].toLocaleString('ru-RU') : '—';
 
-  /** Валидация даты — вызывается только из обработчиков (Date.now). */
-  const validateSchedule = (value: string): string | null => {
+  // Минимум для datetime-local считаем один раз на монтирование (Date.now — вне рендера).
+  const [minScheduleValue] = useState(() =>
+    toLocalInputValue(new Date(Date.now() + MIN_SCHEDULE_LEAD_MS)),
+  );
+
+  /** Валидация даты — вызывается только из обработчиков (Date.now вне рендера). */
+  const validateSchedule = useCallback((value: string): string | null => {
     if (!value) return 'Выберите дату и время';
     const time = new Date(value).getTime();
     if (Number.isNaN(time)) return 'Выберите дату и время';
-    if (time < Date.now() + MIN_SCHEDULE_LEAD_MS)
+    const now = Date.now();
+    if (time < now + MIN_SCHEDULE_LEAD_MS)
       return 'Время должно быть хотя бы на минуту в будущем';
-    if (time > Date.now() + MAX_SCHEDULE_AHEAD_MS)
+    if (time > now + MAX_SCHEDULE_AHEAD_MS)
       return 'Отложить можно не больше чем на 90 дней';
     return null;
-  };
+  }, []);
 
   const handleScheduleChange = (value: string) => {
     setScheduleAt(value);
@@ -243,8 +287,8 @@ export function BroadcastComposerForm({
   };
 
   return (
-    <div className="space-y-5">
-      {/* ── Медиа: одна крупная зона + превью-чипы ── */}
+    <div className="space-y-4">
+      {/* ── Медиа: компактные чипы 64px + плитка «+» ── */}
       <div>
         <div className="flex items-center justify-between">
           <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
@@ -255,71 +299,64 @@ export function BroadcastComposerForm({
           </span>
         </div>
 
-        {(assetIds.length > 0 || pendingFiles.length > 0) && (
-          <ul className="mt-2 flex flex-wrap gap-2">
-            {assetIds.map((id) => (
-              <li
-                key={id}
-                className="group relative flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-muted"
+        <ul className="mt-2 flex flex-wrap items-center gap-2">
+          {assetIds.map((id) => (
+            <li
+              key={id}
+              className="group relative flex size-16 items-center justify-center rounded-xl border border-border bg-muted"
+            >
+              <span className="text-fg-tertiary">✓</span>
+              <button
+                type="button"
+                onClick={() => removeAsset(id)}
+                aria-label="Убрать медиа"
+                className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-danger-soft text-danger hover:bg-danger hover:text-white"
               >
-                <span className="text-fg-tertiary">✓</span>
-                <button
-                  type="button"
-                  onClick={() => removeAsset(id)}
-                  aria-label="Убрать медиа"
-                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-danger-soft text-danger hover:bg-danger hover:text-white"
-                >
-                  <X className="size-3" aria-hidden />
-                </button>
-              </li>
-            ))}
-            {pendingFiles.map((item, index) => (
-              <li
-                key={item.url}
-                className="group relative flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted"
+                <X className="size-3" aria-hidden />
+              </button>
+            </li>
+          ))}
+          {pendingFiles.map((item, index) => (
+            <li
+              key={item.url}
+              className="group relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted"
+            >
+              {item.type === 'photo' ? (
+                <img src={item.url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex flex-col items-center gap-0.5 text-fg-tertiary">
+                  <Play className="size-5" aria-hidden />
+                  <span className="text-[9px] font-semibold">видео</span>
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => removePending(index)}
+                aria-label="Удалить медиа"
+                className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
               >
-                {item.type === 'photo' ? (
-                  <img src={item.url} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="flex flex-col items-center gap-0.5 text-fg-tertiary">
-                    <Play className="size-5" aria-hidden />
-                    <span className="text-[9px] font-semibold">видео</span>
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => removePending(index)}
-                  aria-label="Удалить медиа"
-                  className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
-                >
-                  <X className="size-2.5" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {assetIds.length + pendingFiles.length < MAX_MEDIA && (
-          <label
-            htmlFor={`${idPrefix}-media`}
-            className="mt-2 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border-strong bg-muted/40 px-4 py-6 text-center transition-colors hover:border-primary hover:text-primary"
-          >
-            <ImagePlus className="size-6" aria-hidden />
-            <span className="text-body-sm font-semibold">
-              {assetIds.length + pendingFiles.length === 0
-                ? 'Добавить фото или видео'
-                : 'Добавить ещё'}
-            </span>
-            <span className="text-meta text-fg-tertiary">
-              уйдут одним сообщением, текст — следующим · до 10 файлов по 20 МБ
-            </span>
-            {mediaPendingLocal && (
-              <span className="rounded-full bg-warning-soft px-2.5 py-0.5 text-micro font-bold text-warning">
-                прикрепится после привязки бота
-              </span>
-            )}
-          </label>
-        )}
+                <X className="size-2.5" aria-hidden />
+              </button>
+            </li>
+          ))}
+          {assetIds.length + pendingFiles.length < MAX_MEDIA && (
+            <li>
+              <label
+                htmlFor={`${idPrefix}-media`}
+                title="Добавить фото или видео"
+                className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-border-strong text-fg-tertiary transition-colors hover:border-primary hover:text-primary"
+              >
+                <ImagePlus className="size-5" aria-hidden />
+                <span className="text-[10px] font-semibold">фото</span>
+              </label>
+            </li>
+          )}
+        </ul>
+        <p className="mt-1.5 text-micro text-fg-tertiary">
+          {mediaPendingLocal
+            ? 'Прикрепится при отправке · до 10 файлов по 20 МБ'
+            : 'Медиа уйдёт одним сообщением, текст — следующим · до 10 файлов по 20 МБ'}
+        </p>
         <input
           id={`${idPrefix}-media`}
           type="file"
@@ -430,50 +467,63 @@ export function BroadcastComposerForm({
                 Тарифов с ссылкой оплаты нет. Добавьте их в сценарии — блок «Оплата».
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {tariffs.map((tariff) => {
                   const checked = tariffIds.includes(tariff.id);
+                  const disabled = !tariff.isLink;
                   return (
                     <li key={tariff.id}>
-                      <label
-                        className={`flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2.5 transition-colors ${
-                          checked ? 'border-primary/60 bg-accent/5' : 'border-border hover:border-fg-tertiary/50'
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={checked}
+                        disabled={disabled}
+                        onClick={() =>
+                          setTariffIds((prev) =>
+                            checked
+                              ? prev.filter((id) => id !== tariff.id)
+                              : [...prev, tariff.id],
+                          )
+                        }
+                        className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-all ${
+                          disabled
+                            ? 'cursor-not-allowed border-border opacity-55'
+                            : checked
+                              ? 'border-primary/60 bg-accent/5 ring-2 ring-ring/20'
+                              : 'border-border hover:border-fg-tertiary/50'
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            setTariffIds((prev) =>
-                              checked
-                                ? prev.filter((id) => id !== tariff.id)
-                                : [...prev, tariff.id],
-                            )
-                          }
-                          className="size-4 accent-[var(--color-primary)]"
-                        />
-                        <span className="min-w-0 flex-1 truncate text-body-sm font-medium text-fg-primary">
-                          {tariff.name}
+                        <span
+                          className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                            checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border-strong'
+                          }`}
+                        >
+                          {checked ? <Check className="size-3" aria-hidden /> : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-body-sm font-semibold text-fg-primary">
+                            {tariff.name}
+                          </span>
+                          {disabled ? (
+                            <span className="mt-0.5 block text-micro text-warning">
+                              нет ссылки оплаты — добавьте в сценарии
+                            </span>
+                          ) : null}
                         </span>
                         {tariff.price && (
-                          <span className="shrink-0 text-body-sm font-semibold tabular-nums text-fg-secondary">
+                          <span className="shrink-0 font-accent text-body-sm font-semibold tabular-nums text-fg-primary">
                             {tariff.price} ₽
                           </span>
                         )}
-                        {!tariff.isLink && (
-                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-fg-tertiary">
-                            нет ссылки
-                          </span>
-                        )}
-                      </label>
+                      </button>
                     </li>
                   );
                 })}
               </ul>
             )}
-            <p className="mt-1.5 flex items-start gap-1 text-meta text-fg-tertiary">
+            <p className="mt-2 flex items-start gap-1 text-micro text-fg-tertiary">
               <Link2 className="mt-px size-3.5 shrink-0" aria-hidden />
-              Кнопки появятся у каждого получателя — ведут на ссылку оплаты тарифа.
+              Кнопки появятся под текстом рассылки и ведут на оплату тарифа.
             </p>
           </div>
         )}
@@ -549,16 +599,40 @@ export function BroadcastComposerForm({
           ))}
         </div>
         {scheduleMode === 'later' && (
-          <div className="mt-2">
+          <div className="mt-2.5 space-y-2">
+            <div className="flex flex-wrap gap-1.5">
+              {SCHEDULE_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => handleScheduleChange(toLocalInputValue(preset.at()))}
+                  className="rounded-full border border-border px-3 py-1.5 text-micro font-semibold text-fg-secondary transition-colors hover:border-primary hover:text-primary"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <input
               type="datetime-local"
               value={scheduleAt}
+              min={minScheduleValue}
               onChange={(event) => handleScheduleChange(event.target.value)}
               aria-label="Дата и время отправки"
-              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-body text-fg-primary outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30"
+              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-body tabular-nums text-fg-primary outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30"
             />
+            {scheduleAt && !scheduleError ? (
+              <p className="text-micro text-fg-secondary">
+                Отправим {new Date(scheduleAt).toLocaleString('ru-RU', {
+                  weekday: 'short',
+                  day: 'numeric',
+                  month: 'long',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </p>
+            ) : null}
             {scheduleError && (
-              <p className="mt-1.5 text-meta text-warning">{scheduleError}</p>
+              <p className="text-meta text-warning">{scheduleError}</p>
             )}
           </div>
         )}

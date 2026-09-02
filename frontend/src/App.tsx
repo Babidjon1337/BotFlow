@@ -368,7 +368,6 @@ export default function App() {
               <BotIntegrationsScreen
                 key="integrations"
                 bot={appState.activeBot}
-                onOpenSettings={() => setSheet('bot_settings')}
               />
             )}
             {resolvedRoute.level === 'bot' && (resolvedRoute.view === 'audience' || resolvedRoute.view === 'broadcasts') && appState.activeBot && (

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Check, ExternalLink, FileText, KeyRound, Settings2 } from 'lucide-react';
+import { BadgeCheck, Check, ExternalLink, FileText, KeyRound, Play, Settings2 } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
 import { Button } from '../ui/button';
 import { PageHeader } from '../common/PageHeader';
@@ -48,60 +48,11 @@ const PROVIDERS: {
 
 interface BotIntegrationsScreenProps {
   bot: BotConfig;
-  onOpenSettings: () => void;
-}
-
-function AccordionRow({
-  icon,
-  title,
-  badge,
-  subtitle,
-  open,
-  onToggle,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  badge: React.ReactNode;
-  subtitle: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={open}
-      className="flex w-full items-center gap-3 rounded-[16px] border border-border bg-card px-4 py-3.5 text-left transition-colors hover:bg-muted"
-    >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-fg-secondary">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span className="text-body-lg font-bold text-fg-primary">{title}</span>
-          {badge}
-        </span>
-        <span className="mt-0.5 block truncate text-meta text-fg-tertiary">{subtitle}</span>
-      </span>
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className={`size-4 shrink-0 text-fg-tertiary transition-transform ${open ? 'rotate-180' : ''}`}
-        aria-hidden="true"
-      >
-        <path d="m6 9 6 6 6-6" />
-      </svg>
-    </button>
-  );
 }
 
 function TelegramGlyph({ active }: { active: boolean }) {
   return (
-    <svg width="30" height="30" viewBox="0 0 24 24" fill={active ? '#ffffff' : 'currentColor'} aria-hidden="true" className={active ? '' : 'text-fg-tertiary'}>
+    <svg width="56" height="56" viewBox="0 0 24 24" fill={active ? '#ffffff' : 'currentColor'} aria-hidden="true" className={active ? '' : 'text-fg-tertiary'}>
       <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
     </svg>
   );
@@ -114,7 +65,7 @@ function TelegramGlyph({ active }: { active: boolean }) {
  * 3. Подключение: после сохранения токена/кассы — кнопка «Открыть бота → START».
  * 4. Оферта.
  */
-export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsScreenProps) {
+export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
   const hasToken = Boolean(bot.username && bot.username !== '@unknown');
   const hasCashier = Boolean(bot.hasPaymentCredentials);
   const cashierName = bot.paymentProvider
@@ -132,6 +83,11 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
   const [cashierError, setCashierError] = useState<string | null>(null);
   const [cashierSaved, setCashierSaved] = useState(false);
 
+  const [offerUrl, setOfferUrl] = useState(bot.offerUrl ?? '');
+  const [isSavingOffer, setIsSavingOffer] = useState(false);
+  const [offerError, setOfferError] = useState<string | null>(null);
+  const [offerSaved, setOfferSaved] = useState(false);
+
   const activeProvider = PROVIDERS.find((p) => p.id === selectedProvider);
   const allFilled = activeProvider ? activeProvider.fields.every((f) => (keys[f.key] || '').trim()) : false;
 
@@ -146,6 +102,40 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
     } catch (error) {
       setTokenError(error instanceof Error ? error.message : 'Не удалось сохранить токен.');
       setIsSavingToken(false);
+    }
+  };
+
+  /** Открывает бота в Telegram, не закрывая Mini App (openTelegramLink). */
+  const openBotInTelegram = () => {
+    const username = (bot.username || '').replace(/^@/, '');
+    const url = bot.botUrl || (username ? `https://t.me/${username}?start=start` : '');
+    if (!url) return;
+    const tg = (window as Window & {
+      Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void; openLink?: (url: string) => void } };
+    }).Telegram?.WebApp;
+    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+    else if (tg?.openLink) tg.openLink(url);
+    else window.open(url, '_blank', 'noreferrer');
+  };
+
+  const saveOffer = async () => {
+    if (isSavingOffer) return;
+    const value = offerUrl.trim();
+    if (value && !/^https?:\/\/\S+\.\S+/.test(value)) {
+      setOfferError('Ссылка должна начинаться с https:// и вести на страницу с условиями.');
+      return;
+    }
+    setIsSavingOffer(true);
+    setOfferError(null);
+    try {
+      const { apiService: api } = await import('../../services/api');
+      await api.updateBot(bot.id, { offerUrl: value });
+      setOfferSaved(true);
+      window.setTimeout(() => window.location.reload(), 700);
+    } catch (error) {
+      setOfferError(error instanceof Error ? error.message : 'Не удалось сохранить ссылку.');
+    } finally {
+      setIsSavingOffer(false);
     }
   };
 
@@ -176,126 +166,125 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
         hint="Платформы, касса и оферта — всё, что связывает бота с клиентами"
       />
 
-      {/* ── 1. Платформы ── */}
-      <section className="flex flex-col gap-3" aria-label="Платформы">
-        <article className={`flex flex-col rounded-[16px] border p-4 sm:p-5 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
-          <div className="flex items-start justify-between gap-2">
-            <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] ${hasToken ? 'bg-[#229ED9] shadow-xs' : 'bg-muted'}`}>
-              <TelegramGlyph active={hasToken} />
-            </span>
+      {/* ── 1. Платформы: три карточки в одну строку ── */}
+      <section className="grid grid-cols-3 gap-2.5 sm:gap-3" aria-label="Платформы">
+        <article className={`flex flex-col items-center rounded-[16px] border p-3 text-center sm:p-4 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
+          <span className={`flex size-[72px] shrink-0 items-center justify-center rounded-[18px] sm:size-[84px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
+            <TelegramGlyph active={hasToken} />
+          </span>
+          <h3 className={`mt-2.5 text-body font-bold ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
+          {hasToken ? (
+            <p className="mt-0.5 w-full truncate text-micro text-fg-secondary">{bot.username}</p>
+          ) : (
+            <p className="mt-0.5 text-micro text-fg-tertiary">Токен @BotFather</p>
+          )}
+          <div className="mt-2">
             <StatusBadge
-              tone={bot.mediaSyncDone ? 'success' : hasToken ? 'warning' : 'warning'}
-              label={bot.mediaSyncDone ? 'Синхронизирован' : hasToken ? 'Жмём START' : 'Не подключён'}
+              tone={bot.mediaSyncDone ? 'success' : hasToken ? 'warning' : 'neutral'}
+              label={bot.mediaSyncDone ? 'Готов' : hasToken ? 'Нужен START' : 'Не подключён'}
             />
           </div>
-          <h3 className={`mt-3.5 text-body-lg font-bold ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
-
-          {hasToken && !bot.mediaSyncDone ? (
-            <div className="mt-2">
-              <p className="text-meta text-fg-secondary">{bot.username}</p>
-              <ol className="mt-3 space-y-2 text-body-sm leading-relaxed text-fg-secondary">
-                <li className="flex items-start gap-2">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground">1</span>
-                  Перейдите в своего бота по кнопке ниже
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground">2</span>
-                  Нажмите <b className="text-fg-primary">START</b> в Telegram
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-micro font-bold text-primary-foreground">3</span>
-                  Вернитесь сюда — статус станет «Синхронизирован»
-                </li>
-              </ol>
-              {bot.botUrl && (
-                <a
-                  href={bot.botUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-[#229ED9] px-5 text-body-sm font-bold text-white shadow-sm transition-all hover:opacity-90 active:translate-y-px sm:w-auto"
-                >
-                  Открыть бота в Telegram
-                  <ExternalLink className="size-4" aria-hidden="true" />
-                </a>
-              )}
-            </div>
-          ) : hasToken ? (
-            <p className="mt-0.5 truncate text-meta text-fg-secondary">{bot.username}</p>
-          ) : tokenFormOpen ? (
-            <div className="mt-3 space-y-2.5">
-              <label htmlFor="tg-token" className="block text-body-sm font-medium text-fg-primary">
-                Токен от @BotFather
-              </label>
-              <input
-                id="tg-token"
-                type="password"
-                value={token}
-                onChange={(event) => { setToken(event.target.value); setTokenError(null); }}
-                placeholder="123456789:AA…"
-                autoComplete="off"
-                className="input w-full"
-              />
-              {tokenError && (
-                <p className="rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-meta text-danger">
-                  {tokenError}
-                </p>
-              )}
-              <div className="flex items-center gap-2.5">
-                <Button
-                  size="sm"
-                  disabled={!token.trim() || isSavingToken}
-                  onClick={() => void saveToken()}
-                >
-                  {isSavingToken ? (
-                    <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
-                  ) : null}
-                  {isSavingToken ? 'Подключаем…' : 'Подключить бота'}
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => { setTokenFormOpen(false); setToken(''); setTokenError(null); }}
-                  className="text-body-sm font-semibold text-fg-tertiary hover:text-fg-secondary"
-                >
-                  Позже
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <p className="mt-0.5 text-meta text-fg-tertiary">Токен от @BotFather</p>
-              <div className="mt-auto pt-3.5">
-                <Button size="sm" onClick={() => setTokenFormOpen(true)}>
-                  <KeyRound className="size-3.5" data-icon="inline-start" aria-hidden="true" />
-                  Вставить токен
-                </Button>
-              </div>
-            </>
-          )}
+          <button
+            type="button"
+            onClick={() => { setTokenFormOpen((open) => !open); setToken(''); setTokenError(null); }}
+            className="mt-2.5 inline-flex items-center gap-1 text-micro font-semibold text-primary hover:underline"
+          >
+            <KeyRound className="size-3" aria-hidden="true" />
+            {hasToken ? 'Изменить токен' : 'Вставить токен'}
+          </button>
         </article>
 
         {(['vk', 'max'] as const).map(platform => (
           <article
             key={platform}
             aria-disabled
-            className="flex flex-col rounded-[16px] border border-dashed border-border-strong bg-card p-4 sm:p-5"
+            className="flex flex-col items-center rounded-[16px] border border-dashed border-border-strong bg-card p-3 text-center sm:p-4"
           >
-            <div className="flex items-start justify-between gap-2">
-              <span className="flex size-14 shrink-0 items-center justify-center rounded-[16px] bg-muted">
-                <PlatformGlyph platform={platform} size={30} className="opacity-50" />
-              </span>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-fg-tertiary">
-                скоро
-              </span>
-            </div>
-            <h3 className="mt-3.5 text-body-lg font-bold text-fg-tertiary">
+            <span className="flex size-[72px] shrink-0 items-center justify-center rounded-[18px] bg-muted sm:size-[84px]">
+              <PlatformGlyph platform={platform} size={64} className="opacity-60" />
+            </span>
+            <h3 className="mt-2.5 text-body font-bold text-fg-tertiary">
               {{ vk: 'VK', max: 'MAX' }[platform]}
             </h3>
-            <p className="mt-0.5 text-meta text-fg-tertiary">
-              Подключение отдельно — со своими ключами
-            </p>
+            <p className="mt-0.5 text-micro text-fg-tertiary">Свои ключи</p>
+            <div className="mt-2">
+              <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-fg-tertiary">скоро</span>
+            </div>
           </article>
         ))}
       </section>
+
+      {/* Форма токена — под рядом платформ, чтобы не растягивать карточки */}
+      {tokenFormOpen && (
+        <div className="rounded-[16px] border border-border bg-card p-4 sm:p-5">
+          <label htmlFor="tg-token" className="block text-body-sm font-medium text-fg-primary">
+            {hasToken ? 'Новый токен от @BotFather' : 'Токен от @BotFather'}
+          </label>
+          <input
+            id="tg-token"
+            type="password"
+            value={token}
+            onChange={(event) => { setToken(event.target.value); setTokenError(null); }}
+            placeholder="123456789:AA…"
+            autoComplete="off"
+            className="input mt-2 w-full"
+          />
+          {hasToken && (
+            <p className="mt-2 text-meta text-warning">
+              При смене токена медиа воронки сбросятся — их нужно будет загрузить заново.
+            </p>
+          )}
+          {tokenError && (
+            <p className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-meta text-danger">
+              {tokenError}
+            </p>
+          )}
+          <div className="mt-3 flex items-center gap-2.5">
+            <Button size="sm" disabled={!token.trim() || isSavingToken} onClick={() => void saveToken()}>
+              {isSavingToken ? (
+                <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+              ) : null}
+              {isSavingToken ? 'Подключаем…' : hasToken ? 'Сохранить токен' : 'Подключить бота'}
+            </Button>
+            <button
+              type="button"
+              onClick={() => { setTokenFormOpen(false); setToken(''); setTokenError(null); }}
+              className="text-body-sm font-semibold text-fg-tertiary hover:text-fg-secondary"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Шаг START — заметный блок с пульсацией, пока бот не синхронизирован */}
+      {hasToken && !bot.mediaSyncDone && (
+        <div className="relative overflow-hidden rounded-[16px] border border-warning/40 bg-warning-soft/50 p-4 sm:p-5">
+          <span className="pointer-events-none absolute -right-6 -top-6 size-24 animate-pulse rounded-full bg-warning/20" aria-hidden />
+          <div className="relative flex flex-wrap items-center justify-between gap-4">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-body font-bold text-fg-primary">
+                <span className="flex size-6 animate-pulse items-center justify-center rounded-full bg-warning text-white">
+                  <Play className="size-3" aria-hidden />
+                </span>
+                Остался один шаг: нажмите START
+              </p>
+              <p className="mt-1.5 max-w-lg text-body-sm leading-relaxed text-fg-secondary">
+                Откройте своего бота и отправьте команду <b className="text-fg-primary">/start</b> —
+                мы синхронизируем сценарий и медиа. Mini App останется открытым.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openBotInTelegram}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-[var(--radius-control)] bg-[#229ED9] px-5 text-body-sm font-bold text-white shadow-sm transition-all hover:opacity-90 active:translate-y-px"
+            >
+              Открыть бота и нажать /start
+              <ExternalLink className="size-4" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── 2. Касса: всегда раскрыта, лого платёжек видны сразу ── */}
       <section className="flex flex-col gap-3" aria-label="Касса">
@@ -310,7 +299,18 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
                 <p className="text-meta text-fg-secondary">Webhook адресуется этому боту.</p>
               </div>
             </div>
-            <Button variant="outline" size="sm" onClick={onOpenSettings} className="gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const current = PROVIDERS.find((p) => p.id === bot.paymentProvider)?.id ?? null;
+                setSelectedProvider(current);
+                setKeys({});
+                setCashierError(null);
+                setCashierSaved(false);
+              }}
+              className="gap-1.5"
+            >
               <Settings2 className="size-3.5" data-icon="inline-start" />
               Изменить ключи
             </Button>
@@ -323,7 +323,7 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
           </p>
         )}
 
-        <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${hasCashier ? 'opacity-55' : ''}`}>
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
           {PROVIDERS.map((provider) => {
             const isActiveCashier = hasCashier && bot.paymentProvider === provider.id;
             const isSelected = selectedProvider === provider.id;
@@ -332,44 +332,48 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
                 key={provider.id}
                 type="button"
                 aria-pressed={isSelected}
-                disabled={hasCashier && !isActiveCashier}
                 onClick={() => {
                   setSelectedProvider(isSelected ? null : provider.id);
                   setKeys({});
                   setCashierError(null);
                   setCashierSaved(false);
                 }}
-                className={`flex flex-col rounded-[16px] border p-4 text-left transition-all ${
+                className={`flex flex-col items-center rounded-[16px] border p-3 text-center transition-all sm:p-4 ${
                   isActiveCashier
                     ? 'border-success/60 bg-success-soft/40'
                     : isSelected
                       ? 'border-primary/60 ring-2 ring-ring/20'
                       : 'border-border bg-card hover:border-fg-tertiary/50'
-                }`}
+                } ${hasCashier && !isActiveCashier && !isSelected ? 'opacity-60' : ''}`}
               >
-                <span className="flex items-center justify-between gap-2">
-                  <span className="flex size-12 items-center justify-center rounded-[14px] bg-white shadow-xs dark:bg-white/95">
-                    <img src={provider.logo} alt={provider.name} className="size-8 object-contain" />
-                  </span>
+                <span className="relative flex size-[72px] items-center justify-center rounded-[18px] bg-white shadow-xs dark:bg-white/95 sm:size-[84px]">
+                  <img src={provider.logo} alt={provider.name} className="size-[56px] object-contain sm:size-[64px]" />
                   {isActiveCashier ? (
-                    <span className="flex size-5 items-center justify-center rounded-full bg-success text-white">
+                    <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-success text-white ring-2 ring-[var(--color-surface)]">
                       <Check className="size-3" aria-hidden />
                     </span>
                   ) : isSelected ? (
-                    <span className="flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-[var(--color-surface)]">
                       <Check className="size-3" aria-hidden />
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-3 block text-body font-bold">{provider.name}</span>
-                <span className="mt-1 block text-meta leading-relaxed text-fg-secondary">{provider.desc}</span>
+                <span className="mt-2.5 block text-body font-bold">{provider.name}</span>
+                <span className="mt-0.5 block text-micro leading-snug text-fg-tertiary">
+                  {isActiveCashier ? 'Подключена' : provider.desc.split('.')[0]}
+                </span>
               </button>
             );
           })}
         </div>
 
-        {!hasCashier && activeProvider && (
-          <div className="rounded-[16px] border border-border bg-card p-5">
+        {activeProvider && (
+          <div className="rounded-[16px] border border-border bg-card p-4 sm:p-5">
+            {hasCashier && bot.paymentProvider === activeProvider.id && (
+              <p className="mb-3 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-meta text-warning">
+                Введите ключи заново — сохранённые значения не показываются.
+              </p>
+            )}
             <div className="space-y-4">
               {activeProvider.fields.map((field) => (
                 <div key={field.key} className="space-y-1.5">
@@ -408,7 +412,7 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
                   ) : cashierSaved ? (
                     <Check className="size-4" data-icon="inline-start" aria-hidden />
                   ) : null}
-                  {isSavingCashier ? 'Сохраняем…' : cashierSaved ? 'Подключено' : 'Подключить кассу'}
+                  {isSavingCashier ? 'Сохраняем…' : cashierSaved ? 'Подключено' : hasCashier ? 'Сохранить ключи' : 'Подключить кассу'}
                 </Button>
                 <button
                   type="button"
@@ -418,7 +422,7 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
                   }}
                   className="text-body-sm font-semibold text-fg-tertiary hover:text-fg-secondary"
                 >
-                  Позже
+                  Отмена
                 </button>
               </div>
             </div>
@@ -426,20 +430,57 @@ export function BotIntegrationsScreen({ bot, onOpenSettings }: BotIntegrationsSc
         )}
       </section>
 
-      {/* ── 3. Оферта ── */}
+      {/* ── 3. Оферта: инлайн-поле ссылки, без модала ── */}
       <section className="flex flex-col gap-3" aria-label="Оферта">
-        <AccordionRow
-          icon={<FileText className="size-4" aria-hidden="true" />}
-          title="Оферта"
-          badge={
-            bot.offerUrl
-              ? <StatusBadge tone="success" label="Заполнена" />
-              : <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-medium text-fg-tertiary">Не указана</span>
-          }
-          subtitle="Ссылка на условия — клиент принимает их перед покупкой"
-          open={false}
-          onToggle={() => onOpenSettings()}
-        />
+        <div className="rounded-[16px] border border-border bg-card p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-fg-secondary">
+                <FileText className="size-4" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-body font-bold">Оферта</p>
+                <p className="text-meta text-fg-tertiary">Клиент принимает условия перед покупкой</p>
+              </div>
+            </div>
+            {bot.offerUrl ? (
+              <StatusBadge tone="success" label="Указана" />
+            ) : (
+              <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-medium text-fg-tertiary">Не указана</span>
+            )}
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="url"
+              value={offerUrl}
+              onChange={(event) => { setOfferUrl(event.target.value); setOfferError(null); setOfferSaved(false); }}
+              placeholder="https://example.com/oferta"
+              className="input w-full flex-1"
+              aria-label="Ссылка на оферту"
+            />
+            <Button
+              size="md"
+              disabled={isSavingOffer || offerUrl.trim() === (bot.offerUrl ?? '').trim()}
+              onClick={() => void saveOffer()}
+              className="shrink-0"
+            >
+              {isSavingOffer ? (
+                <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+              ) : offerSaved ? (
+                <Check className="size-4" data-icon="inline-start" aria-hidden />
+              ) : null}
+              {isSavingOffer ? 'Сохраняем…' : offerSaved ? 'Сохранено' : 'Сохранить'}
+            </Button>
+          </div>
+          {offerError && (
+            <p className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-meta text-danger">
+              {offerError}
+            </p>
+          )}
+          <p className="mt-2 text-meta text-fg-tertiary">
+            Ссылка на документ с условиями. Оставьте пустым — согласие спрашиваться не будет.
+          </p>
+        </div>
       </section>
     </div>
   );
