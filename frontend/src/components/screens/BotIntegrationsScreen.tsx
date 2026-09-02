@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BadgeCheck, Check, ExternalLink, FileText, KeyRound, Play, Settings2 } from 'lucide-react';
+import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, Play, Settings2 } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
 import { Button } from '../ui/button';
 import { PageHeader } from '../common/PageHeader';
@@ -73,6 +73,21 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     : '';
 
   const [tokenFormOpen, setTokenFormOpen] = useState(false);
+  const [webhookCopied, setWebhookCopied] = useState(false);
+
+  /** URL webhook для платёжек: даёт бэкенд (WEBHOOK_URL + provider + tg_bot_id). */
+  const paymentWebhookUrl = bot.paymentWebhookUrl ?? '';
+
+  const copyWebhook = async () => {
+    if (!paymentWebhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(paymentWebhookUrl);
+    } catch {
+      // clipboard может быть недоступен в старых WebView — не критично.
+    }
+    setWebhookCopied(true);
+    window.setTimeout(() => setWebhookCopied(false), 2000);
+  };
   const [token, setToken] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [isSavingToken, setIsSavingToken] = useState(false);
@@ -289,31 +304,48 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
       {/* ── 2. Касса: всегда раскрыта, лого платёжек видны сразу ── */}
       <section className="flex flex-col gap-3" aria-label="Касса">
         {hasCashier && (
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[16px] border border-success/40 bg-success-soft/60 px-4 py-3.5 dark:bg-success-soft/40">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success text-white">
-                <BadgeCheck className="size-5" aria-hidden />
-              </span>
-              <div className="min-w-0">
-                <p className="text-body font-bold">Касса подключена: {cashierName}</p>
-                <p className="text-meta text-fg-secondary">Webhook адресуется этому боту.</p>
+          <div className="flex flex-col gap-3 rounded-[16px] border border-success/40 bg-success-soft/60 px-4 py-3.5 dark:bg-success-soft/40">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success text-white">
+                  <BadgeCheck className="size-5" aria-hidden />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-body font-bold">Касса подключена: {cashierName}</p>
+                  <p className="text-meta text-fg-secondary">Укажите этот URL в личном кабинете платёжки — оплата будет приходить боту.</p>
+                </div>
               </div>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const current = PROVIDERS.find((p) => p.id === bot.paymentProvider)?.id ?? null;
-                setSelectedProvider(current);
-                setKeys({});
-                setCashierError(null);
-                setCashierSaved(false);
-              }}
-              className="gap-1.5"
-            >
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const current = PROVIDERS.find((p) => p.id === bot.paymentProvider)?.id ?? null;
+                  setSelectedProvider(current);
+                  setKeys({});
+                  setCashierError(null);
+                  setCashierSaved(false);
+                }}
+                className="gap-1.5"
+              >
               <Settings2 className="size-3.5" data-icon="inline-start" />
               Изменить ключи
             </Button>
+            </div>
+            {paymentWebhookUrl && (
+              <div className="flex items-center gap-2 rounded-[12px] border border-border bg-background/80 px-3 py-2.5">
+                <code className="min-w-0 flex-1 truncate font-mono text-meta text-fg-secondary" title={paymentWebhookUrl}>
+                  {paymentWebhookUrl}
+                </code>
+                <button
+                  type="button"
+                  onClick={copyWebhook}
+                  aria-label="Скопировать webhook URL"
+                  className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {webhookCopied ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
