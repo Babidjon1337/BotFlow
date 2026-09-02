@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { motion } from 'framer-motion';
 import { BOT_VIEWS } from '../../routes';
 import type { AccountTab, AppRoute, BotView } from '../../routes';
 import { cn } from '../../lib/utils';
@@ -97,15 +96,6 @@ export function AppShell({
                     disabled && 'cursor-not-allowed text-fg-tertiary hover:bg-transparent',
                   )}
                 >
-                  {active && (
-                    <motion.span
-                      layoutId="bot-tabs-pill"
-                      className="absolute inset-0 rounded-lg"
-                      style={{ backgroundColor: 'var(--nav-tone-soft)' }}
-                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
-                      aria-hidden
-                    />
-                  )}
                   <span className="relative z-10">
                     {view.label}
                     {disabled && (

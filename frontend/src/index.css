@@ -831,6 +831,30 @@ html.dark .nav-tone-rose { --nav-tone: #f472b6; --nav-tone-soft: rgb(244 114 182
 .tab-item.on {
   background-color: var(--nav-tone-soft);
   color: var(--nav-tone-text);
+  animation: tab-pop 0.18s ease-out;
+}
+@keyframes tab-pop {
+  from { transform: scale(0.94); }
+  to { transform: scale(1); }
+}
+
+/* Нажатие на таб: кнопка слегка увеличивается (не сжимается!) */
+.tab-press {
+  transition: transform 0.15s ease-out, background-color 0.15s ease, color 0.15s ease;
+}
+.tab-press:active {
+  transform: scale(1.06);
+}
+.tab-press:hover {
+  transform: scale(1.02);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-item.on { animation: none; }
+  .tab-press,
+  .tab-press:hover,
+  .tab-press:active {
+    transform: none;
+  }
 }
 
 /* Меню: нажатие слегка увеличивает пункт, а не сжимает */
