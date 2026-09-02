@@ -28,6 +28,7 @@ import type { BroadcastTariffOption } from '../common/BroadcastComposerForm';
 import { PageHeader } from '../common/PageHeader';
 import { BroadcastComposerForm } from '../common/BroadcastComposerForm';
 import { useAlert } from '../AlertProvider';
+import { useAppState } from '../../providers/AppStateProvider';
 import { BroadcastComposerSheet } from '../sheets/BroadcastComposerSheet';
 
 type BroadcastsTab = 'audience' | 'broadcasts';
@@ -124,9 +125,30 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
     };
   }, [bot.id]);
 
-  const handleCreated = () => {
+  const { setToastMessage } = useAppState();
+
+  /** После создания: тост + прокрутка наверх, чтобы scheduled был виден первым. */
+  const notifyCreated = (scheduledAt: string | null) => {
+    document
+      .querySelector('[data-app-scroll-container]')
+      ?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (scheduledAt) {
+      const when = new Date(scheduledAt).toLocaleString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      setToastMessage(`Рассылка запланирована на ${when} — она вверху истории`);
+    } else {
+      setToastMessage('Рассылка создана — отправляем');
+    }
+  };
+
+  const handleCreated = (scheduledAt: string | null) => {
     setComposerOpen(false);
     setTab('broadcasts');
+    notifyCreated(scheduledAt);
   };
 
   return (
@@ -149,7 +171,7 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
             onCompose={() => setComposerOpen(true)}
           />
         ) : (
-          <BroadcastsTabContent botId={bot.id} counts={summary} mediaReady={Boolean(bot.mediaSyncDone)} onCompose={() => setComposerOpen(true)} />
+          <BroadcastsTabContent botId={bot.id} counts={summary} mediaReady={Boolean(bot.mediaSyncDone)} onCompose={() => setComposerOpen(true)} onCreated={notifyCreated} />
         )}
       </div>
 
@@ -552,12 +574,15 @@ function BroadcastsTabContent({
   counts,
   mediaReady,
   onCompose,
+  onCreated,
 }: {
   botId: string;
   counts: AudienceSummary | null;
   mediaReady: boolean;
   /** Открыть шит-композер (нужно пустому состоянию на мобиле). */
   onCompose: () => void;
+  /** После создания: обновить ленту + тост/прокрутка наверх. */
+  onCreated: (scheduledAt: string | null) => void;
 }) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
   const [tariffs, setTariffs] = useState<BroadcastTariffOption[]>([]);
@@ -712,8 +737,8 @@ function BroadcastsTabContent({
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      {/* Конструктор — закреплённая карточка (desktop) */}
-      <aside className="lg:sticky lg:top-4 lg:self-start" aria-label="Создание рассылки">
+      {/* Конструктор — закреплённая карточка (desktop), скроллится внутри себя */}
+      <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto" aria-label="Создание рассылки">
         <div className="rounded-3xl border border-border bg-card p-4 sm:p-5">
           <div className="mb-3 flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-full bg-accent text-accent-foreground">
@@ -728,8 +753,11 @@ function BroadcastsTabContent({
             <BroadcastComposerForm
               botId={botId}
               counts={counts}
-              // После отправки просто обновляем ленту, ничего не открываем.
-              onCreated={() => setReloadKey((k) => k + 1)}
+              // После отправки обновляем ленту и показываем тост с прокруткой наверх.
+              onCreated={(scheduledAt) => {
+                setReloadKey((k) => k + 1);
+                onCreated(scheduledAt);
+              }}
               mediaReady={mediaReady}
               tariffs={tariffs}
               idPrefix="broadcast-inline"

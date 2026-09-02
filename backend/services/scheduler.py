@@ -44,6 +44,7 @@ from services.payment_fulfillment import process_client_payment_fulfillment
 from services.broadcast import run_broadcast_sending
 from database.requests.broadcast_rq import (
     claim_queued_broadcast,
+    prune_broadcast_history,
     requeue_stale_sending_broadcasts,
 )
 
@@ -199,6 +200,13 @@ async def retry_client_payment_fulfillments_job():
 
 
 MAX_BROADCASTS_PER_TICK = 20
+
+
+async def prune_broadcast_history_job():
+    """Оставляем по 15 последних отправленных рассылок на бота, старьё удаляем."""
+    deleted = await prune_broadcast_history(keep_sent=15, stale_days=14)
+    if deleted:
+        logger.info("История рассылок почищена: удалено %s записей", deleted)
 
 
 async def process_broadcasts_job():
@@ -377,6 +385,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="broadcast-queue",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        prune_broadcast_history_job,
+        trigger="interval",
+        hours=6,
+        max_instances=1,
+        coalesce=True,
+        id="broadcast-history-prune",
         replace_existing=True,
     )
     scheduler.start()

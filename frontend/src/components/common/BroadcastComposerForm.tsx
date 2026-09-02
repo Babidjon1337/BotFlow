@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CalendarClock, Check, ImagePlus, Link2, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
+import { DateTimePicker } from './DateTimePicker';
 import { apiService } from '../../services/api';
 import type { BroadcastButton } from '../../services/api';
 import type {
@@ -35,7 +36,8 @@ export type PendingMedia = {
 interface BroadcastComposerFormProps {
   botId: string;
   counts: AudienceSummary | null;
-  onCreated: () => void;
+  /** null — отправлена сразу, ISO-строка — запланирована на это время. */
+  onCreated: (scheduledAt: string | null) => void;
   /** Готов ли бот к медиа (токен + синхронизация выполнены). */
   mediaReady: boolean;
   /** Тарифы воронки для кнопок рассылки: id → {name, price, actionType, actionData}. */
@@ -228,7 +230,7 @@ export function BroadcastComposerForm({
         button: buildButton(),
       });
       pendingFiles.forEach((item) => URL.revokeObjectURL(item.url));
-      onCreated();
+      onCreated(scheduledIso);
     } catch (error) {
       showAlert({
         type: 'danger',
@@ -600,13 +602,10 @@ export function BroadcastComposerForm({
                 </button>
               ))}
             </div>
-            <input
-              type="datetime-local"
+            <DateTimePicker
               value={scheduleAt}
               min={minScheduleValue}
-              onChange={(event) => handleScheduleChange(event.target.value)}
-              aria-label="Дата и время отправки"
-              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-body tabular-nums text-fg-primary outline-none transition-colors focus:border-ring focus:ring-3 focus:ring-ring/30"
+              onChange={handleScheduleChange}
             />
             {scheduleAt && !scheduleError ? (
               <p className="text-micro text-fg-secondary">

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, or_, select, String, update
+from sqlalchemy import and_, delete, func, or_, select, String, update
 
 from database.models import Broadcast, BroadcastRecipient, Lead, MediaAsset, async_session
 from loggers import logger
@@ -451,3 +451,40 @@ async def requeue_failed_recipients(broadcast_id: UUID) -> int:
         )
         await session.commit()
         return requeued
+
+
+async def prune_broadcast_history(keep_sent: int = 15, stale_days: int = 14) -> int:
+    """Держим историю рассылок slim.
+
+    На каждого бота оставляем последние `keep_sent` ОТПРАВЛЕННЫХ рассылок;
+    остальные sent-рассылки и cancelled/failed старше `stale_days` удаляем.
+    Строки получателей снимаются каскадом по FK (ondelete=CASCADE).
+    """
+    now = datetime.now(timezone.utc)
+    rn = (
+        func.row_number()
+        .over(
+            partition_by=Broadcast.bot_id,
+            order_by=Broadcast.created_at.desc(),
+        )
+        .label("rn")
+    )
+    sent_ranked = (
+        select(Broadcast.id, rn).where(Broadcast.status == "sent").subquery()
+    )
+    old_sent = select(sent_ranked.c.id).where(sent_ranked.c.rn > keep_sent)
+    stale_cutoff = now - timedelta(days=stale_days)
+    async with async_session() as session:
+        result = await session.execute(
+            delete(Broadcast).where(
+                or_(
+                    Broadcast.id.in_(old_sent),
+                    and_(
+                        Broadcast.status.in_(("cancelled", "failed")),
+                        Broadcast.created_at < stale_cutoff,
+                    ),
+                )
+            )
+        )
+        await session.commit()
+        return result.rowcount

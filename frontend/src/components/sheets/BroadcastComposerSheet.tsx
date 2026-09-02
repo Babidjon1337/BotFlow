@@ -12,7 +12,7 @@ interface BroadcastComposerSheetProps {
   /** Тарифы воронки для кнопок под сообщением. */
   tariffs?: BroadcastTariffOption[];
   onClose: () => void;
-  onCreated: () => void;
+  onCreated: (scheduledAt: string | null) => void;
 }
 
 /** Bottom-sheet обёртка формы создания рассылки (mobile-first). */

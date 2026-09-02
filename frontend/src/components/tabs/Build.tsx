@@ -274,9 +274,9 @@ export const RichTextEditor = ({
                     onMouseDown={keepEditorSelection}
                     onClick={onRemoveMedia}
                     aria-label="Убрать медиа"
-                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--color-danger-soft)] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+                    className="absolute right-0.5 top-0.5 flex size-4.5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
                   >
-                    <X className="size-3" aria-hidden />
+                    <X className="size-2.5" aria-hidden />
                   </button>
                 </motion.li>
               ))}
@@ -303,9 +303,9 @@ export const RichTextEditor = ({
                     onMouseDown={keepEditorSelection}
                     onClick={onRemoveMedia}
                     aria-label="Убрать медиа"
-                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--color-danger-soft)] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+                    className="absolute right-0.5 top-0.5 flex size-4.5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
                   >
-                    <X className="size-3" aria-hidden />
+                    <X className="size-2.5" aria-hidden />
                   </button>
                 </motion.li>
               )}

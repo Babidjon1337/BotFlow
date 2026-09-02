@@ -150,7 +150,11 @@ export const BotManagement = () => {
                 </span>
               </div>
             </div>
-            <Button onClick={onCreateBot} size="md" className="shrink-0">
+            <Button
+              onClick={onCreateBot}
+              size="md"
+              className="shrink-0 bg-ink text-ink hover:bg-ink/90"
+            >
               <Plus data-icon="inline-start" aria-hidden />
               Создать бота
             </Button>
