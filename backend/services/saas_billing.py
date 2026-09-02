@@ -1,4 +1,4 @@
-"""YooKassa billing for BotFlow licenses and PRO subscriptions."""
+"""YooKassa billing for BotFlow bot subscriptions (990 ₽/мес + доплаты)."""
 
 import json
 import uuid
@@ -8,8 +8,7 @@ from typing import Any
 import httpx
 
 from config import (
-    SAAS_LICENSE_PRICE_RUB,
-    SAAS_PRO_PRICE_RUB,
+    SAAS_BOT_BASE_PRICE_RUB,
     SAAS_YOOKASSA_SECRET_KEY,
     SAAS_YOOKASSA_SHOP_ID,
     SAAS_YOOKASSA_VAT_CODE,
@@ -19,6 +18,7 @@ from database.requests.billing_rq import (
     apply_successful_saas_payment,
     create_saas_payment,
     defer_subscription_retry,
+    get_last_paid_amount,
     mark_saas_payment_failed,
     mark_saas_payment_failed_by_id,
     SaasPaymentInvariantError,
@@ -36,9 +36,12 @@ class BillingProviderUnavailable(RuntimeError):
 
 
 PRODUCTS = {
-    "license": ("license", SAAS_LICENSE_PRICE_RUB, "Лицензия на Telegram-бота"),
-    "basic": ("license", SAAS_LICENSE_PRICE_RUB, "Лицензия на Telegram-бота"),
-    "pro": ("pro_initial", SAAS_PRO_PRICE_RUB, "PRO-подписка BotFlow"),
+    # Единственный продукт: подписка бота. Базовая цена — 990 ₽/мес,
+    # итоговая сумма может быть выше за счёт доплат за функционал (bot_pricing).
+    "pro": ("pro_initial", SAAS_BOT_BASE_PRICE_RUB, "Подписка бота BotFlow"),
+    # Совместимость со старыми клиентами Mini App: те же 990 ₽/мес.
+    "basic": ("pro_initial", SAAS_BOT_BASE_PRICE_RUB, "Подписка бота BotFlow"),
+    "subscription": ("pro_initial", SAAS_BOT_BASE_PRICE_RUB, "Подписка бота BotFlow"),
 }
 
 
@@ -53,11 +56,17 @@ async def create_checkout(
     product_key: str,
     *,
     receipt_email: str | None = None,
+    amount_rub: int | None = None,
 ) -> dict[str, str]:
+    """Создаёт платёж подписки. amount_rub задаёт итог с доплатами за функционал."""
     try:
-        product, amount, description = PRODUCTS[product_key]
+        product, base_amount, description = PRODUCTS[product_key]
     except KeyError as exc:
         raise BillingError("Unknown billing product") from exc
+
+    amount = int(amount_rub) if amount_rub else base_amount
+    if amount < SAAS_BOT_BASE_PRICE_RUB:
+        raise BillingError("Сумма подписки меньше базовой цены")
 
     payment = await create_saas_payment(user_id, product, amount)
     payload: dict[str, Any] = {
@@ -176,23 +185,28 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
         raise BillingError("Verified payment does not match the local order") from exc
 
 
-async def create_recurring_payment(user):
-    """Create one server-side PRO renewal; fulfillment remains webhook-driven."""
+async def create_recurring_payment(user, amount_rub: int | None = None):
+    """Одно серверное продление подписки; выдача остаётся webhook-driven.
+
+    Сумма продления берётся из последнего успешного платежа пользователя,
+    поэтому доплаты за функционал сохраняются при автосписании.
+    """
     if not user.subscription_payment_method_enc:
         raise BillingError("Saved payment method is missing")
     shop_id, secret_key = _credentials()
+    amount = int(amount_rub) if amount_rub else await get_last_paid_amount(user.id)
     payment = await create_saas_payment(
         user.id,
         "pro_renewal",
-        SAAS_PRO_PRICE_RUB,
+        amount,
         attempt=user.subscription_retry_count + 1,
     )
     method_id = crypto.decrypt(user.subscription_payment_method_enc)
     payload = {
-        "amount": {"value": f"{SAAS_PRO_PRICE_RUB:.2f}", "currency": "RUB"},
+        "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
         "payment_method_id": method_id,
-        "description": "Продление PRO-подписки BotFlow",
+        "description": "Продление подписки бота BotFlow",
         "metadata": {"saas_payment_id": str(payment.id), "user_id": str(user.id), "product": "pro_renewal"},
     }
     try:

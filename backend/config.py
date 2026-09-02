@@ -54,8 +54,10 @@ SAAS_YOOKASSA_SECRET_KEY = os.getenv("SAAS_YOOKASSA_SECRET_KEY")
 # BotFlow sells a digital SaaS service. The default is "без НДС"; change it
 # only when the seller's tax regime requires another fiscal rate.
 SAAS_YOOKASSA_VAT_CODE = int(os.getenv("SAAS_YOOKASSA_VAT_CODE", "1"))
-SAAS_LICENSE_PRICE_RUB = int(os.getenv("SAAS_LICENSE_PRICE_RUB", "2000"))
-SAAS_PRO_PRICE_RUB = int(os.getenv("SAAS_PRO_PRICE_RUB", "3000"))
+# Подписка бота: базовый сценарий «Воронка продаж» + Telegram = 990 ₽/мес.
+# Доплаты за дополнительный функционал считает bot_pricing (PricingCatalog),
+# итог приходит в чекаут как amount — фиксированных «тарифов» больше нет.
+SAAS_BOT_BASE_PRICE_RUB = int(os.getenv("SAAS_BOT_BASE_PRICE_RUB", "990"))
 
 # Administrative access is always decided by the API.  Keep this value in the
 # environment, never in the Mini App bundle.

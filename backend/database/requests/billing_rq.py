@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
+from config import SAAS_BOT_BASE_PRICE_RUB
 from database.models import SaasPayment, User, async_session
 
 
@@ -35,6 +36,22 @@ def _validate_and_bind_provider_payment(
     if payment.yookassa_payment_id not in {None, provider_payment_id}:
         raise SaasPaymentInvariantError("Provider payment ID conflicts with the local order")
     payment.yookassa_payment_id = provider_payment_id
+
+
+async def get_last_paid_amount(user_id: int) -> int:
+    """Сумма последнего успешного платежа подписки (для автосписания с доплатами)."""
+    async with async_session() as session:
+        amount = await session.scalar(
+            select(SaasPayment.amount)
+            .where(
+                SaasPayment.user_id == user_id,
+                SaasPayment.status == "succeeded",
+                SaasPayment.product.in_(("pro_initial", "pro_renewal")),
+            )
+            .order_by(SaasPayment.paid_at.desc().nullslast())
+            .limit(1)
+        )
+        return int(amount) if amount else SAAS_BOT_BASE_PRICE_RUB
 
 
 async def create_saas_payment(

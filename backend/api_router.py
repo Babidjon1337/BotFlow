@@ -93,7 +93,12 @@ from services.entitlements import available_lifetime_licenses, is_pro_active
 from services.funnel_readiness import evaluate_funnel_readiness
 from services.bot_lifecycle import BotLifecycleService
 from services.bot_entitlement import BotEntitlementService
-from services.bot_pricing import BASE_SCENARIO_TYPE, BotPricingService
+from services.bot_pricing import (
+    BASE_SCENARIO_TYPE,
+    BotPricingService,
+    UnsupportedPlatformError,
+    UnsupportedScenarioError,
+)
 from services.payment_link import validate_payment_credentials
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.chat_access import ChatAccessError, verify_chat_delivery
@@ -752,11 +757,21 @@ async def create_billing_checkout(request: Request, body: BillingCheckoutRequest
             email_billing_notifications_enabled=user.email_billing_notifications_enabled,
         ) or user
     try:
+        # Итог берём из серверного квоута бота: база 990 ₽ + доплаты за функционал.
+        quote_total_rub: int | None = None
+        if body.bot_id:
+            bot = await get_owned_bot(int(body.bot_id), request)
+            scenario_type = getattr(bot, "scenario_type", None) or BASE_SCENARIO_TYPE
+            quote = bot_pricing_service.quote(scenario_type, {"telegram"})
+            quote_total_rub = quote.total_minor // 100
         checkout = await create_checkout(
             user.id,
             body.product,
             receipt_email=checkout_email if user.email_receipts_enabled else None,
+            amount_rub=quote_total_rub,
         )
+    except (UnsupportedScenarioError, UnsupportedPlatformError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return checkout
@@ -783,8 +798,12 @@ async def billing_catalog(request: Request):
     await get_current_user(request)
     return {
         "products": [
-            {"id": "basic", "name": "Лицензия на бота", "price": PRODUCTS["basic"][1], "period": "lifetime"},
-            {"id": "pro", "name": "PRO-подписка", "price": PRODUCTS["pro"][1], "period": "month"},
+            {
+                "id": "pro",
+                "name": "Подписка бота",
+                "price": PRODUCTS["pro"][1],
+                "period": "month",
+            },
         ]
     }
 

@@ -20,7 +20,10 @@ from loggers import logger
 from keyboard.user_kb import *
 from services.funnel_message import send_funnel_node_message
 from services.manager_link import build_manager_deep_link
-from database.requests.billing_rq import get_users_due_for_subscription_renewal
+from database.requests.billing_rq import (
+    get_last_paid_amount,
+    get_users_due_for_subscription_renewal,
+)
 from services.billing_notifications import notify_billing_user
 from services.saas_billing import BillingError, create_recurring_payment
 from database.requests.bot_rq import (
@@ -77,28 +80,30 @@ async def check_reminders_job():
 
 
 async def renew_pro_subscriptions_job():
-    """Attempt due automatic PRO renewals; each attempt is idempotent in YooKassa."""
+    """Автопродление подписок; каждая попытка идемпотентна в YooKassa."""
     users = await get_users_due_for_subscription_renewal()
     for user in users:
         try:
-            was_applied, renewed_user = await create_recurring_payment(user)
+            amount = await get_last_paid_amount(user.id)
+            was_applied, renewed_user = await create_recurring_payment(user, amount)
             if was_applied and renewed_user:
                 await notify_billing_user(
                     renewed_user.telegram_id,
-                    "✅ С карты списано <b>3 000 ₽</b>. PRO-подписка продлена на 30 дней.",
+                    f"✅ С карты списано <b>{amount:,} ₽</b>".replace(",", " ")
+                    + ". Подписка продлена на 30 дней.",
                 )
         except BillingError as exc:
-            logger.warning("Не удалось запустить продление PRO для %s: %s", user.id, exc)
+            logger.warning("Не удалось запустить продление подписки для %s: %s", user.id, exc)
             if user.subscription_retry_count >= 2:
                 await enforce_non_pro_bot_limits(user.id)
                 await notify_billing_user(
                     user.telegram_id,
-                    "❌ Не удалось продлить PRO после трёх попыток. Подписка завершена; доступны только ваши лицензированные боты.",
+                    "❌ Не удалось продлить подписку после трёх попыток. Боты остановлены; настройки и клиенты сохранены — оплатите, и публикация вернётся.",
                 )
             else:
                 await notify_billing_user(
                     user.telegram_id,
-                    "⚠️ Не удалось автоматически продлить <b>PRO</b>. Мы повторим попытку завтра.",
+                    "⚠️ Не удалось автоматически продлить <b>подписку</b>. Мы повторим попытку завтра.",
                 )
 
 

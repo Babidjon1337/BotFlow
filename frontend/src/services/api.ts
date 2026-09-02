@@ -699,12 +699,16 @@ export const apiService = {
     });
   },
 
-  async createBillingCheckout(product: "basic" | "pro", email?: string) {
+  async createBillingCheckout(
+    product: "basic" | "pro",
+    email?: string,
+    botId?: string | number
+  ) {
     return fetchApi<{ paymentId: string; confirmationUrl: string }>(
       "/api/billing/checkout",
       {
         method: "POST",
-        body: JSON.stringify({ product, email }),
+        body: JSON.stringify({ product, email, botId }),
       }
     );
   },

@@ -40,6 +40,10 @@ class AuthRequest(BaseModel):
 class BillingCheckoutRequest(BaseModel):
     product: str
     email: Optional[str] = None
+    # Бот, за которого платим: итог считает серверный квоут (990 ₽ + доплаты).
+    bot_id: Optional[int] = Field(None, alias="botId")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class NotificationSettingsRequest(BaseModel):
