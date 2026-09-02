@@ -95,9 +95,14 @@ export function DateTimePicker({
     onChange(toInputValue(next));
   };
 
-  const pickTime = (hour: number, minute: number) => {
+  const pickHour = (hour: number) => {
     const base = selected ?? new Date();
-    onChange(toInputValue(new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, minute)));
+    onChange(toInputValue(new Date(base.getFullYear(), base.getMonth(), base.getDate(), hour, base.getMinutes())));
+  };
+
+  const pickMinute = (minute: number) => {
+    const base = selected ?? new Date();
+    onChange(toInputValue(new Date(base.getFullYear(), base.getMonth(), base.getDate(), base.getHours(), minute)));
     setOpen(false);
   };
 
@@ -128,14 +133,14 @@ export function DateTimePicker({
         <ChevronRight className={`ml-auto size-4 shrink-0 text-fg-tertiary transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden />
       </button>
 
-      <AnimatePresence>
+      <AnimatePresence initial={false}>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 6, scale: 0.97 }}
-            transition={{ duration: 0.15, ease: 'easeOut' }}
-            className="absolute left-0 right-0 z-50 mt-2 rounded-2xl border border-border bg-card p-3 shadow-xl"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="mt-2 overflow-hidden rounded-2xl border border-border bg-card p-3 shadow-lg"
             role="dialog"
             aria-label="Выбор даты и времени"
           >
@@ -186,40 +191,44 @@ export function DateTimePicker({
               )}
             </div>
 
-            <div className="mt-2 border-t border-border pt-2">
-              <p className="text-micro font-semibold uppercase tracking-wide text-fg-tertiary">Час</p>
-              <div className="mt-1.5 flex gap-1 overflow-x-auto pb-1">
-                {HOURS.map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => pickTime(h, selected?.getMinutes() ?? 0)}
-                    className={`size-9 shrink-0 rounded-lg text-body-sm font-semibold tabular-nums transition-colors ${
-                      selected?.getHours() === h
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-fg-secondary hover:bg-muted'
-                    }`}
-                  >
-                    {pad(h)}
-                  </button>
-                ))}
+            <div className="mt-2 grid grid-cols-2 gap-3 border-t border-border pt-2">
+              <div>
+                <p className="text-micro font-semibold uppercase tracking-wide text-fg-tertiary">Час</p>
+                <div className="mt-1.5 grid grid-cols-4 gap-1">
+                  {HOURS.map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => pickHour(h)}
+                      className={`h-8 rounded-lg text-body-sm font-semibold tabular-nums transition-colors ${
+                        selected?.getHours() === h
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-fg-secondary hover:bg-muted'
+                      }`}
+                    >
+                      {pad(h)}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <p className="mt-2 text-micro font-semibold uppercase tracking-wide text-fg-tertiary">Минута</p>
-              <div className="mt-1.5 flex gap-1 overflow-x-auto pb-1">
-                {MINUTES.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => pickTime(selected?.getHours() ?? 9, m)}
-                    className={`size-9 shrink-0 rounded-lg text-body-sm font-semibold tabular-nums transition-colors ${
-                      selected?.getMinutes() === m
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-fg-secondary hover:bg-muted'
-                    }`}
-                  >
-                    {pad(m)}
-                  </button>
-                ))}
+              <div>
+                <p className="text-micro font-semibold uppercase tracking-wide text-fg-tertiary">Минута</p>
+                <div className="mt-1.5 grid grid-cols-3 gap-1">
+                  {MINUTES.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => pickMinute(m)}
+                      className={`h-8 rounded-lg text-body-sm font-semibold tabular-nums transition-colors ${
+                        selected?.getMinutes() === m
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-fg-secondary hover:bg-muted'
+                      }`}
+                    >
+                      {pad(m)}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </motion.div>

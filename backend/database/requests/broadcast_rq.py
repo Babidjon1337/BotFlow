@@ -235,15 +235,15 @@ async def get_broadcast(broadcast_id: UUID) -> Optional[Broadcast]:
 async def claim_queued_broadcast() -> Optional[Broadcast]:
     """Атомарно забирает одну созревшую рассылку (PostgreSQL SKIP LOCKED).
 
-    Отложенные (scheduled) не берутся, пока не наступит scheduled_at;
-    порядок — по дате отправки, затем по времени создания.
+    Берёт и обычные (queued), и отложенные (scheduled), у которых наступил
+    scheduled_at; порядок — по дате отправки, затем по времени создания.
     """
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         subquery = (
             select(Broadcast.id)
             .where(
-                Broadcast.status == "queued",
+                Broadcast.status.in_(("queued", "scheduled")),
                 or_(
                     Broadcast.scheduled_at.is_(None),
                     Broadcast.scheduled_at <= now,

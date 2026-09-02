@@ -286,7 +286,7 @@ def test_claim_query_locks_one_queued_broadcast_with_skip_locked():
 
     subquery = (
         select(Broadcast.id)
-        .where(Broadcast.status == "queued")
+        .where(Broadcast.status.in_(("queued", "scheduled")))
         .order_by(Broadcast.created_at.asc())
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -451,14 +451,14 @@ def test_create_endpoint_maps_bad_schedule_to_400(monkeypatch):
 
 
 def test_claim_query_ignores_unmatured_scheduled_broadcasts():
-    """Claim берёт только queued без даты или с наступившей датой."""
+    """Claim берёт queued и созревшие scheduled, но не будущие scheduled."""
     from sqlalchemy import func, or_, select, update
 
     now = datetime.now(timezone.utc)
     subquery = (
         select(Broadcast.id)
         .where(
-            Broadcast.status == "queued",
+            Broadcast.status.in_(("queued", "scheduled")),
             or_(
                 Broadcast.scheduled_at.is_(None),
                 Broadcast.scheduled_at <= now,
@@ -467,10 +467,17 @@ def test_claim_query_ignores_unmatured_scheduled_broadcasts():
         .order_by(func.coalesce(Broadcast.scheduled_at, Broadcast.created_at).asc())
         .limit(1)
     )
-    sql = str(subquery.compile(dialect=postgresql.dialect())).upper()
+    sql = str(
+        subquery.compile(
+            dialect=postgresql.dialect(),
+            compile_kwargs={"literal_binds": True},
+        )
+    ).upper()
 
     assert "SCHEDULED_AT" in sql
     assert "COALESCE" in sql
+    # Обе зрелые категории должны попадать в выборку.
+    assert "'QUEUED'" in sql and "'SCHEDULED'" in sql
 
 
 def test_cancel_endpoint_marks_queued_broadcast_cancelled(monkeypatch):
