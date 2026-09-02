@@ -666,7 +666,34 @@ async def get_admin_system_endpoint(request: Request):
     return get_scheduler_health()
 
 
-# ── Спец-ссылки доступа (бесплатный период / бессрочный доступ) ──
+# ── Спец-ссылки доступа (период / бессрочно / один бот бесплатно) ──
+
+def _access_link_payload(link) -> dict:
+    return {
+        "id": str(link.id),
+        "token": link.token,
+        "note": link.note,
+        "kind": link.kind,
+        "days": link.days,
+        "expiresAt": link.expires_at.isoformat() if link.expires_at else None,
+        "maxActivations": link.max_activations,
+        "activationsCount": link.activations_count,
+        "validUntil": link.valid_until.isoformat() if link.valid_until else None,
+        "isActive": link.is_active,
+        "activatedBy": link.activated_by,
+        "activatedAt": link.activated_at.isoformat() if link.activated_at else None,
+        "createdAt": link.created_at.isoformat(),
+    }
+
+
+def _parse_iso_datetime(raw, field: str):
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Некорректная дата: {field}") from exc
+
 
 @api_router.get("/api/admin/access-links")
 async def list_access_links_endpoint(request: Request):
@@ -674,23 +701,7 @@ async def list_access_links_endpoint(request: Request):
     from database.requests.access_link_rq import list_access_links
 
     links = await list_access_links()
-    return {
-        "links": [
-            {
-                "id": str(link.id),
-                "token": link.token,
-                "note": link.note,
-                "kind": link.kind,
-                "days": link.days,
-                "expiresAt": link.expires_at.isoformat() if link.expires_at else None,
-                "isActive": link.is_active,
-                "activatedBy": link.activated_by,
-                "activatedAt": link.activated_at.isoformat() if link.activated_at else None,
-                "createdAt": link.created_at.isoformat(),
-            }
-            for link in links
-        ]
-    }
+    return {"links": [_access_link_payload(link) for link in links]}
 
 
 @api_router.post("/api/admin/access-links")
@@ -700,34 +711,19 @@ async def create_access_link_endpoint(request: Request, body: dict):
 
     kind = str(body.get("kind") or "period")
     days = body.get("days")
-    expires_raw = body.get("expiresAt")
-    expires_at = None
-    if expires_raw:
-        try:
-            expires_at = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Некорректная дата окончания") from exc
+    max_activations = body.get("maxActivations") or 1
     try:
         link = await create_access_link(
             kind=kind,
             days=int(days) if days else None,
-            expires_at=expires_at,
+            expires_at=_parse_iso_datetime(body.get("expiresAt"), "окончание доступа"),
             note=str(body.get("note") or "") or None,
+            max_activations=int(max_activations),
+            valid_until=_parse_iso_datetime(body.get("validUntil"), "срок жизни ссылки"),
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {
-        "id": str(link.id),
-        "token": link.token,
-        "note": link.note,
-        "kind": link.kind,
-        "days": link.days,
-        "expiresAt": link.expires_at.isoformat() if link.expires_at else None,
-        "isActive": link.is_active,
-        "activatedBy": link.activated_by,
-        "activatedAt": link.activated_at.isoformat() if link.activated_at else None,
-        "createdAt": link.created_at.isoformat(),
-    }
+    return _access_link_payload(link)
 
 
 @api_router.post("/api/admin/access-links/{link_id}/deactivate")

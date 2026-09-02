@@ -188,9 +188,12 @@ export interface AccessLink {
   id: string;
   token: string;
   note: string | null;
-  kind: "period" | "permanent";
+  kind: "period" | "permanent" | "one_bot";
   days: number | null;
   expiresAt: string | null;
+  maxActivations: number;
+  activationsCount: number;
+  validUntil: string | null;
   isActive: boolean;
   activatedBy: number | null;
   activatedAt: string | null;
@@ -389,10 +392,12 @@ export const apiService = {
   },
 
   async createAccessLink(body: {
-    kind: "period" | "permanent";
+    kind: "period" | "permanent" | "one_bot";
     days?: number;
     expiresAt?: string;
     note?: string;
+    maxActivations?: number;
+    validUntil?: string;
   }) {
     return fetchApi<AccessLink>("/api/admin/access-links", {
       method: "POST",

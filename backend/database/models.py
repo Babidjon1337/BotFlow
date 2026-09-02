@@ -486,8 +486,10 @@ class AccessLink(Base):
     """Спец-ссылка админа: /start gl_<token> у главного бота даёт доступ.
 
     kind="period" — подписка аккаунта до expires_at (или +days от активации),
-    kind="permanent" — бессрочный доступ (бесплатная публикация всех ботов).
-    Одноразовые ссылки помечаются activated_at при первом применении.
+    kind="permanent" — бессрочный доступ (бесплатная публикация всех ботов),
+    kind="one_bot" — один бот навсегда бесплатно (лицензия на первого бота).
+    max_activations — сколько людей может активировать (1 = одноразовая),
+    valid_until — до какого момента ссылка живёт (после — не активируется).
     """
 
     __tablename__ = "access_links"
@@ -498,16 +500,40 @@ class AccessLink(Base):
     token: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     note: Mapped[Optional[str]] = mapped_column(String(255))
 
-    # period | permanent
+    # period | permanent | one_bot
     kind: Mapped[str] = mapped_column(String(16), default="period")
     # Для period: сколько дней даём (от активации). None = до expires_at.
     days: Mapped[Optional[int]] = mapped_column(Integer)
-    # Фиксированная дата окончания (если задана, days игнорируется).
+    # Фиксированная дата окончания доступа (если задана, days игнорируется).
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Сколько человек может активировать ссылку и сколько уже активировали.
+    max_activations: Mapped[int] = mapped_column(Integer, default=1)
+    activations_count: Mapped[int] = mapped_column(Integer, default=0)
+    # До какого момента ссылку можно активировать (жизнь самой ссылки).
+    valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     activated_by: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
     activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AccessLinkActivation(Base):
+    """Кто активировал спец-ссылку (защита от повторной активации одним и тем же)."""
+
+    __tablename__ = "access_link_activations"
+    __table_args__ = (
+        UniqueConstraint("link_id", "telegram_id", name="uq_access_link_activation"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    link_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("access_links.id", ondelete="CASCADE"), index=True
+    )
+    telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

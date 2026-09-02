@@ -1,4 +1,13 @@
-"""Admin special access links: create / list / deactivate / redeem."""
+"""Admin special access links: create / list / deactivate / redeem.
+
+Виды доступа:
+  period    — подписка аккаунта на срок (days от активации или до expires_at),
+  permanent — бессрочная подписка (публикация всех ботов бесплатна),
+  one_bot   — один бот навсегда бесплатно (лицензия ставится первому боту).
+
+Ссылку можно выдать нескольким людям: max_activations задаёт лимит,
+valid_until — до какого момента ссылка вообще активируется.
+"""
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -6,10 +15,17 @@ from typing import Optional
 
 from sqlalchemy import select, update
 
-from database.models import AccessLink, User, async_session
+from database.models import (
+    AccessLink,
+    AccessLinkActivation,
+    BotConfig,
+    User,
+    async_session,
+)
 from loggers import logger
 
 TOKEN_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+LINK_KINDS = ("period", "permanent", "one_bot")
 
 
 def _generate_token() -> str:
@@ -17,12 +33,20 @@ def _generate_token() -> str:
 
 
 async def create_access_link(
-    *, kind: str, days: Optional[int], expires_at: Optional[datetime], note: Optional[str]
+    *,
+    kind: str,
+    days: Optional[int],
+    expires_at: Optional[datetime],
+    note: Optional[str],
+    max_activations: int = 1,
+    valid_until: Optional[datetime] = None,
 ) -> AccessLink:
-    if kind not in ("period", "permanent"):
+    if kind not in LINK_KINDS:
         raise ValueError("Неизвестный тип ссылки")
     if kind == "period" and days is None and expires_at is None:
         raise ValueError("Укажите срок доступа")
+    if max_activations < 1 or max_activations > 10_000:
+        raise ValueError("Количество активаций — от 1 до 10 000")
     async with async_session() as session:
         link = AccessLink(
             token=_generate_token(),
@@ -30,6 +54,8 @@ async def create_access_link(
             kind=kind,
             days=days if kind == "period" else None,
             expires_at=expires_at if kind == "period" else None,
+            max_activations=max_activations,
+            valid_until=valid_until,
         )
         session.add(link)
         await session.commit()
@@ -71,24 +97,35 @@ def _effective_expires_at(link: AccessLink) -> Optional[datetime]:
 async def redeem_access_link(token: str, telegram_id: int) -> tuple[bool, str]:
     """Применяет спец-ссылку при /start gl_<token> у главного бота.
 
-    Активирует доступ: расширяет подписку аккаунта или делает её бессрочной.
-    Одноразовая ссылка деактивируется после первого применения.
-    Возвращает (успех, текст для пользователя).
+    Возвращает (успех, текст для пользователя). Повторная активация одним
+    и тем же человеком не расходует лимит и не выдаёт доступ дважды.
     """
     token = (token or "").strip()
     async with async_session() as session:
         link = await session.scalar(select(AccessLink).where(AccessLink.token == token))
         if link is None or not link.is_active:
-            return False, "Ссылка недействительна или уже использована."
+            return False, "Ссылка недействительна или уже закрыта."
 
-        if link.activated_by is not None and link.activated_by != telegram_id:
-            return False, "Эта ссылка уже активирована другим пользователем."
+        now = datetime.now(timezone.utc)
+        if link.valid_until is not None and link.valid_until <= now:
+            return False, "Срок действия ссылки истёк."
+
+        already = await session.scalar(
+            select(AccessLinkActivation).where(
+                AccessLinkActivation.link_id == link.id,
+                AccessLinkActivation.telegram_id == telegram_id,
+            )
+        )
+        if already is not None:
+            return False, "Вы уже активировали эту ссылку."
+
+        if link.activations_count >= link.max_activations:
+            return False, "Лимит активаций этой ссылки исчерпан."
 
         user = await session.scalar(select(User).where(User.telegram_id == telegram_id))
         if user is None:
             return False, "Сначала откройте BotFlow Mini App, затем отправьте ссылку снова."
 
-        now = datetime.now(timezone.utc)
         if link.kind == "permanent":
             user.subscription_ends_at = None
             user.subscription_auto_renew = False
@@ -96,6 +133,27 @@ async def redeem_access_link(token: str, telegram_id: int) -> tuple[bool, str]:
                 "🎉 <b>Бессрочный доступ к BotFlow активирован!</b>\n\n"
                 "Публикация ваших ботов — бесплатна."
             )
+        elif link.kind == "one_bot":
+            user.lifetime_slots = (user.lifetime_slots or 0) + 1
+            # Если бот уже есть — сразу привязываем бесплатную лицензию к нему.
+            first_bot = await session.scalar(
+                select(BotConfig)
+                .where(BotConfig.owner_id == user.id, BotConfig.has_lifetime_license.is_(False))
+                .order_by(BotConfig.id)
+                .limit(1)
+            )
+            if first_bot is not None:
+                first_bot.has_lifetime_license = True
+                message = (
+                    "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
+                    f"Лицензия применена к боту «{first_bot.display_name}». "
+                    "Его публикация не требует подписки."
+                )
+            else:
+                message = (
+                    "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
+                    "Создайте бота в BotFlow — лицензия применится к нему автоматически."
+                )
         else:
             expires_at = _effective_expires_at(link)
             if expires_at is None:
@@ -110,9 +168,18 @@ async def redeem_access_link(token: str, telegram_id: int) -> tuple[bool, str]:
                 "Публикация ботов в этот период — бесплатна."
             )
 
+        session.add(AccessLinkActivation(link_id=link.id, telegram_id=telegram_id))
+        link.activations_count += 1
         link.activated_by = telegram_id
         link.activated_at = now
-        link.is_active = False
+        if link.activations_count >= link.max_activations:
+            link.is_active = False
         await session.commit()
-        logger.info("Access link %s redeemed by %s", link.token, telegram_id)
+        logger.info(
+            "Access link %s redeemed by %s (%s/%s)",
+            link.token,
+            telegram_id,
+            link.activations_count,
+            link.max_activations,
+        )
         return True, message

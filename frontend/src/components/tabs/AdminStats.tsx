@@ -507,18 +507,31 @@ function OperationsSection({ operations, loading, onRetryOperation, retryingOper
 function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]; loading: boolean; onChanged: () => void }) {
   const { setToastMessage, setToastType } = useAppState();
   const { showConfirm } = useAlert();
-  const [kind, setKind] = useState<"period" | "permanent">("period");
+  const [kind, setKind] = useState<"one_bot" | "period" | "permanent">("one_bot");
   const [days, setDays] = useState("30");
+  const [people, setPeople] = useState("1");
+  const [linkDays, setLinkDays] = useState("7");
   const [note, setNote] = useState("");
   const [creating, setCreating] = useState(false);
   const [lastLink, setLastLink] = useState<AccessLink | null>(null);
+
+  const botUsername = import.meta.env.VITE_MAIN_BOT_USERNAME ?? "botflow_bot";
+  const linkUrl = (token: string) => `https://t.me/${botUsername}?start=gl_${token}`;
 
   const create = async () => {
     if (creating) return;
     setCreating(true);
     try {
-      const body: Parameters<typeof apiService.createAccessLink>[0] =
-        kind === "permanent" ? { kind, note } : { kind, days: Number(days) || undefined, note };
+      const validDays = Number(linkDays);
+      const body: Parameters<typeof apiService.createAccessLink>[0] = {
+        kind,
+        note,
+        maxActivations: Math.max(1, Number(people) || 1),
+        ...(validDays > 0
+          ? { validUntil: new Date(Date.now() + validDays * 86_400_000).toISOString() }
+          : {}),
+        ...(kind === "period" ? { days: Number(days) || undefined } : {}),
+      };
       const created = await apiService.createAccessLink(body);
       setLastLink(created);
       setNote("");
@@ -534,80 +547,122 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
   };
 
   const copyLink = async (token: string) => {
-    const url = `https://t.me/${import.meta.env.VITE_MAIN_BOT_USERNAME ?? "botflow_bot"}?start=gl_${token}`;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(linkUrl(token));
       setToastType("success");
       setToastMessage("Ссылка скопирована");
     } catch {
       setToastType("error");
-      setToastMessage("Не удалось скопировать — выделите ссылку вручную: " + url);
+      setToastMessage("Не удалось скопировать — скопируйте вручную: " + linkUrl(token));
     }
   };
 
   const deactivate = (link: AccessLink) => {
     showConfirm({
-      title: "Деактивировать ссылку?",
-      message: "Она больше не даст доступ. Активированный доступ не отзывается.",
+      title: "Закрыть ссылку?",
+      message: "Она больше не будет активироваться. Уже выданный доступ сохранится.",
       type: "warning",
-      confirmText: "Деактивировать",
+      confirmText: "Закрыть ссылку",
       cancelText: "Отмена",
       onConfirm: () => {
         void apiService
           .deactivateAccessLink(link.id)
           .then(() => {
             setToastType("success");
-            setToastMessage("Ссылка деактивирована");
+            setToastMessage("Ссылка закрыта");
             onChanged();
           })
           .catch((error) => {
             setToastType("error");
-            setToastMessage(error instanceof Error ? error.message : "Не удалось деактивировать.");
+            setToastMessage(error instanceof Error ? error.message : "Не удалось закрыть ссылку.");
           });
       },
     });
   };
 
-  const linkLabel = (link: AccessLink) =>
-    link.kind === "permanent"
-      ? "Бессрочный доступ"
-      : link.days
-        ? `${link.days} дн. бесплатно`
-        : "Бесплатно до срока";
+  const kindLabel = (link: AccessLink) =>
+    link.kind === "one_bot"
+      ? "1 бот навсегда бесплатно"
+      : link.kind === "permanent"
+        ? "Бессрочный доступ ко всему"
+        : link.days
+          ? `Подписка на ${link.days} дн.`
+          : "Подписка до даты";
 
   return (
     <div className="space-y-6">
-      <Section title="Создать спец-ссылку" description="Человек переходит по ссылке, нажимает START у главного бота BotFlow — и получает бесплатный доступ: на срок или навсегда.">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-          <div className="flex gap-1 rounded-xl bg-[var(--color-surface-2)] p-1" role="radiogroup" aria-label="Тип доступа">
-            {([["period", "На срок"], ["permanent", "Навсегда"]] as const).map(([value, label]) => (
-              <button key={value} type="button" role="radio" aria-checked={kind === value}
-                onClick={() => setKind(value)}
-                className={`h-9 flex-1 rounded-lg px-4 text-sm font-semibold transition-colors lg:flex-none ${kind === value ? "bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-xs" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}>
-                {label}
-              </button>
-            ))}
+      <Section title="Создать спец-ссылку" description="Человек открывает ссылку, жмёт START у главного бота BotFlow — и получает доступ. Ссылку можно выдать нескольким людям и ограничить срок её жизни.">
+        <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs font-semibold text-[var(--color-foreground-secondary)]">Что выдаём</p>
+            <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Тип доступа">
+              {([
+                ["one_bot", "1 бот бесплатно", "Навсегда, без подписки"],
+                ["period", "Подписка на срок", "Все боты на N дней"],
+                ["permanent", "Бессрочно всё", "Полный доступ навсегда"],
+              ] as const).map(([value, label, hint]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === value}
+                  onClick={() => setKind(value)}
+                  className={`rounded-xl border p-3 text-left transition-all ${
+                    kind === value
+                      ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
+                      : "border-[var(--color-border)] hover:border-[var(--color-primary)]/40"
+                  }`}
+                >
+                  <span className="block text-sm font-bold text-[var(--color-foreground)]">{label}</span>
+                  <span className="mt-0.5 block text-xs text-[var(--color-foreground-secondary)]">{hint}</span>
+                </button>
+              ))}
+            </div>
           </div>
-          {kind === "period" ? (
-            <label className="block"><span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Срок, дней</span>
-              <input type="number" min={1} max={3650} value={days} onChange={(event) => setDays(event.target.value.replace(/\D/g, ""))}
-                className="mt-1 h-11 w-32 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {kind === "period" ? (
+              <label className="block">
+                <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Доступ, дней</span>
+                <input type="number" min={1} max={3650} value={days}
+                  onChange={(event) => setDays(event.target.value.replace(/\D/g, ""))}
+                  className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+              </label>
+            ) : null}
+            <label className="block">
+              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Сколько людей</span>
+              <input type="number" min={1} max={10000} value={people}
+                onChange={(event) => setPeople(event.target.value.replace(/\D/g, ""))}
+                className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
             </label>
-          ) : null}
-          <label className="block flex-1"><span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Заметка (кому)</span>
-            <input type="text" value={note} onChange={(event) => setNote(event.target.value)} maxLength={255} placeholder="Например: блогер Иванов, партнёрка"
-              className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
-          </label>
+            <label className="block">
+              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Ссылка живёт, дней</span>
+              <input type="number" min={0} max={365} value={linkDays}
+                onChange={(event) => setLinkDays(event.target.value.replace(/\D/g, ""))}
+                placeholder="0 — без срока"
+                className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+            </label>
+            <label className="block sm:col-span-2 lg:col-span-1">
+              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Заметка</span>
+              <input type="text" value={note} onChange={(event) => setNote(event.target.value)} maxLength={255}
+                placeholder="Кому и зачем"
+                className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+            </label>
+          </div>
+
           <button type="button" onClick={() => void create()} disabled={creating}
-            className="h-11 shrink-0 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60">
+            className="h-11 w-full rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60 sm:w-auto">
             {creating ? "Создаём…" : "Создать ссылку"}
           </button>
         </div>
+
         {lastLink ? (
           <div className="mt-4 rounded-xl border border-[var(--color-success)]/40 bg-[var(--color-success-soft)] p-4">
-            <p className="text-sm font-bold text-[var(--color-foreground)]">Ссылка готова — отправьте её человеку:</p>
+            <p className="text-sm font-bold text-[var(--color-foreground)]">
+              {kindLabel(lastLink)} · до {lastLink.maxActivations} чел.
+            </p>
             <code className="mt-2 block break-all rounded-lg bg-[var(--color-surface)] px-3 py-2 text-xs">
-              https://t.me/{import.meta.env.VITE_MAIN_BOT_USERNAME ?? "botflow_bot"}?start=gl_{lastLink.token}
+              {linkUrl(lastLink.token)}
             </code>
             <button type="button" onClick={() => void copyLink(lastLink.token)}
               className="mt-2 h-9 rounded-lg bg-[var(--color-primary)] px-3 text-xs font-bold text-white hover:opacity-90">Копировать</button>
@@ -615,31 +670,41 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
         ) : null}
       </Section>
 
-      <Section title="Созданные ссылки" description="Активированные ссылки помечены пользователем. Доступ, уже выданный по ссылке, не отзывается.">
+      <Section title="Созданные ссылки" description="Счётчик показывает, сколько людей уже активировали ссылку. Выданный доступ не отзывается закрытием ссылки.">
         {loading ? <RowsSkeleton count={4} /> : links.length ? (
           <div className="divide-y divide-[var(--color-border)]">
-            {links.map((link) => (
-              <div key={link.id} className="flex flex-col gap-2 py-4 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge tone={link.isActive ? "success" : "neutral"}>{link.isActive ? "Активна" : link.activatedBy ? "Использована" : "Деактивирована"}</StatusBadge>
-                    <span className="text-sm font-semibold text-[var(--color-foreground)]">{linkLabel(link)}</span>
-                    {link.note ? <span className="text-xs text-[var(--color-foreground-secondary)]">· {link.note}</span> : null}
+            {links.map((link) => {
+              const exhausted = link.activationsCount >= link.maxActivations;
+              const expired = Boolean(link.validUntil && new Date(link.validUntil) <= new Date());
+              return (
+                <div key={link.id} className="flex flex-col gap-2 py-4 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusBadge tone={link.isActive && !expired ? "success" : exhausted ? "neutral" : "warning"}>
+                        {link.isActive && !expired ? "Активна" : expired ? "Истекла" : exhausted ? "Исчерпана" : "Закрыта"}
+                      </StatusBadge>
+                      <span className="text-sm font-semibold text-[var(--color-foreground)]">{kindLabel(link)}</span>
+                      <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-foreground-secondary)]">
+                        {link.activationsCount} / {link.maxActivations}
+                      </span>
+                      {link.note ? <span className="text-xs text-[var(--color-foreground-secondary)]">· {link.note}</span> : null}
+                    </div>
+                    <p className="mt-1 break-all text-xs text-[var(--color-foreground-secondary)]">
+                      gl_{link.token}
+                      {link.validUntil ? ` · ссылка до ${formatDate(link.validUntil)}` : ""}
+                    </p>
                   </div>
-                  <p className="mt-1 break-all text-xs text-[var(--color-foreground-secondary)]">
-                    gl_{link.token}{link.activatedBy ? ` · активировал ${link.activatedBy}` : ""}
-                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button type="button" onClick={() => void copyLink(link.token)}
+                      className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)]">Копировать</button>
+                    {link.isActive ? (
+                      <button type="button" onClick={() => deactivate(link)}
+                        className="h-9 rounded-lg border border-[var(--color-danger)] px-3 text-xs font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]">Закрыть</button>
+                    ) : null}
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <button type="button" onClick={() => void copyLink(link.token)}
-                    className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)]">Копировать</button>
-                  {link.isActive ? (
-                    <button type="button" onClick={() => deactivate(link)}
-                      className="h-9 rounded-lg border border-[var(--color-danger)] px-3 text-xs font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]">Отключить</button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <EmptyState icon={<CheckCircle2 size={21} />} title="Ссылок пока нет" description="Создайте первую — и отправьте её человеку в личку или в рассылке." />
