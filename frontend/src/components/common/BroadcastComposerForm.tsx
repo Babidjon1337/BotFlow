@@ -382,9 +382,9 @@ export function BroadcastComposerForm({
           id={`${idPrefix}-text`}
           value={text}
           onChange={(event) => setText(event.target.value.slice(0, MAX_LENGTH))}
-          rows={7}
+          rows={4}
           placeholder="Например: скидка 20% на курс до конца недели…"
-          className="mt-2 w-full resize-none rounded-2xl border border-border bg-background px-4 py-3 text-body leading-relaxed text-fg-primary outline-none transition-colors placeholder:text-fg-tertiary focus:border-ring focus:ring-3 focus:ring-ring/30"
+          className="mt-1.5 w-full resize-y rounded-2xl border border-border bg-background px-4 py-3 text-body leading-relaxed text-fg-primary outline-none transition-colors placeholder:text-fg-tertiary focus:border-ring focus:ring-3 focus:ring-ring/30"
         />
         <p
           className={`mt-1.5 text-right text-meta ${
@@ -638,27 +638,30 @@ export function BroadcastComposerForm({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={handleSendClick}
-        disabled={!isValid || isSubmitting}
-        className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-body font-semibold text-primary-foreground transition-all hover:bg-primary/85 active:translate-y-px disabled:pointer-events-none disabled:opacity-50"
-      >
-        {isSubmitting ? (
-          <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
-        ) : scheduleMode === 'later' ? (
-          <CalendarClock className="size-4" aria-hidden />
-        ) : (
-          <Send className="size-4" aria-hidden />
-        )}
-        {isSubmitting
-          ? 'Запускаем…'
-          : scheduleMode === 'later'
-            ? 'Запланировать'
-            : `Отправить ${
-                recipients === null ? '' : `${recipients.toLocaleString('ru-RU')} `
-              }подписчикам`}
-      </button>
+      {/* Кнопка отправки закреплена внизу формы — видна без прокрутки истории */}
+      <div className="sticky bottom-0 -mx-4 border-t border-border bg-card px-4 pb-1 pt-3 sm:-mx-5 sm:px-5">
+        <button
+          type="button"
+          onClick={handleSendClick}
+          disabled={!isValid || isSubmitting}
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-body font-semibold text-primary-foreground transition-all hover:bg-primary/85 active:translate-y-px disabled:pointer-events-none disabled:opacity-50"
+        >
+          {isSubmitting ? (
+            <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+          ) : scheduleMode === 'later' ? (
+            <CalendarClock className="size-4" aria-hidden />
+          ) : (
+            <Send className="size-4" aria-hidden />
+          )}
+          {isSubmitting
+            ? 'Запускаем…'
+            : scheduleMode === 'later'
+              ? 'Запланировать'
+              : `Отправить ${
+                  recipients === null ? '' : `${recipients.toLocaleString('ru-RU')} `
+                }подписчикам`}
+        </button>
+      </div>
     </div>
   );
 }

@@ -25,7 +25,7 @@ export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
         hidden ? 'translate-y-full' : 'translate-y-0',
       )}
     >
-      <div className="grid h-14 grid-cols-4">
+      <div className="grid h-14 grid-cols-3">
         {ACCOUNT_TABS.filter(tab => tab.id !== 'admin').map(tab => {
           const Icon = ACCOUNT_TAB_ICONS[tab.id];
           const active = activeTab === tab.id;

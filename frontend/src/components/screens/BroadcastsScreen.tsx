@@ -719,9 +719,9 @@ function BroadcastsTabContent({
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* Конструктор — закреплённая карточка (desktop) */}
-      <aside className="lg:sticky lg:top-[calc(72px+16px)] lg:self-start" aria-label="Создание рассылки">
+      <aside className="lg:sticky lg:top-4 lg:self-start" aria-label="Создание рассылки">
         <div className="rounded-3xl border border-border bg-card p-4 sm:p-5">
-          <div className="mb-4 flex items-center gap-2.5">
+          <div className="mb-3 flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-full bg-accent text-accent-foreground">
               <Send className="size-4" aria-hidden />
             </span>
