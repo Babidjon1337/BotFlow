@@ -8,6 +8,8 @@ import {
   Send,
   Users,
   XCircle,
+  ReceiptText,
+  X,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
 import { apiService } from '../../services/api';
@@ -158,6 +160,41 @@ function AudienceTab({
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [invoiceLead, setInvoiceLead] = useState<AudienceLead | null>(null);
+  const [tariffs, setTariffs] = useState<BroadcastTariffOption[]>([]);
+
+  // Тарифы воронки — для выставления счёта (нужны actionType link у оплаты).
+  useEffect(() => {
+    let cancelled = false;
+    apiService
+      .getFunnel(botId)
+      .then((funnel) => {
+        if (cancelled) return;
+        const options: BroadcastTariffOption[] = [];
+        for (const node of funnel.nodes ?? []) {
+          for (const tariff of (node as { tariffs?: unknown[] }).tariffs ?? []) {
+            const t = tariff as {
+              id?: string; name?: string; price?: string; actionType?: string; actionData?: string;
+            };
+            if (!t.id) continue;
+            options.push({
+              id: t.id,
+              name: t.name || 'Тариф',
+              price: t.price || '',
+              isLink: t.actionType === 'link' && /^https:\/\//.test(t.actionData || ''),
+            });
+          }
+        }
+        setTariffs(options);
+      })
+      .catch(() => {
+        if (!cancelled) setTariffs([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [botId]);
+  const invoiceReady = tariffs.length > 0;
 
   const loadLeads = useCallback(
     (target: AudienceFilter, targetPage: number, append: boolean) =>
@@ -299,10 +336,20 @@ function AudienceTab({
                     {formatDate(lead.createdAt)}
                   </p>
                 </div>
-                <StatusBadge
-                  tone={lead.hasPurchased ? 'success' : 'neutral'}
-                  label={lead.hasPurchased ? 'Оплатил' : 'В воронке'}
-                />
+                {lead.hasPurchased ? (
+                  <StatusBadge tone="success" label="Оплатил" />
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!invoiceReady}
+                    onClick={() => setInvoiceLead(lead)}
+                    title={invoiceReady ? 'Выставить счёт' : 'Тарифы недоступны'}
+                  >
+                    <ReceiptText data-icon="inline-start" aria-hidden />
+                    Счёт
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
@@ -324,6 +371,157 @@ function AudienceTab({
               {loadingMore ? 'Загружаем…' : 'Показать ещё'}
             </Button>
           </div>
+        )}
+      </div>
+
+      <InvoiceSheet
+        botId={botId}
+        lead={invoiceLead}
+        tariffs={tariffs}
+        onClose={() => setInvoiceLead(null)}
+        onSent={() => {
+          setInvoiceLead(null);
+          void loadLeads(segment, 1, false);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ── Выставление счёта лида ─────────────────────────────────── */
+
+function InvoiceSheet({
+  botId,
+  lead,
+  tariffs,
+  onClose,
+  onSent,
+}: {
+  botId: string;
+  lead: AudienceLead | null;
+  tariffs: BroadcastTariffOption[];
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const [leadKey, setLeadKey] = useState<string | null>(null);
+  const { showAlert } = useAlert();
+
+  // Сброс выбора при смене лида — синхронизация в рендере (без эффекта).
+  const currentKey = lead ? String(lead.telegramId) : null;
+  if (currentKey !== leadKey) {
+    setLeadKey(currentKey);
+    setSelected([]);
+  }
+
+  const send = () => {
+    if (!lead || selected.length === 0 || sending) return;
+    setSending(true);
+    apiService
+      .sendInvoice(botId, lead.telegramId, selected)
+      .then(() => {
+        showAlert({
+          type: 'success',
+          title: 'Счёт отправлен',
+          message: `${lead.firstName || lead.username || 'Клиент'} получит сообщение с кнопкой оплаты.`,
+          confirmText: 'Готово',
+        });
+        onSent();
+      })
+      .catch((error) => {
+        showAlert({
+          type: 'danger',
+          title: 'Не удалось выставить счёт',
+          message:
+            error instanceof Error ? error.message : 'Попробуйте ещё раз позже',
+        });
+      })
+      .finally(() => setSending(false));
+  };
+
+  if (!lead) return null;
+  return (
+    <div className="fixed inset-0 z-[130] flex items-end bg-black/50 backdrop-blur-sm sm:items-center sm:justify-center" role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Выставить счёт"
+        className="flex max-h-[88dvh] w-full flex-col rounded-t-3xl border border-border bg-card p-5 sm:max-w-md sm:rounded-3xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-title-lg font-bold">Выставить счёт</p>
+            <p className="mt-0.5 truncate text-meta text-fg-secondary">
+              {lead.firstName || lead.username || `ID ${lead.telegramId}`}
+              {lead.username ? ` · @${lead.username}` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-fg-tertiary transition-colors hover:bg-muted hover:text-fg-primary"
+          >
+            <X className="size-4" aria-hidden />
+          </button>
+        </div>
+
+        {tariffs.length === 0 ? (
+          <p className="mt-4 rounded-2xl border border-border bg-muted/40 px-4 py-6 text-center text-body-sm text-fg-secondary">
+            Тарифов нет. Добавьте их в сценарии — блок «Оплата».
+          </p>
+        ) : (
+          <>
+            <p className="mt-4 text-meta text-fg-secondary">
+              Отметьте один или несколько тарифов — клиент получит сообщение с кнопками оплаты.
+            </p>
+            <ul className="mt-3 flex-1 space-y-2 overflow-y-auto">
+              {tariffs.map((tariff) => {
+                const checked = selected.includes(tariff.id);
+                return (
+                  <li key={tariff.id}>
+                    <label
+                      className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors ${
+                        checked
+                          ? 'border-primary/60 bg-accent/5'
+                          : 'border-border hover:border-fg-tertiary/50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSelected((prev) =>
+                            checked
+                              ? prev.filter((id) => id !== tariff.id)
+                              : [...prev, tariff.id],
+                          )
+                        }
+                        className="size-4 accent-[var(--color-primary)]"
+                      />
+                      <span className="min-w-0 flex-1 truncate text-body-sm font-semibold text-fg-primary">
+                        {tariff.name}
+                      </span>
+                      {tariff.price && (
+                        <span className="shrink-0 text-body-sm font-bold tabular-nums text-fg-secondary">
+                          {tariff.price} ₽
+                        </span>
+                      )}
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+            <Button className="mt-4 w-full" disabled={selected.length === 0 || sending} onClick={send}>
+              {sending ? (
+                <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+              ) : (
+                <Send data-icon="inline-start" aria-hidden />
+              )}
+              {sending ? 'Отправляем…' : 'Отправить счёт'}
+            </Button>
+          </>
         )}
       </div>
     </div>

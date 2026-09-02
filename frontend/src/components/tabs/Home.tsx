@@ -1,6 +1,5 @@
-﻿import { motion, AnimatePresence } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -16,17 +15,11 @@ import {
   CreditCard,
   BarChart2,
   User,
-  Users,
   Clock,
   ArrowRight,
   Plus,
   GitMerge,
-  X,
-  CheckCircle2,
   Send,
-  Check,
-  ArrowLeft,
-  Search,
   AlertCircle,
   RefreshCw,
   Settings,
@@ -38,18 +31,6 @@ import {
  import { useAppState } from "../../providers/AppStateProvider";
 import { PageHeader } from "../common/PageHeader";
 
-/** The editor stores HTML for Telegram; selection cards need a safe, readable preview. */
-const toPlainPreviewText = (value: string | null | undefined) => {
-  if (!value) return "";
-
-  const withLineBreaks = value.replace(
-    /<\/?(?:p|div|li|h[1-6])\b[^>]*>|<br\s*\/?\s*>/gi,
-    "\n",
-  );
-  const element = document.createElement("textarea");
-  element.innerHTML = withLineBreaks.replace(/<[^>]*>/g, "");
-  return element.value.replace(/\n{3,}/g, "\n\n").trim();
-};
 
 
 // Features list (honest, explaining why it is great)
@@ -137,17 +118,6 @@ type FunnelStats = {
   funnel_data: Array<{ name: string; value: number }>;
 };
 
-type LeadView = {
-  telegramId: number;
-  username: string;
-  firstName?: string;
-  createdAt?: string;
-  hasPurchased?: boolean;
-  name: string;
-  time: string;
-  paid: boolean;
-};
-
 type LoadStatus = "idle" | "loading" | "ready" | "refreshing" | "error";
 
 type ResourceState<T> = {
@@ -158,7 +128,6 @@ type ResourceState<T> = {
   fetchedAt: Date | null;
 };
 
-type LeadsData = { items: LeadView[]; total: number };
 
 const emptyResource = <T,>(): ResourceState<T> => ({
   botId: null,
@@ -193,13 +162,6 @@ export const Home = () => {
   } = useAppState();
   const hasBot = appState.activeBot !== null;
   const isSubscribed = appState.subscriptionStatus === "active" || isAdmin;
-  const [searchQuery, setSearchQuery] = useState("");
-  const [modalSearchQuery, setModalSearchQuery] = useState("");
-  const [showAllClients, setShowAllClients] = useState(false);
-  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState<LeadView | null>(null);
-  const [selectedTariffs, setSelectedTariffs] = useState<string[]>([]);
-  const [isSendingInvoice, setIsSendingInvoice] = useState(false);
-  const [isInvoiceSent, setIsInvoiceSent] = useState(false);
   const paymentTariffs = blocks.find((block) => block.id === "payment")?.tariffs ?? [];
 
   const [statsState, setStatsState] = useState<ResourceState<FunnelStats>>(emptyResource);
@@ -271,144 +233,13 @@ export const Home = () => {
     };
   }, [appState.activeBot?.id, chartPeriod]);
 
-  useEffect(() => {
-    if (!showAllClients) return;
-    const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (handler: () => void) => void; offClick: (handler: () => void) => void } } } }).Telegram?.WebApp;
-    const backButton = tg?.BackButton;
-    if (backButton) {
-      backButton.show();
-      const handleBack = () => {
-        if (selectedClientForInvoice) {
-          setSelectedClientForInvoice(null);
-          setSelectedTariffs([]);
-          setIsInvoiceSent(false);
-        } else {
-          setShowAllClients(false);
-          setSelectedClientForInvoice(null);
-          setSelectedTariffs([]);
-          setIsInvoiceSent(false);
-          setModalSearchQuery("");
-        }
-      };
-      backButton.onClick(handleBack);
-      return () => {
-        backButton.hide();
-        backButton.offClick(handleBack);
-      };
-    }
-  }, [showAllClients, selectedClientForInvoice]);
 
-  const AVATAR_COLORS = [
-    "from-red-500 to-rose-600",
-    "from-orange-500 to-amber-600",
-    "from-amber-500 to-yellow-600",
-    "from-lime-500 to-green-600",
-    "from-green-500 to-emerald-600",
-    "from-teal-500 to-cyan-600",
-    "from-cyan-500 to-sky-600",
-    "from-sky-500 to-blue-600",
-    "from-blue-500 to-indigo-600",
-    "from-indigo-500 to-violet-600",
-    "from-violet-500 to-purple-600",
-    "from-fuchsia-500 to-pink-600",
-    "from-rose-400 to-red-500",
-    "from-orange-400 to-amber-500",
-    "from-amber-400 to-yellow-500",
-    "from-lime-400 to-green-500",
-    "from-emerald-400 to-teal-500",
-    "from-cyan-400 to-sky-500",
-    "from-blue-400 to-indigo-500",
-    "from-violet-400 to-fuchsia-500",
-    "from-pink-400 to-rose-500",
-    "from-red-600 to-red-800",
-    "from-green-600 to-emerald-800",
-    "from-blue-600 to-indigo-800",
-    "from-purple-600 to-fuchsia-800",
-    "from-orange-600 to-red-800",
-    "from-teal-600 to-cyan-800",
-    "from-yellow-500 to-orange-600",
-    "from-sky-600 to-blue-800",
-    "from-pink-600 to-rose-800",
-  ];
 
-  const getAvatarColor = (username: string) => {
-    let hash = 0;
-    for (let i = 0; i < username.length; i++) {
-      hash = username.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-  };
-
-  const [leadsState, setLeadsState] = useState<ResourceState<LeadsData>>(emptyResource);
-  const [leadsRefreshKey, setLeadsRefreshKey] = useState(0);
-
-  useEffect(() => {
-    const botId = appState.activeBot?.id;
-    if (!botId) return;
-    let cancelled = false;
-    void import("../../services/api")
-      .then(({ apiService }) => {
-        if (!cancelled) {
-          setLeadsState((previous) => {
-            const canKeepData = previous.botId === botId && previous.data !== null;
-            return {
-              botId,
-              status: canKeepData ? "refreshing" : "loading",
-              data: canKeepData ? previous.data : null,
-              error: null,
-              fetchedAt: canKeepData ? previous.fetchedAt : null,
-            };
-          });
-        }
-        return apiService.getLeads(botId, "", 1, 50);
-      })
-      .then((res) => {
-        if (!cancelled) {
-            const mappedLeads = (res.leads || []).map((lead) => {
-              const l = lead as { telegramId?: number; username?: string; firstName?: string; createdAt?: string; hasPurchased?: boolean };
-              return {
-              ...l,
-              telegramId: l.telegramId ?? 0,
-              name: l.firstName || "Без имени",
-              time: l.createdAt
-                ? new Date(l.createdAt).toLocaleDateString()
-                : "",
-              username: l.username ?? "",
-              paid: l.hasPurchased === true,
-              };
-            });
-          setLeadsState({
-            botId,
-            status: "ready",
-            data: { items: mappedLeads, total: res.total },
-            error: null,
-            fetchedAt: new Date(),
-          });
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          console.error("Leads err", error);
-          setLeadsState((previous) => ({
-            botId,
-            status: "error",
-            data: previous.botId === botId ? previous.data : null,
-            error: getDashboardError(error, "список клиентов"),
-            fetchedAt: previous.botId === botId ? previous.fetchedAt : null,
-          }));
-        }
-      });
-    return () => { cancelled = true; };
-  }, [appState.activeBot?.id, leadsRefreshKey]);
 
   const stats = statsState.data;
-  const leads = leadsState.data?.items ?? [];
-  const leadsTotal = leadsState.data?.total ?? 0;
-  const isDashboardRefreshing =
-    statsState.status === "refreshing" || leadsState.status === "refreshing";
+  const isDashboardRefreshing = statsState.status === "refreshing";
   const refreshDashboard = () => {
     setStatsRefreshKey((key) => key + 1);
-    setLeadsRefreshKey((key) => key + 1);
   };
   const copyBotLink = async () => {
     const botUrl = appState.activeBot?.botUrl
@@ -427,36 +258,8 @@ export const Home = () => {
     }
   };
 
-  const sendInvoice = async () => {
-    if (!appState.activeBot || !selectedClientForInvoice || selectedTariffs.length === 0) return;
-    setIsSendingInvoice(true);
-    try {
-      const { apiService } = await import("../../services/api");
-      await apiService.sendInvoice(appState.activeBot.id, selectedClientForInvoice.telegramId, selectedTariffs);
-      setIsInvoiceSent(true);
-      setTimeout(() => {
-        setSelectedClientForInvoice(null);
-        setSelectedTariffs([]);
-        setIsInvoiceSent(false);
-      }, 1800);
-    } catch (error) {
-      console.error("Invoice err", error);
-    } finally {
-      setIsSendingInvoice(false);
-    }
-  };
 
-  const filteredClients = leads.filter(
-    (c) =>
-      c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.username?.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
 
-  const modalFilteredClients = leads.filter(
-    (c) =>
-      c.name?.toLowerCase().includes(modalSearchQuery.toLowerCase()) ||
-      c.username?.toLowerCase().includes(modalSearchQuery.toLowerCase()),
-  );
 
   // --- WELCOME SCREEN (no bot yet) ---
   if (!hasBot) {
@@ -1120,169 +923,6 @@ export const Home = () => {
         </section>
       )}
 
-      {/* Latest leads and their payment status */}
-      <div className="p-5 rounded-[24px] border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)] flex items-center justify-center">
-              <Users size={18} />
-            </div>
-            <span className="text-[17px] font-bold text-[var(--color-foreground)] tracking-tight">
-              Последние клиенты
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {leadsState.fetchedAt && (
-              <span className="hidden sm:inline text-[12px] text-[var(--color-foreground-tertiary)]">
-                {formatUpdatedAt(leadsState.fetchedAt)}
-              </span>
-            )}
-            <span className="text-[12px] font-bold px-2.5 py-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] text-[var(--color-foreground-secondary)] rounded-full">
-              {leadsState.data ? `Всего: ${leadsTotal}` : "Всего: —"}
-            </span>
-          </div>
-        </div>
-
-        <p className="-mt-2 mb-4 text-[12px] text-[var(--color-foreground-secondary)]">Новые лиды и состояние их оплаты.</p>
-
-        {leadsState.status === "error" && leadsState.data && (
-          <div className="mb-4 p-3 rounded-xl bg-[var(--color-warning-soft)] text-[13px] text-[var(--color-foreground-secondary)] flex flex-col sm:flex-row sm:items-center justify-between gap-2" role="status">
-            <span>Список не обновился. Показаны данные на {leadsState.fetchedAt ? formatUpdatedAt(leadsState.fetchedAt) : "момент последней загрузки"}.</span>
-            <button type="button" onClick={refreshDashboard} className="font-bold text-[var(--color-primary)] shrink-0">Повторить</button>
-          </div>
-        )}
-
-        {leadsState.status === "loading" || leadsState.status === "idle" ? (
-          <div className="space-y-3 animate-pulse" aria-label="Загрузка списка клиентов">
-            <div className="h-10 rounded-xl bg-[var(--color-surface-2)]" />
-            {[0, 1, 2].map((item) => <div key={item} className="h-16 rounded-xl bg-[var(--color-surface-2)]" />)}
-          </div>
-        ) : leadsState.status === "error" && !leadsState.data ? (
-          <div className="py-6 flex flex-col items-center text-center" role="alert">
-            <AlertCircle size={24} className="text-[var(--color-danger)] mb-3" />
-            <div className="text-[15px] font-bold text-[var(--color-foreground)]">Клиенты временно недоступны</div>
-            <div className="text-[13px] text-[var(--color-foreground-secondary)] mt-1 max-w-[440px]">{leadsState.error}</div>
-            <button type="button" onClick={refreshDashboard} className="mt-4 h-10 px-4 rounded-xl bg-[var(--color-primary)] text-white text-[13px] font-bold flex items-center gap-2">
-              <RefreshCw size={15} /> Повторить
-            </button>
-          </div>
-        ) : leadsState.data ? <>
-        <div className="mb-3.5">
-          <div className="relative flex items-center">
-            <Search
-              size={16}
-              className="absolute left-3.5 text-[var(--color-foreground-tertiary)] pointer-events-none"
-            />
-            <input
-              type="text"
-              placeholder="Поиск по имени или @username..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[14px] text-[var(--color-foreground)] focus:outline-none focus:border-[var(--color-primary)] transition-all placeholder-[var(--color-foreground-tertiary)]"
-            />
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="divide-y divide-[var(--color-border)]/50 border border-[var(--color-border)] rounded-2xl bg-[var(--color-surface)] overflow-hidden">
-            {filteredClients.slice(0, 3).length > 0 ? (
-              filteredClients.slice(0, 3).map((client, i) => (
-                <div
-                  key={i}
-                  className="flex flex-col items-stretch gap-3 p-3.5 transition-colors hover:bg-[var(--color-surface-2)]/60 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <div
-                      className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(client.username)} text-white flex items-center justify-center font-bold text-[14px] shrink-0 shadow-xs`}
-                    >
-                      {client.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span className="text-[14px] font-bold text-[var(--color-foreground)] break-words">
-                          {client.name}
-                        </span>
-                        <span className="text-[12px] text-[var(--color-foreground-tertiary)]">
-                          {client.time ? `Пришёл ${client.time}` : ""}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-[var(--color-foreground-secondary)]">
-                        <span className="max-w-full break-all">{client.username}</span>
-                        <span className="w-1 h-1 rounded-full bg-[var(--color-border)] shrink-0" />
-                        {client.paid ? (
-                          <span className="text-[var(--color-success)] font-semibold flex items-center gap-1">
-                            <CheckCircle2 size={13} className="shrink-0" />
-                            <span>Оплата подтверждена</span>
-                          </span>
-                        ) : (
-                          <span className="text-[var(--color-warning)] font-medium flex items-center gap-1">
-                            <Clock size={13} className="shrink-0" />
-                            <span>Ожидает оплату</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {!client.paid && (
-                    <button
-                      onClick={() => {
-                        setSelectedClientForInvoice(client);
-                        setSelectedTariffs([]);
-                        setShowAllClients(true);
-                        document.body.style.overflow = "hidden";
-                      }}
-                      className="h-10 w-full shrink-0 rounded-xl bg-[var(--color-primary-soft)] px-3.5 text-[13px] font-bold text-[var(--color-primary)] shadow-2xs transition-all hover:bg-[var(--color-primary)] hover:text-white active:scale-95 sm:ml-3 sm:h-auto sm:w-auto sm:py-1.5"
-                    >
-                      Выставить счет
-                    </button>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="text-center py-8 px-4 text-[13px] text-[var(--color-foreground-tertiary)]">
-                <div>
-                  {leadsTotal === 0
-                    ? "Клиентов пока нет. Они появятся после первого запуска бота."
-                    : "По вашему запросу ничего не найдено."}
-                </div>
-                {searchQuery && leadsTotal > 0 && (
-                  <button type="button" onClick={() => setSearchQuery("")} className="mt-3 font-bold text-[var(--color-primary)]">
-                    Сбросить поиск
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {(searchQuery ? filteredClients.length > 3 : leadsTotal > 3) && (
-            <button
-              onClick={() => {
-                setSelectedClientForInvoice(null);
-                setSelectedTariffs([]);
-                setIsInvoiceSent(false);
-                setModalSearchQuery("");
-                setShowAllClients(true);
-                document.body.style.overflow = "hidden";
-              }}
-              className="w-full py-3.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[13px] font-bold text-[var(--color-foreground)] hover:bg-[var(--color-surface-3)] transition-all flex items-center justify-center gap-2 shadow-xs active:scale-[0.99]"
-            >
-              <span>
-                {searchQuery
-                  ? `Показать результаты (${filteredClients.length})`
-                  : `Открыть список (${Math.min(leads.length, leadsTotal)} из ${leadsTotal})`}
-              </span>
-              <ArrowRight size={15} className="opacity-70" />
-            </button>
-          )}
-          {leadsTotal > leads.length && (
-            <div className="text-[12px] text-[var(--color-foreground-tertiary)] text-center px-3">
-              Показаны первые {leads.length} клиентов. Поиск работает по загруженному списку.
-            </div>
-          )}
-        </div>
-        </> : null}
-      </div>
-
       {!isSubscribed && (
         <section className="card-saas flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="dashboard-plan-title">
           <div className="min-w-0">
@@ -1299,291 +939,6 @@ export const Home = () => {
             {appState.subscriptionStatus === "expired" ? "Продлить" : "Посмотреть PRO"}
           </button>
         </section>
-      )}
-
-      {/* Full Screen / Modal Clients Sheet via Portal */}
-      {createPortal(
-        <AnimatePresence>
-          {showAllClients && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[99999] flex min-w-0 touch-pan-y items-center justify-center overflow-x-hidden overscroll-x-none bg-[var(--color-surface)] md:bg-transparent"
-              style={{ maxWidth: "100vw", overflowX: "hidden", touchAction: "pan-y" }}
-            >
-              {/* Dark blur overlay for PC only - covers ENTIRE screen */}
-              <div
-                onClick={() => {
-                  setShowAllClients(false);
-                  setSelectedClientForInvoice(null);
-                  setSelectedTariffs([]);
-                  setIsInvoiceSent(false);
-                  setModalSearchQuery("");
-                  document.body.style.overflow = "unset";
-                }}
-                className="absolute inset-0 bg-black/40 backdrop-blur-sm hidden md:block transition-all"
-              />
-
-              <motion.div
-                initial={{ y: "100%", opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: "100%", opacity: 0 }}
-                transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                className="relative z-10 flex h-[100dvh] w-full min-w-0 max-w-[100vw] touch-pan-y flex-col overflow-x-hidden overscroll-x-none bg-[var(--color-surface)] pointer-events-auto md:h-[620px] md:max-h-[85vh] md:w-[580px] md:rounded-[24px] md:border md:border-[var(--color-border)] md:shadow-[0_24px_80px_rgba(0,0,0,0.5)]"
-                style={{ overflowX: "hidden", touchAction: "pan-y" }}
-              >
-                {/* Modal Header */}
-                <div className="z-10 flex shrink-0 items-center justify-center border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 pb-4 pt-[max(22px,calc(var(--tg-content-safe-area-inset-top,0px)+8px))] md:justify-between md:p-5">
-                  <div className="flex min-w-0 flex-col items-center text-center md:flex-row md:items-center md:gap-3 md:text-left">
-                    {selectedClientForInvoice && (
-                      <button
-                        onClick={() => {
-                          setSelectedClientForInvoice(null);
-                          setSelectedTariffs([]);
-                          setIsInvoiceSent(false);
-                        }}
-                        className="hidden size-9 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-border)] active:scale-95 md:flex"
-                        title="Назад к списку клиентов"
-                      >
-                        <ArrowLeft size={18} />
-                      </button>
-                    )}
-                    <div className="min-w-0">
-                      <h2 className="truncate text-[18px] font-bold leading-tight text-[var(--color-foreground)]">
-                        {selectedClientForInvoice
-                          ? `Выставить счет`
-                          : `Клиенты (${leadsTotal})`}
-                      </h2>
-                      {selectedClientForInvoice && (
-                        <div className="mt-0.5 truncate text-[13px] text-[var(--color-foreground-secondary)]">
-                          {selectedClientForInvoice.name}{" "}
-                          <span className="opacity-60">
-                            {selectedClientForInvoice.username}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowAllClients(false);
-                      setSelectedClientForInvoice(null);
-                      setSelectedTariffs([]);
-                      setIsInvoiceSent(false);
-                      setModalSearchQuery("");
-                      document.body.style.overflow = "unset";
-                    }}
-                    className="hidden md:flex w-9 h-9 items-center justify-center rounded-full bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-border)] transition-colors active:scale-95"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                {selectedClientForInvoice ? (
-                  <div className="custom-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 md:px-6 md:py-6">
-                    {isInvoiceSent ? (
-                      <motion.div
-                        key="success"
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="flex flex-col items-center justify-center h-full text-center py-16"
-                      >
-                        <div className="w-16 h-16 bg-[var(--color-success-soft)] text-[var(--color-success)] rounded-full flex items-center justify-center mb-5 shadow-inner">
-                          <CheckCircle2 size={36} />
-                        </div>
-                        <h3 className="text-[20px] font-bold text-[var(--color-foreground)] mb-2">
-                          Счет успешно отправлен!
-                        </h3>
-                        <p className="text-[14px] text-[var(--color-foreground-secondary)] max-w-[280px]">
-                          {selectedClientForInvoice.name} получит сообщение с
-                          кнопкой на оплату.
-                        </p>
-                      </motion.div>
-                    ) : (
-                      <>
-                        <div className="space-y-4">
-                          <div className="mb-1">
-                            <h3 className="text-[15px] font-bold text-[var(--color-foreground)]">
-                              Выберите тариф
-                            </h3>
-                            <p className="text-[13px] text-[var(--color-foreground-secondary)] mt-1">
-                              Отметьте один или несколько тарифов для
-                              выставления счета клиенту.
-                            </p>
-                          </div>
-
-                          <div className="flex flex-col gap-3">
-                            {paymentTariffs.map((tariff) => {
-                              const isSelected = selectedTariffs.includes(
-                                tariff.id,
-                              );
-                              return (
-                                <div
-                                  key={tariff.id}
-                                  onClick={() =>
-                                    setSelectedTariffs((prev) =>
-                                      prev.includes(tariff.id)
-                                        ? prev.filter((t) => t !== tariff.id)
-                                        : [...prev, tariff.id],
-                                    )
-                                  }
-                                  className={`relative flex cursor-pointer flex-col items-stretch gap-3 rounded-2xl border-2 p-4 transition-all select-none sm:flex-row sm:items-center sm:justify-between ${
-                                    isSelected
-                                      ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
-                                      : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/40"
-                                  }`}
-                                >
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-[15px] font-bold text-[var(--color-foreground)] mb-1">
-                                      {toPlainPreviewText(tariff.name)}
-                                    </div>
-                                    <div className="text-[13px] text-[var(--color-foreground-secondary)] leading-snug pr-2">
-                                      {toPlainPreviewText(tariff.description)}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end">
-                                    <div className="text-[15px] font-extrabold text-[var(--color-foreground)] whitespace-nowrap">
-                                      {tariff.price}
-                                    </div>
-                                    <div
-                                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                                        isSelected
-                                          ? "border-[var(--color-primary)] bg-[var(--color-primary)]"
-                                          : "border-[var(--color-border)]"
-                                      }`}
-                                    >
-                                      {isSelected && (
-                                        <Check
-                                          size={12}
-                                          className="text-white"
-                                        />
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="sticky bottom-0 -mx-4 mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)] px-4 pb-[calc(var(--tg-content-safe-area-inset-bottom,0px)+12px)] pt-4 md:-mx-6 md:px-6 md:pb-0">
-                          <button
-                            onClick={() => void sendInvoice()}
-                            disabled={
-                              selectedTariffs.length === 0 || isSendingInvoice
-                            }
-                            className={`w-full h-12 rounded-xl flex items-center justify-center gap-2 text-[15px] font-bold transition-all ${
-                              selectedTariffs.length === 0 ||
-                              isSendingInvoice ||
-                              isInvoiceSent
-                                ? "bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)] cursor-not-allowed"
-                                : "bg-[var(--color-primary)] text-white hover:bg-[#4338CA] shadow-lg shadow-[var(--color-primary)]/25 active:scale-[0.98]"
-                            }`}
-                          >
-                            {isSendingInvoice ? (
-                              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            ) : (
-                              <>
-                                <Send size={18} />
-                                <span>Отправить счет клиенту</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <div className="p-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex-shrink-0">
-                      <div className="relative flex items-center">
-                        <Search
-                          size={16}
-                          className="absolute left-3.5 text-[var(--color-foreground-tertiary)] pointer-events-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Поиск по имени или @username..."
-                          value={modalSearchQuery}
-                          onChange={(e) => setModalSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2.5 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl text-[14px] text-[var(--color-foreground)] focus:outline-none focus:border-[var(--color-primary)] transition-all placeholder-[var(--color-foreground-tertiary)]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto min-h-0 p-2 pr-1.5 flex flex-col divide-y divide-[var(--color-border)]/50 custom-scrollbar">
-                      {modalFilteredClients.length > 0 ? (
-                        modalFilteredClients.map((client, i) => (
-                          <div
-                            key={i}
-                            className="flex flex-col items-stretch gap-3 rounded-xl p-3.5 transition-colors hover:bg-[var(--color-surface-2)]/60 sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <div className="flex min-w-0 flex-1 items-center gap-3">
-                              <div
-                                className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(client.username)} text-white flex items-center justify-center font-bold text-[14px] shrink-0 shadow-xs`}
-                              >
-                                {client.name.charAt(0)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                  <span className="text-[14px] font-bold text-[var(--color-foreground)] break-words">
-                                    {client.name}
-                                  </span>
-                                  <span className="text-[12px] text-[var(--color-foreground-tertiary)]">
-                                    {client.time}
-                                  </span>
-                                </div>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-[var(--color-foreground-secondary)]">
-                                  <span className="max-w-full break-all">{client.username}</span>
-                                  <span className="w-1 h-1 rounded-full bg-[var(--color-border)] shrink-0" />
-                                  {client.paid ? (
-                                    <span className="text-[var(--color-success)] font-semibold flex items-center gap-1">
-                                      <CheckCircle2
-                                        size={13}
-                                        className="shrink-0"
-                                      />
-                                      <span>Оплата подтверждена</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-[var(--color-warning)] font-medium flex items-center gap-1">
-                                      <Clock size={13} className="shrink-0" />
-                                      <span>Ожидает оплату</span>
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            {!client.paid && (
-                              <button
-                                onClick={() => {
-                                  setSelectedClientForInvoice(client);
-                                  setSelectedTariffs([]);
-                                  setIsInvoiceSent(false);
-                                }}
-                                className="h-10 w-full shrink-0 rounded-xl bg-[var(--color-primary-soft)] px-3.5 text-[13px] font-bold text-[var(--color-primary)] shadow-2xs transition-all hover:bg-[var(--color-primary)] hover:text-white active:scale-95 sm:ml-3 sm:h-auto sm:w-auto sm:py-1.5"
-                              >
-                                Выставить счет
-                              </button>
-                            )}
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-center py-8 text-[13px] text-[var(--color-foreground-tertiary)]">
-                          {leadsTotal === 0
-                            ? "Клиентов пока нет"
-                            : "По вашему запросу ничего не найдено"}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>,
-        document.body,
       )}
     </motion.div>
   );
