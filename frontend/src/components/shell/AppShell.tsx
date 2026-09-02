@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import { BOT_VIEWS } from '../../routes';
 import type { AccountTab, AppRoute, BotView } from '../../routes';
 import { cn } from '../../lib/utils';
@@ -88,7 +89,7 @@ export function AppShell({
                   onClick={() => !disabled && onBotView(view.id)}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'nav-tone tab-item tab-press shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
+                    'nav-tone tab-item tab-press relative shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
                     BOT_VIEW_TONES[view.id] ?? 'nav-tone',
                     active
                       ? 'on'
@@ -96,10 +97,21 @@ export function AppShell({
                     disabled && 'cursor-not-allowed text-fg-tertiary hover:bg-transparent',
                   )}
                 >
-                  {view.label}
-                  {disabled && (
-                    <span className="ml-1.5 rounded-full bg-muted px-1.5 py-px text-micro">скоро</span>
+                  {active && (
+                    <motion.span
+                      layoutId="bot-tabs-pill"
+                      className="absolute inset-0 rounded-lg"
+                      style={{ backgroundColor: 'var(--nav-tone-soft)' }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                      aria-hidden
+                    />
                   )}
+                  <span className="relative z-10">
+                    {view.label}
+                    {disabled && (
+                      <span className="ml-1.5 rounded-full bg-muted px-1.5 py-px text-micro">скоро</span>
+                    )}
+                  </span>
                 </button>
               );
             })}

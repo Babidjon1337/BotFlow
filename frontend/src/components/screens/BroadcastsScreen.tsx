@@ -138,17 +138,6 @@ export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotCon
         hint={tab === 'audience'
           ? `${bot.name} · Кто пишет боту и кто оплатил`
           : `${bot.name} · Сегменты аудитории и рассылки по ним`}
-        action={tab !== 'audience' ? (
-          <Button
-            onClick={() => setComposerOpen(true)}
-            disabled={summaryLoading || !summary || summary.all === 0}
-            size="md"
-            className="lg:hidden"
-          >
-            <Plus data-icon="inline-start" aria-hidden />
-            Новая
-          </Button>
-        ) : undefined}
       />
 
       <div className="mt-6">
@@ -472,7 +461,7 @@ function InvoiceSheet({
         role="dialog"
         aria-modal="true"
         aria-label="Выставить счёт"
-        className="flex max-h-[88dvh] w-full flex-col rounded-t-3xl border border-border bg-card p-5 sm:max-w-md sm:rounded-3xl"
+        className="flex h-[100dvh] w-full flex-col border border-border bg-card p-5 sm:h-auto sm:max-h-[88dvh] sm:max-w-md sm:rounded-3xl"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">

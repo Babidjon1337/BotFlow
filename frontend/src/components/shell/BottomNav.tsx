@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { ACCOUNT_TABS } from '../../routes';
 import type { AccountTab } from '../../routes';
 import { ACCOUNT_TAB_ICONS } from './navModel';
@@ -9,11 +10,11 @@ interface BottomNavProps {
   hidden?: boolean;
 }
 
-/** Локальные тона разделов (DS v2 §5) — совпадают с Sidebar. */
+/** Локальные тона разделов (DS v2 §5) — совпадают с Sidebar. Профиль выделен розовым. */
 const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
   billing: 'nav-tone-violet',
-  profile: 'nav-tone',
+  profile: 'nav-tone-rose',
 };
 
 export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
@@ -36,15 +37,24 @@ export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
               onClick={() => onAccountTab(tab.id)}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'nav-tone flex min-h-[44px] cursor-pointer flex-col items-center justify-center gap-0.5 text-micro font-semibold transition-colors',
+                'bottom-nav-btn nav-tone relative flex min-h-[44px] cursor-pointer flex-col items-center justify-center gap-0.5 text-micro font-semibold transition-colors',
                 ACCOUNT_TAB_TONES[tab.id] ?? 'nav-tone',
                 active
-                  ? '[&]:text-[var(--nav-tone-text)]'
+                  ? 'on [&]:text-[var(--nav-tone-text)]'
                   : 'text-fg-tertiary hover:text-fg-secondary',
               )}
             >
-              <Icon className="size-5" />
-              {tab.short}
+              {active && (
+                <motion.span
+                  layoutId="bottom-nav-pill"
+                  className="absolute inset-x-2.5 inset-y-1 rounded-xl"
+                  style={{ backgroundColor: 'var(--nav-tone-soft)' }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                  aria-hidden
+                />
+              )}
+              <Icon className="bottom-nav-icon relative z-10 size-5" />
+              <span className="relative z-10">{tab.short}</span>
             </button>
           );
         })}

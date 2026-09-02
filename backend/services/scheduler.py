@@ -31,12 +31,14 @@ from database.requests.bot_rq import (
     claim_expired_bot_subscription,
     finalize_bot_subscription_expiry,
     get_expired_published_bots,
+    get_expired_account_subscription_bots,
+    get_subscription_paused_bots_to_resume,
     release_bot_subscription_expiry_claim,
     set_bot_lifecycle_state,
 )
 from services.bot_lifecycle import BotLifecycleService
 from database.models import Lead, ClientPayment
-from config import PROXY_URL
+from config import PROXY_URL, TG_WEBHOOK_URL
 from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.broadcast import run_broadcast_sending
@@ -129,6 +131,59 @@ async def expire_bot_subscriptions_job():
             await release_bot_subscription_expiry_claim(bot_config.id)
             logger.warning(
                 "Не удалось остановить бота %s после окончания подписки: %s",
+                bot_config.id,
+                exc,
+            )
+
+
+async def expire_account_subscription_bots_job():
+    """Останавливает платных ботов владельцев, чья подписка аккаунта закончилась.
+
+    Бесплатные (lifetime) боты и админы продолжают работать. Настройки и клиенты
+    сохраняются — после оплаты публикация вернётся автоматически.
+    """
+    for bot_config in await get_expired_account_subscription_bots():
+        try:
+            token = crypto.decrypt(bot_config.bot_token_enc)
+            bot = Bot(token=token, session=shared_scheduler_session)
+            await bot.delete_webhook()
+            await bot_lifecycle_service.transition(
+                bot_config, "paused", reason="subscription"
+            )
+            await set_bot_lifecycle_state(
+                bot_config.id,
+                bot_config.lifecycle_status,
+                bot_config.pause_reason,
+            )
+            logger.info("Бот %s остановлен: подписка владельца истекла", bot_config.id)
+        except Exception as exc:
+            logger.warning(
+                "Не удалось остановить бота %s после истечения подписки: %s",
+                bot_config.id,
+                exc,
+            )
+
+
+async def resume_subscription_bots_job():
+    """Возвращает публикацию ботам, остановленным из-за подписки, после оплаты."""
+    for bot_config in await get_subscription_paused_bots_to_resume():
+        try:
+            token = crypto.decrypt(bot_config.bot_token_enc)
+            bot = Bot(token=token, session=shared_scheduler_session)
+            await bot.set_webhook(url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot_config.id}")
+            await bot_lifecycle_service.transition(bot_config, "active")
+            await set_bot_lifecycle_state(
+                bot_config.id,
+                bot_config.lifecycle_status,
+                bot_config.pause_reason,
+            )
+            await notify_billing_user(
+                bot_config.owner.telegram_id,
+                f"✅ Оплата получена — бот «{bot_config.name}» снова работает.",
+            )
+        except Exception as exc:
+            logger.warning(
+                "Не удалось вернуть бота %s после оплаты подписки: %s",
                 bot_config.id,
                 exc,
             )
@@ -286,6 +341,24 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="bot-subscription-expiry",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        expire_account_subscription_bots_job,
+        trigger="interval",
+        minutes=5,
+        max_instances=1,
+        coalesce=True,
+        id="account-subscription-expiry",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        resume_subscription_bots_job,
+        trigger="interval",
+        minutes=5,
+        max_instances=1,
+        coalesce=True,
+        id="account-subscription-resume",
         replace_existing=True,
     )
     scheduler.add_job(

@@ -1,7 +1,7 @@
 from typing import Optional, Any
 from datetime import datetime, timezone
 
-from sqlalchemy import select, delete, update
+from sqlalchemy import or_, select, delete, update
 from sqlalchemy.orm import joinedload, selectinload
 from database.models import BotConfig, BotSubscription, User, async_session
 from services.bot_lifecycle import LEGACY_STATUS_BY_LIFECYCLE
@@ -274,6 +274,51 @@ async def assign_lifetime_license(bot_id: int) -> BotConfig | None:
         await session.commit()
         await session.refresh(bot)
         return bot
+
+
+async def get_expired_account_subscription_bots(
+    now: datetime | None = None,
+) -> list[BotConfig]:
+    """Опубликованные платные боты владельцев с истёкшей подпиской аккаунта.
+
+    Бесплатные (lifetime) боты и админы не трогаются: их подписка не нужна.
+    """
+    effective_now = now or datetime.now(timezone.utc)
+    async with async_session() as session:
+        result = await session.scalars(
+            select(BotConfig)
+            .join(User, User.id == BotConfig.owner_id)
+            .where(
+                BotConfig.status == "active",
+                BotConfig.has_lifetime_license.is_(False),
+                User.is_platform_admin.is_(False),
+                User.subscription_ends_at.is_not(None),
+                User.subscription_ends_at <= effective_now,
+            )
+        )
+        return list(result.all())
+
+
+async def get_subscription_paused_bots_to_resume(
+    now: datetime | None = None,
+) -> list[BotConfig]:
+    """Боты, остановленные из-за подписки (pause_reason='subscription'), у которых
+    подписка владельца снова активна — после оплаты публикация возвращается."""
+    effective_now = now or datetime.now(timezone.utc)
+    async with async_session() as session:
+        result = await session.scalars(
+            select(BotConfig)
+            .join(User, User.id == BotConfig.owner_id)
+            .where(
+                BotConfig.lifecycle_status == "paused",
+                BotConfig.pause_reason == "subscription",
+                or_(
+                    User.is_platform_admin.is_(True),
+                    User.subscription_ends_at > effective_now,
+                ),
+            )
+        )
+        return list(result.all())
 
 
 async def enforce_non_pro_bot_limits(owner_id: int) -> None:

@@ -801,6 +801,7 @@ html.dark .kicker { color: var(--p-500); }
 .nav-tone-orange { --nav-tone: #f79009; --nav-tone-soft: #fffaeb; --nav-tone-text: #b54708; }
 .nav-tone-indigo { --nav-tone: #6172f3; --nav-tone-soft: #eef0ff; --nav-tone-text: #444ce7; }
 .nav-tone-violet { --nav-tone: var(--v-500); --nav-tone-soft: var(--v-100); --nav-tone-text: var(--v-600); }
+.nav-tone-rose { --nav-tone: #ec4899; --nav-tone-soft: #fdf2f8; --nav-tone-text: #be185d; }
 html.dark .nav-tone { --nav-tone: var(--n-400); --nav-tone-soft: var(--n-100); --nav-tone-text: var(--n-700); }
 html.dark .nav-tone-blue { --nav-tone-soft: rgb(77 141 255 / 0.14); --nav-tone-text: var(--p-600); }
 html.dark .nav-tone-green { --nav-tone: #3ccb7f; --nav-tone-soft: rgb(60 203 127 / 0.14); --nav-tone-text: #3ccb7f; }
@@ -808,6 +809,7 @@ html.dark .nav-tone-cyan { --nav-tone: #36bffa; --nav-tone-soft: rgb(54 191 250 
 html.dark .nav-tone-orange { --nav-tone: #fdb022; --nav-tone-soft: rgb(253 176 34 / 0.14); --nav-tone-text: #fdb022; }
 html.dark .nav-tone-indigo { --nav-tone: #8098f9; --nav-tone-soft: rgb(128 152 249 / 0.14); --nav-tone-text: #a5b0fc; }
 html.dark .nav-tone-violet { --nav-tone-soft: rgb(139 92 246 / 0.14); --nav-tone-text: var(--v-600); }
+html.dark .nav-tone-rose { --nav-tone: #f472b6; --nav-tone-soft: rgb(244 114 182 / 0.14); --nav-tone-text: #f9a8d4; }
 
 .nav-item { position: relative; }
 .nav-item.on {
@@ -845,6 +847,23 @@ html.dark .nav-tone-violet { --nav-tone-soft: rgb(139 92 246 / 0.14); --nav-tone
   .nav-press,
   .nav-press:hover,
   .nav-press:active {
+    transform: none;
+  }
+}
+
+/* Нижняя навигация: иконка подпрыгивает при нажатии и активации */
+.bottom-nav-icon {
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.bottom-nav-btn:active .bottom-nav-icon {
+  transform: translateY(-2px) scale(1.14);
+}
+.bottom-nav-btn.on .bottom-nav-icon {
+  transform: translateY(-1px) scale(1.06);
+}
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav-btn:active .bottom-nav-icon,
+  .bottom-nav-btn.on .bottom-nav-icon {
     transform: none;
   }
 }

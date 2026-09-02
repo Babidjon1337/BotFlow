@@ -12,11 +12,11 @@ interface SidebarProps {
   toggleTheme: () => void;
 }
 
-/** Локальные тона разделов (DS v2 §5): окрашивают только пункт меню. */
+/** Локальные тона разделов (DS v2 §5): окрашивают только пункт меню. Профиль выделен розовым. */
 const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
   billing: 'nav-tone-violet',
-  profile: 'nav-tone',
+  profile: 'nav-tone-rose',
   admin: 'nav-tone',
 };
 

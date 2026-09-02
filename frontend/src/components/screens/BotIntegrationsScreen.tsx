@@ -181,19 +181,19 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
         hint="Платформы, касса и оферта — всё, что связывает бота с клиентами"
       />
 
-      {/* ── 1. Платформы: три карточки в одну строку ── */}
-      <section className="grid grid-cols-3 gap-2.5 sm:gap-3" aria-label="Платформы">
-        <article className={`flex flex-col items-center rounded-[16px] border p-3 text-center sm:p-4 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
-          <span className={`flex size-[72px] shrink-0 items-center justify-center rounded-[18px] sm:size-[84px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
+      {/* ── 1. Платформы: на мобилке компактные плитки, на desktop — крупные ── */}
+      <section className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="Платформы">
+        <article className={`flex flex-col items-center rounded-[16px] border p-2.5 text-center sm:p-4 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
+          <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] sm:size-[84px] sm:rounded-[18px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
             <TelegramGlyph active={hasToken} />
           </span>
-          <h3 className={`mt-2.5 text-body font-bold ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
+          <h3 className={`mt-2 text-body-sm font-bold sm:text-body ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
           {hasToken ? (
             <p className="mt-0.5 w-full truncate text-micro text-fg-secondary">{bot.username}</p>
           ) : (
             <p className="mt-0.5 text-micro text-fg-tertiary">Токен @BotFather</p>
           )}
-          <div className="mt-2">
+          <div className="mt-1.5 sm:mt-2">
             <StatusBadge
               tone={bot.mediaSyncDone ? 'success' : hasToken ? 'warning' : 'neutral'}
               label={bot.mediaSyncDone ? 'Готов' : hasToken ? 'Нужен START' : 'Не подключён'}
@@ -202,7 +202,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           <button
             type="button"
             onClick={() => { setTokenFormOpen((open) => !open); setToken(''); setTokenError(null); }}
-            className="mt-2.5 inline-flex items-center gap-1 text-micro font-semibold text-primary hover:underline"
+            className="mt-2 inline-flex items-center gap-1 text-micro font-semibold text-primary hover:underline sm:mt-2.5"
           >
             <KeyRound className="size-3" aria-hidden="true" />
             {hasToken ? 'Изменить токен' : 'Вставить токен'}
@@ -213,16 +213,16 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           <article
             key={platform}
             aria-disabled
-            className="flex flex-col items-center rounded-[16px] border border-dashed border-border-strong bg-card p-3 text-center sm:p-4"
+            className="flex flex-col items-center rounded-[16px] border border-dashed border-border-strong bg-card p-2.5 text-center sm:p-4"
           >
-            <span className="flex size-[72px] shrink-0 items-center justify-center rounded-[18px] bg-muted sm:size-[84px]">
-              <PlatformGlyph platform={platform} size={64} className="opacity-60" />
+            <span className="flex size-14 shrink-0 items-center justify-center rounded-[16px] bg-muted sm:size-[84px] sm:rounded-[18px]">
+              <PlatformGlyph platform={platform} size={40} className="opacity-60 sm:!size-[64px]" />
             </span>
-            <h3 className="mt-2.5 text-body font-bold text-fg-tertiary">
+            <h3 className="mt-2 text-body-sm font-bold text-fg-tertiary sm:mt-2.5 sm:text-body">
               {{ vk: 'VK', max: 'MAX' }[platform]}
             </h3>
             <p className="mt-0.5 text-micro text-fg-tertiary">Свои ключи</p>
-            <div className="mt-2">
+            <div className="mt-1.5 sm:mt-2">
               <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-fg-tertiary">скоро</span>
             </div>
           </article>
@@ -355,7 +355,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           </p>
         )}
 
-        <div className="grid grid-cols-3 gap-2.5 sm:gap-3">
+        <div className="flex flex-col gap-2.5 sm:grid sm:grid-cols-3 sm:gap-3">
           {PROVIDERS.map((provider) => {
             const isActiveCashier = hasCashier && bot.paymentProvider === provider.id;
             const isSelected = selectedProvider === provider.id;
@@ -370,7 +370,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                   setCashierError(null);
                   setCashierSaved(false);
                 }}
-                className={`flex flex-col items-center rounded-[16px] border p-3 text-center transition-all sm:p-4 ${
+                className={`flex w-full items-center gap-3 rounded-[16px] border p-3 text-left transition-all sm:flex-col sm:items-center sm:gap-0 sm:text-center sm:p-4 ${
                   isActiveCashier
                     ? 'border-success/60 bg-success-soft/40'
                     : isSelected
@@ -378,8 +378,8 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                       : 'border-border bg-card hover:border-fg-tertiary/50'
                 } ${hasCashier && !isActiveCashier && !isSelected ? 'opacity-60' : ''}`}
               >
-                <span className="relative flex size-[72px] items-center justify-center rounded-[18px] bg-white shadow-xs dark:bg-white/95 sm:size-[84px]">
-                  <img src={provider.logo} alt={provider.name} className="size-[56px] object-contain sm:size-[64px]" />
+                <span className="relative flex size-12 shrink-0 items-center justify-center rounded-[14px] bg-white shadow-xs dark:bg-white/95 sm:size-[84px] sm:rounded-[18px]">
+                  <img src={provider.logo} alt={provider.name} className="size-8 object-contain sm:size-[64px]" />
                   {isActiveCashier ? (
                     <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-success text-white ring-2 ring-[var(--color-surface)]">
                       <Check className="size-3" aria-hidden />
@@ -390,10 +390,15 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-2.5 block text-body font-bold">{provider.name}</span>
-                <span className="mt-0.5 block text-micro leading-snug text-fg-tertiary">
-                  {isActiveCashier ? 'Подключена' : provider.desc.split('.')[0]}
+                <span className="min-w-0 flex-1 sm:flex-none">
+                  <span className="block truncate text-body font-bold sm:text-nowrap">{provider.name}</span>
+                  <span className="mt-0.5 block truncate text-micro leading-snug text-fg-tertiary sm:whitespace-normal">
+                    {isActiveCashier ? 'Подключена' : provider.desc.split('.')[0]}
+                  </span>
                 </span>
+                {!isActiveCashier && !isSelected && (
+                  <Check className="ml-auto size-4 shrink-0 text-fg-tertiary/40 sm:hidden" aria-hidden />
+                )}
               </button>
             );
           })}

@@ -156,8 +156,8 @@ export const BotManagement = () => {
           </div>
         </div>
 
-        {/* KPI: Боты / Работают / Подписчики */}
-        <div className="mb-8 grid grid-cols-3 gap-3">
+        {/* KPI: Боты / Работают / Подписчики — лейбл всегда в одну строку */}
+        <div className="mb-8 grid grid-cols-3 gap-2.5 sm:gap-3">
           {[
             { label: "Боты", value: String(bots.length) },
             { label: "Работают", value: String(activeBots) },
@@ -165,9 +165,9 @@ export const BotManagement = () => {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="rounded-[16px] border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3.5 md:px-5 md:py-4"
+              className="min-w-0 rounded-[16px] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3.5 sm:px-4 md:px-5 md:py-4"
             >
-              <p className="font-accent text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-tertiary">
+              <p className="truncate whitespace-nowrap font-accent text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-tertiary sm:text-[11px] sm:tracking-[0.12em]">
                 {stat.label}
               </p>
               <p className="mt-1.5 font-accent text-[22px] font-bold leading-none tabular-nums text-[var(--color-foreground)] md:text-[26px]">
