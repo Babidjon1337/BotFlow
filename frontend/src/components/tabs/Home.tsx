@@ -927,16 +927,16 @@ export const Home = () => {
         <section className="card-saas flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-labelledby="dashboard-plan-title">
           <div className="min-w-0">
             <h2 id="dashboard-plan-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">
-              {appState.subscriptionStatus === "expired" ? "PRO-подписка истекла" : "Нужно больше возможностей?"}
+              {appState.subscriptionStatus === "expired" ? "Подписка бота истекла" : "Подписка бота — 990 ₽/мес"}
             </h2>
             <p className="mt-1 text-[13px] leading-relaxed text-[var(--color-foreground-secondary)]">
               {appState.subscriptionStatus === "expired"
-                ? "Продлите подписку, чтобы снова использовать возможности PRO."
-                : "PRO открывает одновременную работу нескольких ботов и расширенные возможности."}
+                ? "Продлите подписку, чтобы опубликованные боты снова работали."
+                : "Публикуйте бота, принимайте оплату и рассылайте — без лимитов на сообщения."}
             </p>
           </div>
           <button type="button" onClick={() => setActiveTab("subscription")} className="btn btn-secondary h-10 shrink-0 px-4 text-[13px]">
-            {appState.subscriptionStatus === "expired" ? "Продлить" : "Посмотреть PRO"}
+            {appState.subscriptionStatus === "expired" ? "Продлить" : "Оформить"}
           </button>
         </section>
       )}

@@ -2,8 +2,6 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { ShieldAlert } from 'lucide-react';
 
-import { BillingRenew } from './components/sheets/BillingRenew';
-import { CheckoutSheet } from './components/sheets/CheckoutSheet';
 import { BotCreateSheet } from './components/sheets/BotCreateSheet';
 import { BotSwitcher } from './components/sheets/BotSwitcher';
 import { BotSettings } from './components/sheets/BotSettings';
@@ -398,28 +396,6 @@ export default function App() {
             onClose={() => setSheet(null)}
             onSave={() => {
               setAppState(prev => ({ ...prev }));
-            }}
-          />
-        )}
-        {(appState.activeSheet === 'billing_renew' || appState.activeSheet === 'billing_first') && (
-          <BillingRenew
-            key="billing_renew"
-            onClose={() => setSheet(null)}
-            onSuccess={() => {
-              setSheet(null);
-              setToastMessage('Платёж создан. Завершите оплату в ЮKassa.');
-            }}
-          />
-        )}
-        {appState.activeSheet === 'checkout' && appState.sheetData && 'tariff' in appState.sheetData && (
-          <CheckoutSheet
-            key="checkout"
-            tariffId={appState.sheetData.tariff}
-            onClose={() => setSheet(null)}
-            onSuccess={(email) => {
-              setAppState(prev => ({ ...prev, userEmail: email }));
-              setSheet(null);
-              setToastMessage('Счёт создан. Завершите оплату в ЮKassa.');
             }}
           />
         )}

@@ -181,13 +181,13 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
         hint="Платформы, касса и оферта — всё, что связывает бота с клиентами"
       />
 
-      {/* ── 1. Платформы: на мобилке компактные плитки, на desktop — крупные ── */}
+      {/* ── 1. Платформы: три карточки в одну строку (на мобилке пропорционально меньше) ── */}
       <section className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="Платформы">
         <article className={`flex flex-col items-center rounded-[16px] border p-2.5 text-center sm:p-4 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
-          <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] sm:size-[84px] sm:rounded-[18px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
+          <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] [&_svg]:size-10 sm:size-[84px] sm:rounded-[18px] sm:[&_svg]:size-[56px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
             <TelegramGlyph active={hasToken} />
           </span>
-          <h3 className={`mt-2 text-body-sm font-bold sm:text-body ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
+          <h3 className={`mt-2 text-body-sm font-bold sm:mt-2.5 sm:text-body ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
           {hasToken ? (
             <p className="mt-0.5 w-full truncate text-micro text-fg-secondary">{bot.username}</p>
           ) : (
@@ -215,8 +215,8 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
             aria-disabled
             className="flex flex-col items-center rounded-[16px] border border-dashed border-border-strong bg-card p-2.5 text-center sm:p-4"
           >
-            <span className="flex size-14 shrink-0 items-center justify-center rounded-[16px] bg-muted sm:size-[84px] sm:rounded-[18px]">
-              <PlatformGlyph platform={platform} size={40} className="opacity-60 sm:!size-[64px]" />
+            <span className="flex size-14 shrink-0 items-center justify-center rounded-[16px] bg-muted [&_img]:size-10 sm:size-[84px] sm:rounded-[18px] sm:[&_img]:size-16">
+              <PlatformGlyph platform={platform} size={64} className="opacity-60" />
             </span>
             <h3 className="mt-2 text-body-sm font-bold text-fg-tertiary sm:mt-2.5 sm:text-body">
               {{ vk: 'VK', max: 'MAX' }[platform]}

@@ -78,7 +78,7 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
           <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
             <span style={{ fontSize: '14px' }}>🔒</span>
             <span>
-              У вас более 10 пользователей. Токен заблокирован. (Для смены нужна <span onClick={() => { setSheet(null); setActiveTab('subscription'); }} style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}>PRO подписка</span> или новый слот).
+              У вас более 10 пользователей. Токен заблокирован. (Для смены нужна <span onClick={() => { setSheet(null); setActiveTab('subscription'); }} style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}>подписка бота</span> или новый слот).
             </span>
           </p>
         )}

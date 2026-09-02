@@ -49,7 +49,7 @@ export interface FunnelNode {
 }
 
 export type TabType = 'home' | 'build' | 'flow' | 'profile' | 'subscription' | 'manage' | 'admin_stats';
-export type SheetType = 'billing_first' | 'billing_renew' | 'bot_switcher' | 'bot_settings' | 'checkout' | 'bot_create' | null;
+export type SheetType = 'bot_switcher' | 'bot_settings' | 'bot_create' | null;
 export type PaymentProvider = 'yookassa' | 'robokassa' | 'prodamus';
 export type DeliveryType = 'link' | 'invite' | 'file';
 
@@ -91,7 +91,7 @@ export interface AppState {
   emailReceiptsEnabled?: boolean;
   emailBillingNotificationsEnabled?: boolean;
   activeSheet: SheetType;
-  sheetData?: { tariff: 'basic' | 'pro' } | { botId: string };
+  sheetData?: { botId: string };
   isDirty: boolean;
   isLoading?: boolean;
 }

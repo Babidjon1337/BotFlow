@@ -368,7 +368,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
                     {isTokenLocked ? (
                       <p className="flex items-start gap-1.5 text-[12px] text-orange-500 mt-1.5 leading-tight">
                         <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                        <span>Токен заблокирован (более 10 юзеров). Нужна PRO-подписка.</span>
+                        <span>Токен заблокирован (более 10 юзеров). Нужна подписка бота.</span>
                       </p>
                     ) : (
                       <p className="text-[12px] text-[var(--color-foreground-secondary)] mt-1">
