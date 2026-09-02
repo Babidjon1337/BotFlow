@@ -79,10 +79,10 @@ show_help() {
 git_update() {
     info "Получаю обновления из Git..."
 
-    if git pull; then
+    if git fetch origin main && git reset --hard origin/main; then
         success "Git обновлён"
     else
-        fail "Ошибка при выполнении git pull"
+        fail "Ошибка при обновлении Git"
     fi
 }
 
