@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   RotateCcw,
   Image as ImageIcon,
+  ImagePlus,
   ShieldAlert,
   Bold,
   Italic,
@@ -248,88 +249,93 @@ export const RichTextEditor = ({
         onChange={handleFileChange}
       />
 
-      {/* Compact Media Assets: список до 10 медиа (новый формат) + совместимость со старым одиночным */}
-      <AnimatePresence>
-        {(hasMedia || mediaAssets.length > 0) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 overflow-hidden"
-          >
-            <ul className="flex flex-col gap-2">
-              {/* Новый формат: массив mediaAssets */}
-              {mediaAssets.map((asset, index) => (
-                <li key={asset.mediaAssetId} className="flex items-center gap-3">
-                  <div className="w-[56px] h-[56px] rounded-lg overflow-hidden shrink-0 border border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-center">
-                    {botId ? (
-                      <SyncedMediaPreview botId={botId} assetId={asset.mediaAssetId} mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType} compact />
-                    ) : (
-                      <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-semibold text-[var(--color-foreground)]">
-                      {index + 1}. {asset.mediaType === "document" ? "Документ" : asset.mediaType === "video" ? "Видео" : "Фото"}
-                    </p>
-                  </div>
+      {/* Медиа-ряд в стиле рассылки: чипы 64px + пунктирная плитка «+» (до 10) */}
+      {onUploadMedia && (
+        <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+          <ul className="flex flex-wrap items-center gap-2">
+            <AnimatePresence mode="popLayout">
+              {mediaAssets.map((asset) => (
+                <motion.li
+                  key={asset.mediaAssetId}
+                  layout
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className="relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+                >
+                  {botId ? (
+                    <SyncedMediaPreview botId={botId} assetId={asset.mediaAssetId} mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType} compact />
+                  ) : (
+                    <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
+                  )}
                   <button
                     type="button"
                     onMouseDown={keepEditorSelection}
                     onClick={onRemoveMedia}
-                    className="p-1.5 rounded-lg text-[var(--color-danger)] bg-[var(--color-danger-soft)] hover:bg-[var(--color-danger)] hover:text-white transition-all shrink-0"
-                    title="Удалить медиафайл"
-                    aria-label={`Удалить медиа ${index + 1}`}
+                    aria-label="Убрать медиа"
+                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--color-danger-soft)] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
                   >
-                    <X size={14} />
+                    <X className="size-3" aria-hidden />
                   </button>
-                </li>
+                </motion.li>
               ))}
               {/* Старый формат (одиночное медиа без массива) */}
               {mediaAssets.length === 0 && hasMedia && (
-                <li className="flex items-center gap-3">
+                <motion.li
+                  key="legacy-media"
+                  layout
+                  initial={{ opacity: 0, scale: 0.6 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className="relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+                >
                   {mediaType === "document" ? (
-                    <div className="w-[56px] h-[56px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
-                      <FileText size={20} className="text-[var(--color-primary)]" />
-                    </div>
+                    <FileText size={20} className="text-[var(--color-primary)]" />
                   ) : botId && mediaAssetId && mediaType ? (
-                    <div className="w-[56px] h-[56px] rounded-lg overflow-hidden shrink-0 border border-[var(--color-border)] shadow-sm">
-                      <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} compact />
-                    </div>
+                    <SyncedMediaPreview botId={botId} assetId={mediaAssetId} mediaType={mediaType} compact />
                   ) : (
-                    <div className="w-[56px] h-[56px] rounded-lg bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
-                      <ImageIcon size={20} className="text-[var(--color-foreground-tertiary)]" />
-                    </div>
+                    <ImageIcon size={20} className="text-[var(--color-foreground-tertiary)]" />
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[12px] font-semibold text-[var(--color-foreground)]">
-                      {isUploading ? "Загружаем…" : mediaType === "document" ? "Документ" : mediaType === "video" ? "Видео" : "Фото"}
-                    </p>
-                  </div>
                   <button
                     type="button"
                     onMouseDown={keepEditorSelection}
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="px-3 py-1.5 rounded-lg text-[13px] font-semibold text-white bg-[var(--color-primary)] hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shrink-0 shadow-sm"
-                  >
-                    Заменить
-                  </button>
-                  <button
-                    type="button"
                     onClick={onRemoveMedia}
-                    className="p-2 rounded-lg text-[var(--color-danger)] bg-[var(--color-danger-soft)] hover:bg-[var(--color-danger)] hover:text-white active:scale-95 transition-all shrink-0"
-                    title="Удалить медиафайл"
-                    aria-label="Удалить медиафайл"
+                    aria-label="Убрать медиа"
+                    className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-[var(--color-danger-soft)] text-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
                   >
-                    <X size={16} />
+                    <X className="size-3" aria-hidden />
                   </button>
-                </li>
+                </motion.li>
               )}
-            </ul>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </AnimatePresence>
+            {mediaAssets.length + (hasMedia && mediaAssets.length === 0 ? 1 : 0) < 10 && (
+              <li>
+                <button
+                  type="button"
+                  onMouseDown={keepEditorSelection}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading}
+                  title="Добавить фото или видео"
+                  aria-label="Добавить медиафайл"
+                  className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-border-strong)] text-[var(--color-foreground-tertiary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"
+                >
+                  {isUploading ? (
+                    <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" aria-hidden />
+                  ) : (
+                    <ImagePlus className="size-5" aria-hidden />
+                  )}
+                  <span className="text-[10px] font-semibold">{isUploading ? "…" : "фото"}</span>
+                </button>
+              </li>
+            )}
+          </ul>
+          <p className="mt-1.5 text-[11px] text-[var(--color-foreground-tertiary)]">
+            Медиа уйдёт одним сообщением, текст — следующим · до 10 файлов по 20 МБ
+          </p>
+        </div>
+      )}
 
       {/* Editable Area */}
       <div

@@ -89,7 +89,7 @@ export function AppShell({
                   onClick={() => !disabled && onBotView(view.id)}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'nav-tone tab-item tab-press relative shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium transition-colors',
+                    'nav-tone tab-item tab-press relative shrink-0 rounded-lg px-3 py-1.5 text-body-sm font-medium',
                     BOT_VIEW_TONES[view.id] ?? 'nav-tone',
                     active
                       ? 'on'

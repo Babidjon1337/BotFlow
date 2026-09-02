@@ -87,7 +87,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
       // clipboard может быть недоступен в старых WebView — не критично.
     }
     setWebhookCopied(true);
-    window.setTimeout(() => setWebhookCopied(false), 2000);
+    window.setTimeout(() => setWebhookCopied(false), 1200);
   };
   const [token, setToken] = useState('');
   const [tokenError, setTokenError] = useState<string | null>(null);
@@ -349,7 +349,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                       initial={{ scale: 0.4, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
                       exit={{ scale: 0.4, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 600, damping: 28 }}
+                      transition={{ duration: 0.1, ease: 'easeOut' }}
                       className="flex"
                     >
                       {webhookCopied ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
