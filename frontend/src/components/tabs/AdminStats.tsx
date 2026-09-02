@@ -515,7 +515,8 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
   const [creating, setCreating] = useState(false);
   const [lastLink, setLastLink] = useState<AccessLink | null>(null);
 
-  const botUsername = import.meta.env.VITE_MAIN_BOT_USERNAME ?? "botflow_bot";
+  // Основной бот платформы: username можно переопределить через VITE_MAIN_BOT_USERNAME.
+  const botUsername = import.meta.env.VITE_MAIN_BOT_USERNAME ?? "BotFlowru_bot";
   const linkUrl = (token: string) => `https://t.me/${botUsername}?start=gl_${token}`;
 
   const create = async () => {
