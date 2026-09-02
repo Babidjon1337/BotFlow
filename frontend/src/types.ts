@@ -60,6 +60,8 @@ export interface BotConfig {
   status: 'active' | 'inactive'; // active means receiving traffic
   usersCount: number;
   isTokenLocked: boolean;
+  /** Бот опубликован бесплатно (спец-ссылка «1 бот навсегда»). */
+  hasLifetimeLicense?: boolean;
   sales?: number;
   revenue?: number;
   token?: string;

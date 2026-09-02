@@ -136,6 +136,7 @@ class BotApiResponse(BaseModel):
     funnel_complete: bool = Field(default=False, alias="funnelComplete")
     media_sync_done: bool = Field(default=False, alias="mediaSyncDone")
     is_token_locked: bool = Field(default=False, alias="isTokenLocked")
+    has_lifetime_license: bool = Field(default=False, alias="hasLifetimeLicense")
     sales: int = Field(default=0)
     revenue: float = Field(default=0.0)
     payment_provider: Optional[str] = Field(None, alias="paymentProvider")
@@ -190,6 +191,7 @@ class BotApiResponse(BaseModel):
             funnel_complete=getattr(bot, "funnel_complete", False),
             media_sync_done=getattr(bot, "media_sync_done", False),
             is_token_locked=getattr(bot, "is_token_locked", False),
+            has_lifetime_license=getattr(bot, "has_lifetime_license", False),
             payment_provider=bot.payment_provider,
             has_payment_credentials=bool(getattr(bot, "payment_creds_enc", None)),
             token_preview=token_preview,

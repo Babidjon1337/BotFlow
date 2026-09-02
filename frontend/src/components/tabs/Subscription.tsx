@@ -1,805 +1,301 @@
-import { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Crown,
-  Star,
-  CheckCircle2,
-  XCircle,
-  Bot,
-  Users,
-  CreditCard,
-  LineChart,
-  RefreshCcw,
-  ChevronLeft,
-  Lock,
-  KeyRound,
-  Headphones,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { Bot, CheckCircle2, CreditCard, Crown, RefreshCcw, ShieldCheck, XCircle } from "lucide-react";
 
 import { useAppState } from "../../providers/AppStateProvider";
 import { PageHeader } from "../common/PageHeader";
 import { StatusBadge } from "../common/StatusBadge";
+import { useAlert } from "../AlertProvider";
+import { Button } from "../ui/button";
 
-type PlanKey = "pro";
+const MONTH_PRICE = 990;
 
-const plans: Record<
-  PlanKey,
-  {
-    key: PlanKey;
-    name: string;
-    period: string;
-    tagline: string;
-    image: string;
-    accentFrom: string;
-    accentTo: string;
-    bgLight: string;
-    bgDark: string;
-    features: { icon: React.ReactNode; text: string; included: boolean }[];
-    ctaLabel: string;
-    ctaGradient: string;
-  }
-> = {
-  pro: {
-    key: "pro",
-    name: "Подписка бота",
-    period: "/ мес",
-    tagline: "Каждый бот оплачивается отдельно — без лимитов внутри",
-    image: "/pro_sub.png",
-    accentFrom: "#9333EA",
-    accentTo: "#6366F1",
-    bgLight: "linear-gradient(160deg, #F5F3FF 0%, #EDE9FE 80%)",
-    bgDark: "linear-gradient(160deg, #221a35 0%, #1a1528 80%)",
-    features: [
-      { icon: <Bot size={16} />, text: "Публикация бота в Telegram", included: true },
-      {
-        icon: <Users size={16} />,
-        text: "Без лимита сообщений и аудитории",
-        included: true,
-      },
-      {
-        icon: <CreditCard size={16} />,
-        text: "Приём оплаты на вашу кассу",
-        included: true,
-      },
-      {
-        icon: <LineChart size={16} />,
-        text: "Статистика и воронки",
-        included: true,
-      },
-      {
-        icon: <KeyRound size={16} />,
-        text: "Смена токена в любое время",
-        included: true,
-      },
-      {
-        icon: <Headphones size={16} />,
-        text: "Рассылки по аудитории",
-        included: true,
-      },
-    ],
-    ctaLabel: "Оформить подписку",
-    ctaGradient: "linear-gradient(135deg, #9333EA, #6366F1)",
-  },
-};
+const formatDate = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })
+    : "—";
 
+/**
+ * Подписка — оплата за каждого опубликованного бота (990 ₽/мес).
+ * Черновики бесплатны, бот со спец-лицензией бесплатен навсегда.
+ * Автосписание отключается по аккаунту: доступ доживает до конца периода,
+ * затем бот можно подключить заново оплатой.
+ */
 export const Subscription = () => {
-  const {
-    appState,
-    setActiveTab,
-    setAppState,
-    setToastMessage,
-    isAdmin,
-  } = useAppState();
-  const onGoToBots = () => setActiveTab("manage");
-  const [step, setStep] = useState<"select" | "confirm" | "success">("select");
-  const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
-  const [email, setEmail] = useState("");
-  const [isPaying, setIsPaying] = useState(false);
-  const [paymentError, setPaymentError] = useState("");
-  const [prices, setPrices] = useState<Partial<Record<PlanKey, number>>>({});
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const { appState, setAppState, setActiveTab, setToastMessage, isAdmin } = useAppState();
+  const { showConfirm } = useAlert();
+  const [busy, setBusy] = useState(false);
 
-  const [confetti, setConfetti] = useState<
-    { id: number; x: number; color: string; delay: number }[]
-  >([]);
+  const bots = appState.bots;
+  const published = bots.filter((bot) => bot.status === "active");
+  const freeBots = published.filter((bot) => bot.hasLifetimeLicense);
+  const paidBots = published.filter((bot) => !bot.hasLifetimeLicense);
+  const monthlyTotal = isAdmin ? 0 : paidBots.length * MONTH_PRICE;
+
+  const status = isAdmin ? "active" : appState.subscriptionStatus;
+  const autoRenew = Boolean(appState.subscriptionAutoRenew);
 
   useEffect(() => {
-    import("../../services/api").then(({ apiService }) => apiService.getBillingCatalog())
-      .then(({ products }) => setPrices(Object.fromEntries(products.map((product) => [product.id, product.price]))))
-      .catch((error) => setPaymentError(error instanceof Error ? error.message : "Не удалось загрузить тарифы."));
-  }, []);
+    let cancelled = false;
+    void import("../../services/api")
+      .then(({ apiService }) => apiService.getBillingStatus())
+      .then((billing) => {
+        if (cancelled) return;
+        setAppState((prev) => ({
+          ...prev,
+          subscriptionStatus: billing.subscription_status,
+          subscriptionUntil: billing.subscription_until,
+          subscriptionAutoRenew: billing.subscription_auto_renew,
+        }));
+      })
+      .catch(() => {
+        // Статус придёт при следующем открытии — экран остаётся рабочим.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [setAppState]);
 
-  useEffect(() => {
-    if (step === "success") {
-      const colors = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
-      const newConfetti = Array.from({ length: 50 }).map((_, i) => ({
-        id: i,
-        x: Math.random() * 100,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        delay: Math.random() * 0.5,
-      }));
-      const startTimer = window.setTimeout(() => setConfetti(newConfetti), 0);
-      const finishTimer = window.setTimeout(() => {
-        setStep("select");
-      }, 3500);
-      return () => { window.clearTimeout(startTimer); window.clearTimeout(finishTimer); };
-    }
-  }, [step]);
-
-  const handleSelectPlan = (planKey: PlanKey) => {
-    setSelectedPlan(planKey);
-    setStep("confirm");
-  };
-
-  const handlePay = async () => {
-    if (!selectedPlan) return;
-    setIsPaying(true);
-    setPaymentError("");
+  const payForBot = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       const { apiService } = await import("../../services/api");
-      const checkout = await apiService.createBillingCheckout(selectedPlan, email || undefined);
-      const telegram = (window as Window & { Telegram?: { WebApp?: { openLink?: (url: string) => void } } }).Telegram?.WebApp;
+      const checkout = await apiService.createBillingCheckout("pro", appState.userEmail || undefined);
+      const telegram = (window as Window & {
+        Telegram?: { WebApp?: { openLink?: (url: string) => void } };
+      }).Telegram?.WebApp;
       if (telegram?.openLink) telegram.openLink(checkout.confirmationUrl);
       else window.location.assign(checkout.confirmationUrl);
     } catch (error) {
-      setPaymentError(error instanceof Error ? error.message : "Не удалось создать платёж.");
+      setToastMessage(error instanceof Error ? error.message : "Не удалось создать платёж.");
     } finally {
-      setIsPaying(false);
+      setBusy(false);
     }
   };
 
-  const handleCancel = async () => {
-    try {
-      const { apiService } = await import("../../services/api");
-      const billing = await apiService.cancelBilling();
-      setAppState((prev) => ({
-        ...prev,
-        subscriptionStatus: billing.subscription_status,
-        subscriptionUntil: billing.subscription_until,
-        subscriptionAutoRenew: billing.subscription_auto_renew,
-      }));
-      setShowCancelModal(false);
-      setToastMessage("Автосписание отключено. Доступ сохранится до конца периода.");
-    } catch (error) {
-      setPaymentError(error instanceof Error ? error.message : "Не удалось отменить автопродление.");
-      setShowCancelModal(false);
-    }
+  const cancelAutoRenew = () => {
+    showConfirm({
+      type: "warning",
+      title: "Отключить автосписание?",
+      message: `Опубликованные боты продолжат работать до ${formatDate(appState.subscriptionUntil)}. После этой даты они остановятся, но настройки и клиенты сохранятся — подключить снова можно в любой момент.`,
+      confirmText: "Отключить",
+      cancelText: "Оставить",
+      onConfirm: () => {
+        void (async () => {
+          setBusy(true);
+          try {
+            const { apiService } = await import("../../services/api");
+            const billing = await apiService.cancelBilling();
+            setAppState((prev) => ({
+              ...prev,
+              subscriptionStatus: billing.subscription_status,
+              subscriptionUntil: billing.subscription_until,
+              subscriptionAutoRenew: billing.subscription_auto_renew,
+            }));
+            setToastMessage("Автосписание отключено");
+          } catch (error) {
+            setToastMessage(error instanceof Error ? error.message : "Не удалось отключить автосписание.");
+          } finally {
+            setBusy(false);
+          }
+        })();
+      },
+    });
   };
 
   return (
-    <div className="max-w-5xl mx-auto w-full flex flex-col">
-      <style>{`
-        @keyframes slow-gradient {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-        @keyframes fall {
-          0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-          100% { transform: translateY(100vh) rotate(360deg); opacity: 0; }
-        }
-        .plans-scroll::-webkit-scrollbar { display: none; }
-        .plans-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-        @media (max-width: 767px) {
-          .plans-container { overflow-x: auto !important; overflow-y: hidden; touch-action: pan-x; }
-        }
-      `}</style>
-
-      {/* ===== ACTIVE SUBSCRIPTION VIEW ===== */}
-      {(appState.subscriptionStatus === "active" || isAdmin) && step !== "success" ? (
-        <motion.div
-          key="active-sub"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="mt-6"
-        >
-          <PageHeader
-            kicker="Подписка"
-            tone="violet"
-            title="Подписка"
-            hint="Право публикации ваших ботов — оплата за BotFlow, не за продажи"
-          />
-
-          <div className="mt-6 flex flex-col gap-6">
-            {/* Main Hero Card */}
-            <div
-              className="relative overflow-hidden rounded-[24px] border border-[var(--color-primary)]/20 shadow-lg shadow-[var(--color-primary)]/5"
-              style={{
-                background:
-                  "linear-gradient(145deg, var(--color-surface) 0%, var(--color-surface-2) 100%)",
-              }}
-            >
-              <div className="absolute top-0 right-0 w-[420px] h-[420px] bg-[var(--color-primary)]/10 rounded-full blur-[80px] pointer-events-none -mr-20 -mt-20" />
-
-              <div className="relative z-10 flex flex-col gap-5 p-6 md:p-8">
-                <div className="flex items-center gap-4">
-                  <div className="size-12 rounded-[14px] bg-gradient-to-br from-[var(--color-primary)] to-[var(--v-500)] shadow-lg flex items-center justify-center shrink-0">
-                    <Crown size={24} className="text-white" />
-                  </div>
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <h2 className="text-lg font-extrabold text-[var(--color-foreground)] tracking-tight">
-                        {isAdmin ? "Тариф: Админ (SaaS Owner)" : "Подписка"}
-                      </h2>
-                      <StatusBadge tone="success" label="Активна" />
-                    </div>
-                    <p className="text-meta text-fg-secondary">
-                      {isAdmin
-                        ? "Безлимитный доступ ко всем функциям"
-                        : "Право публикации ваших ботов"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-[14px] border border-border bg-card/80 px-4 py-3.5">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary">Цена</p>
-                    <p className="font-accent text-[20px] font-semibold leading-tight mt-1 text-[var(--color-foreground)]">
-                      990 ₽ <span className="align-baseline font-sans text-[12px] font-medium text-fg-secondary">/ мес</span>
-                    </p>
-                    <p className="text-meta text-fg-tertiary mt-0.5">за каждого бота</p>
-                  </div>
-                  <div className="rounded-[14px] border border-border bg-card/80 px-4 py-3.5">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary flex items-center gap-1.5">
-                      <RefreshCcw size={12} aria-hidden="true" /> Продление
-                    </p>
-                    <p className="font-accent text-[20px] font-semibold leading-tight mt-1 text-[var(--color-foreground)]">
-                      {appState.subscriptionUntil
-                        ? new Date(appState.subscriptionUntil).toLocaleDateString("ru-RU", {
-                            day: "numeric",
-                            month: "long",
-                          })
-                        : "—"}
-                    </p>
-                    <p className="text-meta text-fg-tertiary mt-0.5">следующее списание</p>
-                  </div>
-                  <div className="rounded-[14px] border border-border bg-card/80 px-4 py-3.5">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary mb-1">
-                      Автосписание
-                    </p>
-                    {appState.subscriptionAutoRenew ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span className="inline-flex items-center gap-1.5 text-body-sm font-bold text-[var(--color-success)]">
-                          <span className="size-1.5 rounded-full bg-[var(--color-success)]" aria-hidden="true" />
-                          Включено
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowCancelModal(true)}
-                          className="text-meta font-semibold text-[var(--color-danger)] hover:underline text-left"
-                        >
-                          Отключить
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-body-sm text-fg-tertiary">
-                        Выключено — включится при следующей оплате
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Боты в подписке */}
-            <div className="card-saas rounded-[20px] p-6">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-[16px] font-bold text-[var(--color-foreground)]">Боты в подписке</h3>
-                <span className="text-meta font-semibold text-fg-secondary">
-                  {appState.bots.filter((bot) => bot.status === "active").length * 990} ₽ / мес
-                </span>
-              </div>
-              <p className="mt-1 text-[13px] text-fg-secondary">
-                Оплачиваются только опубликованные боты. Черновики — бесплатны.
-              </p>
-              <ul className="mt-4 divide-y divide-[var(--color-border)]">
-                {appState.bots.map((bot) => (
-                  <li key={bot.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3">
-                    <StatusBadge
-                      tone={bot.status === "active" ? "success" : "neutral"}
-                      label={bot.status === "active" ? "Опубликован" : "Черновик"}
-                    />
-                    <span className="min-w-0 truncate text-body-sm font-semibold text-[var(--color-foreground)]">
-                      {bot.name}
-                    </span>
-                    <span className="ml-auto text-meta text-fg-tertiary">
-                      {bot.status === "active" ? (
-                        <span className="font-accent font-semibold text-[var(--color-foreground)]">990 ₽/мес</span>
-                      ) : (
-                        "0 ₽ — не тарифицируется"
-                      )}
-                    </span>
-                  </li>
-                ))}
-                {appState.bots.length === 0 && (
-                  <li className="py-3 text-body-sm text-fg-tertiary">Пока нет ни одного бота</li>
-                )}
-              </ul>
-              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <button
-                  onClick={() => onGoToBots()}
-                  className="btn-primary-saas flex-1 py-3.5 rounded-[14px] text-[15px] font-bold flex items-center justify-center gap-2"
-                >
-                  К моим ботам
-                </button>
-                {!isAdmin && appState.subscriptionStatus === "active" && (
-                  <button
-                    onClick={() => setShowCancelModal(true)}
-                    className="flex-1 py-3.5 rounded-[14px] text-[15px] font-bold flex items-center justify-center border border-danger/40 text-[var(--color-danger)] transition-colors hover:bg-danger-soft"
-                  >
-                    Отменить подписку
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      ) : (
-        <AnimatePresence mode="wait">
-          {/* ===== STEP 1: SELECT PLAN ===== */}
-          {step === "select" && (
-            <motion.div
-              key="select"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.3 }}
-              className="w-full pt-1 md:pt-8"
-            >
-              {/* Header */}
-              <div className="text-center mb-3 md:mb-10 px-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-bold text-[12px] mb-2 md:mb-4">
-                  <Crown size={13} /> Подписка бота
-                </div>
-                <h1 className="text-[18px] md:text-4xl font-black text-[var(--color-foreground)] tracking-tight mb-0.5">
-                  Оформите подписку
-                </h1>
-                <p className="text-[13px] md:text-[16px] text-[var(--color-foreground-secondary)]">
-                  Черновик бесплатен — платите, когда бот готов к публикации
-                </p>
-              </div>
-
-              {/* Cards: mobile horizontal scroll-snap, desktop side-by-side */}
-              <div
-                ref={scrollRef}
-                onScroll={() => {
-                  if (scrollRef.current) {
-                    const scrollLeft = scrollRef.current.scrollLeft;
-                    const width = scrollRef.current.offsetWidth;
-                    const newIndex = Math.round(scrollLeft / width);
-                    if (newIndex !== activeIndex) {
-                      setActiveIndex(newIndex);
-                    }
-                  }
-                }}
-                className="plans-scroll plans-container flex md:grid md:grid-cols-2 gap-4 md:gap-6 overflow-x-auto md:overflow-x-visible snap-x snap-mandatory md:snap-none pl-4 pr-4 md:px-0 pb-1 md:pb-0"
-                style={{ scrollPaddingLeft: "1rem" }}
-              >
-                {(Object.values(plans) as (typeof plans)[PlanKey][]).map(
-                  (plan) => (
-                    <div
-                      key={plan.key}
-                      onClick={() => handleSelectPlan(plan.key)}
-                      className="snap-center shrink-0 w-[82vw] md:w-auto flex flex-col rounded-[28px] overflow-hidden border border-transparent cursor-pointer transition-all duration-300 hover:scale-[1.01] active:scale-[0.99] shadow-lg hover:shadow-xl"
-                      style={{ background: plan.bgLight }}
-                    >
-                      <PlanCard plan={plan} price={prices[plan.key]} />
-                    </div>
-                  ),
-                )}
-              </div>
-
-              {/* Mobile scroll dots */}
-              <div className="flex md:hidden justify-center gap-2 mt-3">
-                {Object.keys(plans).map((key, index) => (
-                  <div
-                    key={key}
-                    className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-                      index === activeIndex
-                        ? "bg-[var(--color-primary)]"
-                        : "bg-[var(--color-foreground-tertiary)]/40"
-                    }`}
-                  />
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* ===== STEP 2: CONFIRM ===== */}
-          {step === "confirm" && selectedPlan && (
-            <motion.div
-              key="confirm"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-              className="max-w-md mx-auto w-full pt-4 md:pt-8"
-            >
-              <div className="mb-6 flex items-center gap-3">
-                <motion.button
-                  whileHover={{ x: -2 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => setStep("select")}
-                  className="w-10 h-10 rounded-full flex items-center justify-center bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-surface-2)] transition-colors text-[var(--color-foreground)] shadow-sm"
-                >
-                  <ChevronLeft size={20} />
-                </motion.button>
-
-                {paymentError && (
-                  <p role="alert" className="mt-3 text-center text-[13px] text-[var(--color-danger)]">
-                    {paymentError}
-                  </p>
-                )}
-                <h2 className="text-[20px] md:text-[22px] font-bold text-[var(--color-foreground)]">
-                  Подтвердите выбор
-                </h2>
-              </div>
-
-              <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-[24px] p-5 md:p-6 shadow-sm mb-6 relative overflow-hidden">
-                <div
-                  className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-60"
-                  style={{
-                    background: `radial-gradient(circle, ${plans[selectedPlan].accentFrom}33, transparent)`,
-                  }}
-                />
-
-                {/* Plan summary */}
-                <div className="flex items-center gap-4 p-4 bg-[var(--color-surface-2)] rounded-2xl mb-6 relative z-10 border border-[var(--color-border)]">
-                  <div className="w-14 h-14 md:w-16 md:h-16 shrink-0 flex items-center justify-center rounded-xl overflow-hidden shadow-sm">
-                    <img
-                      src={plans[selectedPlan].image}
-                      alt=""
-                      className="w-full h-full object-contain"
-                    />
-                  </div>
-                  <div>
-                    <h3 className="text-[15px] md:text-[16px] font-bold text-[var(--color-foreground)] mb-0.5">
-                      {plans[selectedPlan].name}
-                    </h3>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-[18px] font-black text-[var(--color-foreground)]">
-                        {formatPrice(prices[selectedPlan])}
-                      </span>
-                      <span className="text-[13px] text-[var(--color-foreground-secondary)]">
-                        {plans[selectedPlan].period}
-                      </span>
-                    </div>
-                    <div className="text-[12px] text-[var(--color-foreground-secondary)] mt-0.5">
-                      {plans[selectedPlan].tagline}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Features */}
-                <div className="space-y-3 mb-6 pl-1 relative z-10">
-                  {plans[selectedPlan].features.map((f, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 text-[13px] md:text-[14px]"
-                    >
-                      <div
-                        className={
-                          f.included
-                            ? "text-[var(--color-success)]"
-                            : "text-[var(--color-foreground-tertiary)]"
-                        }
-                      >
-                        {f.included ? (
-                          <CheckCircle2 size={17} />
-                        ) : (
-                          <XCircle size={17} />
-                        )}
-                      </div>
-                      <span
-                        className={
-                          f.included
-                            ? "text-[var(--color-foreground)]"
-                            : "text-[var(--color-foreground-secondary)] line-through decoration-[var(--color-foreground-tertiary)]"
-                        }
-                      >
-                        {f.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Email */}
-                <div className="mb-6 relative z-10">
-                  <label className="block text-[13px] font-medium text-[var(--color-foreground-secondary)] mb-1.5">
-                    Email для чека (необязательно)
-                  </label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="example@mail.com"
-                    className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl py-3 px-4 text-[14px] md:text-[15px] text-[var(--color-foreground)] placeholder-[var(--color-foreground-secondary)] focus:outline-none focus:border-[#8B5CF6] transition-colors"
-                  />
-                </div>
-
-                <motion.button
-                  whileHover={{ scale: isPaying ? 1 : 1.01 }}
-                  whileTap={{ scale: isPaying ? 1 : 0.98 }}
-                  onClick={handlePay}
-                  disabled={isPaying}
-                  className="w-full py-4 rounded-[16px] text-[16px] font-bold text-white flex items-center justify-center gap-2 shadow-lg relative z-10"
-                  style={{
-                    background: plans[selectedPlan].ctaGradient,
-                    opacity: isPaying ? 0.7 : 1,
-                  }}
-                >
-                  {isPaying ? (
-                    <>
-                      <div className="w-5 h-5 border-[3px] border-white/30 border-t-white rounded-full animate-spin" />
-                      Обработка...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard size={20} />
-                      Перейти к оплате
-                    </>
-                  )}
-                </motion.button>
-
-                <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] md:text-[12px] text-[var(--color-foreground-secondary)] relative z-10">
-                  <Lock size={13} />
-                  <span>Безопасная оплата через ЮKassa</span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* ===== STEP 3: SUCCESS ===== */}
-          {step === "success" && (
-            <motion.div
-              key="success"
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.5, type: "spring" }}
-              className="flex-1 flex flex-col items-center justify-center py-12 md:py-16 relative h-[60vh] md:h-[70vh]"
-            >
-              {confetti.map((c) => (
-                <div
-                  key={c.id}
-                  className="absolute w-2 h-2 rounded-sm z-0 pointer-events-none"
-                  style={{
-                    left: `${c.x}%`,
-                    top: "-10px",
-                    backgroundColor: c.color,
-                    animation: `fall 3s linear ${c.delay}s forwards`,
-                  }}
-                />
-              ))}
-
-              <div
-                className="card-saas p-8 md:p-12 text-center max-w-md w-full relative overflow-hidden shadow-2xl shadow-[var(--color-success)]/10"
-                style={{ borderRadius: 32 }}
-              >
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--color-success)]/10 rounded-full blur-[60px] pointer-events-none -mr-20 -mt-20" />
-
-                <div className="relative z-10">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", damping: 15, delay: 0.1 }}
-                    className="w-20 h-20 md:w-24 md:h-24 mx-auto bg-gradient-to-br from-[var(--color-success)] to-green-400 text-white rounded-[24px] flex items-center justify-center mb-6 shadow-lg shadow-[var(--color-success)]/30"
-                  >
-                    <CheckCircle2
-                      size={40}
-                      className="md:w-12 md:h-12 drop-shadow-md"
-                      strokeWidth={2.5}
-                    />
-                  </motion.div>
-
-                  <h2 className="text-[26px] md:text-3xl font-black text-[var(--color-foreground)] tracking-tight mb-2">
-                    Оплата успешна!
-                  </h2>
-                  <h3 className="text-[16px] md:text-lg font-bold text-[var(--color-success)] mb-3">
-                    {selectedPlan === "pro"
-                      ? "Подписка оформлена"
-                      : "Подписка оформлена"}
-                  </h3>
-                  <p className="text-[14px] md:text-[15px] text-[var(--color-foreground-secondary)] leading-relaxed max-w-sm mx-auto mb-8">
-                    Средства зачислены, новые возможности уже доступны для ваших
-                    ботов.
-                  </p>
-
-                  <button
-                    onClick={() => {
-                      setStep("select");
-                      onGoToBots();
-                    }}
-                    className="w-full py-3.5 px-6 bg-[var(--color-foreground)] hover:bg-[var(--color-foreground)]/90 text-[var(--color-surface)] rounded-2xl text-[15px] font-bold shadow-md transition-all active:scale-[0.98]"
-                  >
-                    Вернуться к ботам
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      )}
-
-      {/* Cancel subscription modal */}
-      <AnimatePresence>
-        {showCancelModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl relative overflow-hidden"
-            >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
-
-              <div className="w-14 h-14 bg-red-100 dark:bg-red-900/30 text-red-500 rounded-full flex items-center justify-center mb-6 shadow-sm">
-                <XCircle size={28} />
-              </div>
-
-              <h3 className="text-xl font-bold text-[var(--color-foreground)] mb-2">
-                Отключить автосписание?
-              </h3>
-              <p className="text-[14px] text-[var(--color-foreground-secondary)] mb-8">
-                Подписка продолжит действовать до{' '}
-                <b className="text-[var(--color-foreground)]">
-                  {appState.subscriptionUntil
-                    ? new Date(appState.subscriptionUntil).toLocaleDateString('ru-RU', {
-                        day: 'numeric',
-                        month: 'long',
-                      })
-                    : 'конца периода'}
-                </b>
-                .
-                <br />
-                <br />
-                <span className="font-semibold text-[var(--color-foreground)]">
-                  Больше ничего не спишется.
-                </span>{' '}
-                После этой даты неопубликованные боты нельзя будет опубликовать,
-                а опубликованные — приостановятся. Включить автосписание снова
-                можно следующей оплатой.
-              </p>
-
-              <div className="flex flex-col gap-3 relative z-10">
-                <button
-                  onClick={handleCancel}
-                  className="w-full py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors shadow-sm"
-                >
-                  Да, отключить
-                </button>
-                <button
-                  onClick={() => setShowCancelModal(false)}
-                  className="w-full py-3 px-4 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] text-[var(--color-foreground)] font-semibold rounded-xl transition-colors border border-[var(--color-border)]"
-                >
-                  Не отключать
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
-
-// ── Separate component so dark/light background works via CSS class ──
-const formatPrice = (price?: number) => price === undefined ? "—" : `${price.toLocaleString("ru-RU")} ₽`;
-
-const PlanCard = ({ plan, price }: { plan: (typeof plans)[PlanKey]; price?: number }) => {
-  const isPro = plan.key === "pro";
-
-  return (
-    <div
-      className={`relative flex flex-col h-full rounded-[28px] overflow-hidden ${isPro ? "plan-card-pro" : "plan-card-basic"}`}
-      style={{
-        background: isPro
-          ? "var(--plan-bg-pro, linear-gradient(160deg, #F5F3FF 0%, #EDE9FE 80%))"
-          : "var(--plan-bg-basic, linear-gradient(160deg, #EFF6FF 0%, #DBEAFE 80%))",
-      }}
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22 }}
+      className="mx-auto flex w-full max-w-3xl flex-col gap-5 pb-8"
     >
-      <style>{`
-        .dark .plan-card-pro { background: linear-gradient(160deg, #221a35 0%, #1a1528 80%) !important; }
-        .dark .plan-card-basic { background: linear-gradient(160deg, #1e2d42 0%, #162236 80%) !important; }
-      `}</style>
+      <PageHeader
+        kicker="Подписка"
+        tone="violet"
+        title="Подписка"
+        hint="Оплата за каждого опубликованного бота — 990 ₽/мес. Черновики бесплатны."
+      />
 
-      {/* PRO badge — absolute so it doesn't push other elements */}
-      {isPro && (
-        <div className="absolute top-4 right-4 z-10">
-          <div className="px-3 py-1 bg-gradient-to-r from-[#9333EA] to-[#6366F1] text-white text-[11px] font-black rounded-full shadow">
-            990 ₽/мес
+      {/* Сводка: сумма в месяц + состояние продления */}
+      <section className="rounded-[20px] border border-border bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="font-accent text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-tertiary">
+              К оплате в месяц
+            </p>
+            <p className="mt-1 font-accent text-[34px] font-bold leading-none tabular-nums text-fg-primary">
+              {monthlyTotal.toLocaleString("ru-RU")} ₽
+            </p>
+            <p className="mt-1.5 text-body-sm text-fg-secondary">
+              {isAdmin
+                ? "Администратор платформы — публикация бесплатна"
+                : paidBots.length > 0
+                  ? `${paidBots.length} ${paidBots.length === 1 ? "бот" : "бота"} × ${MONTH_PRICE} ₽`
+                  : "Нет платных ботов — опубликуйте бота, чтобы начать"}
+            </p>
           </div>
+          <StatusBadge
+            tone={status === "active" ? "success" : status === "expired" ? "warning" : "neutral"}
+            label={status === "active" ? "Активна" : status === "expired" ? "Истекла" : "Не подключена"}
+          />
         </div>
+
+        {!isAdmin && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[14px] border border-border bg-muted/40 px-4 py-3">
+              <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-fg-tertiary">
+                <RefreshCcw className="size-3" aria-hidden /> Следующее списание
+              </p>
+              <p className="mt-1 text-body font-semibold text-fg-primary">
+                {status === "active" ? formatDate(appState.subscriptionUntil) : "—"}
+              </p>
+            </div>
+            <div className="rounded-[14px] border border-border bg-muted/40 px-4 py-3">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary">Автосписание</p>
+              {autoRenew ? (
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 text-body font-semibold text-success">
+                    <span className="size-1.5 rounded-full bg-success" aria-hidden /> Включено
+                  </span>
+                  <button
+                    type="button"
+                    onClick={cancelAutoRenew}
+                    disabled={busy}
+                    className="text-meta font-semibold text-danger hover:underline disabled:opacity-60"
+                  >
+                    Отключить
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-1 text-body-sm text-fg-secondary">
+                  Выключено — боты работают до конца периода
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!isAdmin && (status !== "active" || !autoRenew) && (
+          <Button className="mt-4 w-full" disabled={busy} onClick={() => void payForBot()}>
+            <CreditCard data-icon="inline-start" aria-hidden />
+            {status === "active" ? "Продлить подписку" : "Оплатить 990 ₽ / мес"}
+          </Button>
+        )}
+      </section>
+
+      {/* Боты: за что платим */}
+      <section className="rounded-[20px] border border-border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-body-lg font-bold text-fg-primary">Ваши боты</h2>
+          <span className="text-meta text-fg-tertiary">
+            {published.length} из {bots.length} опубликовано
+          </span>
+        </div>
+
+        {bots.length === 0 ? (
+          <p className="mt-4 rounded-[14px] border border-dashed border-border-strong px-4 py-6 text-center text-body-sm text-fg-tertiary">
+            Ботов пока нет. Создайте первого — черновик бесплатен.
+          </p>
+        ) : (
+          <ul className="mt-3 divide-y divide-border">
+            {bots.map((bot) => {
+              const isPublished = bot.status === "active";
+              const isFree = Boolean(bot.hasLifetimeLicense);
+              return (
+                <li key={bot.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-muted text-fg-secondary">
+                    <Bot className="size-4" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-body-sm font-semibold text-fg-primary">
+                    {bot.name}
+                  </span>
+                  {isFree ? (
+                    <StatusBadge tone="success" label="Бесплатно навсегда" />
+                  ) : (
+                    <StatusBadge
+                      tone={isPublished ? "success" : "neutral"}
+                      label={isPublished ? "Опубликован" : "Черновик"}
+                    />
+                  )}
+                  <span className="ml-auto shrink-0 text-meta tabular-nums text-fg-secondary">
+                    {isFree || isAdmin ? (
+                      <span className="text-success">0 ₽</span>
+                    ) : isPublished ? (
+                      <span className="font-accent font-semibold text-fg-primary">{MONTH_PRICE} ₽/мес</span>
+                    ) : (
+                      "0 ₽"
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <Button variant="outline" className="mt-4 w-full" onClick={() => setActiveTab("manage")}>
+          К моим ботам
+        </Button>
+      </section>
+
+      {/* Что входит — коротко, без маркетинга */}
+      <section className="rounded-[20px] border border-border bg-card p-5">
+        <h2 className="text-body-lg font-bold text-fg-primary">Что входит в 990 ₽</h2>
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+          {[
+            "Публикация бота в Telegram",
+            "Без лимитов сообщений и аудитории",
+            "Приём оплаты на вашу кассу",
+            "Рассылки и сегменты аудитории",
+            "Статистика и воронка",
+            "Смена токена в любое время",
+          ].map((feature) => (
+            <li key={feature} className="flex items-start gap-2 text-body-sm text-fg-secondary">
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
+              {feature}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {isAdmin && (
+        <section className="flex items-start gap-3 rounded-[20px] border border-success/40 bg-success-soft/50 p-5">
+          <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
+          <div>
+            <p className="text-body font-bold text-fg-primary">Администратор платформы</p>
+            <p className="mt-0.5 text-body-sm text-fg-secondary">
+              Боты создаются и публикуются бесплатно, без лимитов и списаний.
+            </p>
+          </div>
+        </section>
       )}
 
-      {/* Illustration — fixed height */}
-      <div className="flex justify-center items-center px-4 pt-4 shrink-0 md:h-[240px] h-[150px]">
-        <img
-          src={plan.image}
-          alt={plan.name}
-          className="w-full h-full object-contain drop-shadow-lg"
-        />
-      </div>
+      {freeBots.length > 0 && !isAdmin && (
+        <section className="flex items-start gap-3 rounded-[20px] border border-primary/30 bg-accent/40 p-5">
+          <Crown className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
+          <div>
+            <p className="text-body font-bold text-fg-primary">
+              {freeBots.length === 1 ? "Один бот работает бесплатно" : `${freeBots.length} бота работают бесплатно`}
+            </p>
+            <p className="mt-0.5 text-body-sm text-fg-secondary">
+              Спец-доступ по ссылке: {freeBots.map((bot) => bot.name).join(", ")}. Подписка на них не нужна.
+            </p>
+          </div>
+        </section>
+      )}
 
-      {/* Divider with icon */}
-      <div className="flex items-center gap-3 px-5 pt-2 pb-0">
-        <div
-          className="flex-1 h-px"
-          style={{ background: `${plan.accentFrom}40` }}
-        />
-        <div
-          className="w-6 h-6 rounded-full flex items-center justify-center text-white shadow-sm"
-          style={{ background: plan.accentFrom }}
-        >
-          {isPro ? <Crown size={12} /> : <Star size={12} />}
-        </div>
-        <div
-          className="flex-1 h-px"
-          style={{ background: `${plan.accentFrom}40` }}
-        />
-      </div>
-
-      {/* Plan info */}
-      <div className="px-5 pt-2 pb-1">
-        <h2 className="text-[17px] font-black text-[var(--color-foreground)] text-center mb-0.5">
-          {plan.name}
-        </h2>
-        <p className="text-[12px] text-center text-[var(--color-foreground-secondary)] mb-2">
-          {plan.tagline}
-        </p>
-
-        {/* Price */}
-        <div className="flex items-baseline justify-center gap-1 mb-3">
-          <span className="text-[22px] font-black text-[var(--color-foreground)]">
-            {formatPrice(price)}
-          </span>
-          <span className="text-[12px] text-[var(--color-foreground-secondary)] font-medium">
-            {plan.period}
-          </span>
-        </div>
-
-        {/* Feature list */}
-        <div className="space-y-1.5 mb-3">
-          {plan.features.map((f, i) => (
-            <div key={i} className="flex items-center gap-2 text-[12px]">
-              <div
-                className={`shrink-0 ${f.included ? "text-[var(--color-success)]" : "text-[var(--color-foreground-tertiary)]"}`}
-              >
-                {f.included ? (
-                  <CheckCircle2 size={14} />
-                ) : (
-                  <XCircle size={14} />
-                )}
-              </div>
-              <span
-                className={
-                  f.included
-                    ? "text-[var(--color-foreground)]"
-                    : "text-[var(--color-foreground-secondary)] line-through decoration-[var(--color-foreground-tertiary)]/50"
-                }
-              >
-                {f.text}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* CTA Button */}
-      <div className="px-4 pb-4">
-        <button
-          className="w-full py-3 rounded-xl text-[14px] font-bold text-white shadow-lg transition-all active:scale-[0.97]"
-          style={{ background: plan.ctaGradient }}
-        >
-          {plan.ctaLabel}
-        </button>
-      </div>
-    </div>
+      {status === "expired" && !isAdmin && (
+        <section className="flex items-start gap-3 rounded-[20px] border border-warning/40 bg-warning-soft/50 p-5">
+          <XCircle className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden />
+          <div>
+            <p className="text-body font-bold text-fg-primary">Подписка закончилась</p>
+            <p className="mt-0.5 text-body-sm text-fg-secondary">
+              Боты остановлены, но настройки, клиенты и статистика сохранены. Оплатите — публикация вернётся сразу.
+            </p>
+          </div>
+        </section>
+      )}
+    </motion.div>
   );
 };
