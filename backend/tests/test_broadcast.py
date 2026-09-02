@@ -79,6 +79,15 @@ def test_access_link_validation():
         _aio.run(access_link_rq.create_access_link(kind='forever', days=1, expires_at=None, note=None))
 
 
+def test_get_broadcast_media_uses_imported_uuid():
+    # Регресс: в очереди рассылок падало NameError: name uuid is not defined,
+    # из-за uuid.UUID при импорте только from uuid import UUID.
+    src = Path(broadcast_rq.__file__).read_text(encoding='utf-8')
+    media_src = src.split('async def get_broadcast_media(', 1)[1].split('async def', 1)[0]
+    assert 'uuid.UUID(' not in media_src
+    assert 'UUID(str(a))' in media_src
+
+
 def test_broadcast_button_normalization():
     # Consult: без текста подставляется дефолт, url валидируется.
     btn = broadcast_rq.normalize_broadcast_button({'type': 'consult', 'url': 'https://t.me/owner'})

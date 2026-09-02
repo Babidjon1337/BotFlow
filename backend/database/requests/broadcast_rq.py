@@ -407,15 +407,15 @@ async def finalize_broadcast(broadcast_id: UUID) -> str:
 
 async def get_broadcast_media(broadcast: Broadcast) -> list[MediaAsset]:
     """Медиа рассылки в порядке добавления (фото/видео с Telegram file_id)."""
-    ids = [uuid.UUID(str(a)) for a in (broadcast.media_asset_ids or [])]
-    if not ids:
+    ordered_ids = [UUID(str(a)) for a in (broadcast.media_asset_ids or [])]
+    if not ordered_ids:
         return []
     async with async_session() as session:
         items = await session.scalars(
-            select(MediaAsset).where(MediaAsset.id.in_(ids))
+            select(MediaAsset).where(MediaAsset.id.in_(ordered_ids))
         )
         by_id = {item.id: item for item in items}
-        return [by_id[i] for i in [uuid.UUID(str(a)) for a in (broadcast.media_asset_ids or [])] if i in by_id]
+        return [by_id[i] for i in ordered_ids if i in by_id]
 
 
 async def requeue_failed_recipients(broadcast_id: UUID) -> int:
