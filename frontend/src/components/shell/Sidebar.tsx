@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { Bot, Moon, ShieldCheck, Sun } from 'lucide-react';
 import { ACCOUNT_TABS } from '../../routes';
 import type { AppRoute, AccountTab } from '../../routes';
@@ -59,8 +60,22 @@ export function Sidebar({
                   : 'text-fg-secondary hover:bg-muted hover:text-foreground',
               )}
             >
-              <Icon className="size-5" />
-              {tab.label}
+              {active && (
+                <motion.span
+                  layoutId="sidebar-pill"
+                  className="absolute inset-0 rounded-md"
+                  style={{ backgroundColor: 'var(--nav-tone-soft)' }}
+                  transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                  aria-hidden
+                >
+                  <span
+                    className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full"
+                    style={{ backgroundColor: 'var(--nav-tone)' }}
+                  />
+                </motion.span>
+              )}
+              <Icon className="relative z-10 size-5" />
+              <span className="relative z-10">{tab.label}</span>
             </button>
           );
         })}

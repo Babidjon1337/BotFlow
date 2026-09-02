@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { WelcomeScreen } from "../screens/WelcomeScreen";
 import { StatusBadge } from "../common/StatusBadge";
+import { AnimatedNumber } from "../common/AnimatedNumber";
 import { Button } from "../ui/button";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
@@ -159,9 +160,9 @@ export const BotManagement = () => {
         {/* KPI: Боты / Работают / Подписчики — лейбл всегда в одну строку */}
         <div className="mb-8 grid grid-cols-3 gap-2.5 sm:gap-3">
           {[
-            { label: "Боты", value: String(bots.length) },
-            { label: "Работают", value: String(activeBots) },
-            { label: "Подписчики", value: totalUsers.toLocaleString("ru-RU") },
+            { label: "Боты", value: bots.length },
+            { label: "Работают", value: activeBots },
+            { label: "Подписчики", value: totalUsers },
           ].map((stat) => (
             <div
               key={stat.label}
@@ -171,7 +172,7 @@ export const BotManagement = () => {
                 {stat.label}
               </p>
               <p className="mt-1.5 font-accent text-[22px] font-bold leading-none tabular-nums text-[var(--color-foreground)] md:text-[26px]">
-                {stat.value}
+                <AnimatedNumber value={stat.value} />
               </p>
             </div>
           ))}
@@ -220,7 +221,18 @@ export const BotManagement = () => {
                           <h3 className="text-[16px] md:text-[18px] font-extrabold text-[var(--color-foreground)] leading-tight truncate">
                             {bot.name}
                           </h3>
-                          <StatusBadge tone={isActive ? "success" : "neutral"} label={isActive ? "Работает" : "Черновик"} />
+                          <AnimatePresence mode="wait" initial={false}>
+                            <motion.span
+                              key={isActive ? "active" : "draft"}
+                              initial={{ opacity: 0, y: 4, scale: 0.9 }}
+                              animate={{ opacity: 1, y: 0, scale: 1 }}
+                              exit={{ opacity: 0, y: -4, scale: 0.9 }}
+                              transition={{ duration: 0.18 }}
+                              className="inline-flex"
+                            >
+                              <StatusBadge tone={isActive ? "success" : "neutral"} label={isActive ? "Работает" : "Черновик"} />
+                            </motion.span>
+                          </AnimatePresence>
                         </div>
                         <span className="text-[13px] md:text-[14px] font-medium text-[var(--color-foreground-secondary)] truncate block w-full">
                           @{bot.username?.replace("@", "") || "username"}
@@ -230,7 +242,8 @@ export const BotManagement = () => {
 
                     {/* Right: Actions (Power, Settings) */}
                     <div className="flex items-center gap-1 shrink-0 -mt-1 -mr-2 md:-mr-1">
-                      <button
+                      <motion.button
+                        whileTap={{ scale: 0.85 }}
                         onClick={() => toggleBot(bot)}
                         disabled={isToggling[bot.id]}
                         className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-colors ${isActive ? "text-[var(--color-success)] hover:bg-[var(--color-success-soft)]" : "text-[var(--color-foreground-tertiary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"} ${isToggling[bot.id] ? "opacity-50 cursor-not-allowed" : ""}`}
@@ -239,9 +252,17 @@ export const BotManagement = () => {
                         {isToggling[bot.id] ? (
                           <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
                         ) : (
-                          <Power size={18} />
+                          <motion.span
+                            key={isActive ? "on" : "off"}
+                            initial={{ scale: 0.4, rotate: -90 }}
+                            animate={{ scale: 1, rotate: 0 }}
+                            transition={{ type: "spring", stiffness: 520, damping: 24 }}
+                            className="flex"
+                          >
+                            <Power size={18} />
+                          </motion.span>
                         )}
-                      </button>
+                      </motion.button>
 
                       <div className="relative">
                         <button

@@ -202,11 +202,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const root = document.documentElement;
+    // Плавный перекрас всего UI на время переключения темы.
+    root.classList.add('theme-anim');
+    const timer = window.setTimeout(() => root.classList.remove('theme-anim'), 380);
     if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
+      root.classList.add('dark');
     } else {
-      document.documentElement.classList.remove('dark');
+      root.classList.remove('dark');
     }
+    return () => window.clearTimeout(timer);
   }, [theme]);
 
   useEffect(() => {

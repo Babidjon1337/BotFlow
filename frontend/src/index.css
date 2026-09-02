@@ -812,19 +812,9 @@ html.dark .nav-tone-violet { --nav-tone-soft: rgb(139 92 246 / 0.14); --nav-tone
 html.dark .nav-tone-rose { --nav-tone: #f472b6; --nav-tone-soft: rgb(244 114 182 / 0.14); --nav-tone-text: #f9a8d4; }
 
 .nav-item { position: relative; }
+/* Фон и акцентная полоска активного пункта рисует скользящая пилюля (Sidebar) */
 .nav-item.on {
-  background-color: var(--nav-tone-soft);
   color: var(--nav-tone-text);
-}
-.nav-item.on::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--nav-tone);
 }
 
 /* Пилюльные табы разделов бота: тон без маркера */
@@ -889,6 +879,22 @@ html.dark .nav-tone-rose { --nav-tone: #f472b6; --nav-tone-soft: rgb(244 114 182
   .bottom-nav-btn:active .bottom-nav-icon,
   .bottom-nav-btn.on .bottom-nav-icon {
     transform: none;
+  }
+}
+
+/* Плавная смена темы: класс вешается на время переключения (App.tsx) */
+html.theme-anim,
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, fill 0.3s ease !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.theme-anim,
+  html.theme-anim *,
+  html.theme-anim *::before,
+  html.theme-anim *::after {
+    transition: none !important;
   }
 }
 

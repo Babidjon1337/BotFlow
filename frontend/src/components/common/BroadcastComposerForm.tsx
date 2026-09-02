@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { CalendarClock, Check, ImagePlus, Link2, Play, Send, X } from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { apiService } from '../../services/api';
@@ -275,45 +276,57 @@ export function BroadcastComposerForm({
         </div>
 
         <ul className="mt-2 flex flex-wrap items-center gap-2">
-          {assetIds.map((id) => (
-            <li
-              key={id}
-              className="group relative flex size-16 items-center justify-center rounded-xl border border-border bg-muted"
-            >
-              <span className="text-fg-tertiary">✓</span>
-              <button
-                type="button"
-                onClick={() => removeAsset(id)}
-                aria-label="Убрать медиа"
-                className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-danger-soft text-danger hover:bg-danger hover:text-white"
+          <AnimatePresence mode="popLayout">
+            {assetIds.map((id) => (
+              <motion.li
+                key={id}
+                layout
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className="group relative flex size-16 items-center justify-center rounded-xl border border-border bg-muted"
               >
-                <X className="size-3" aria-hidden />
-              </button>
-            </li>
-          ))}
-          {pendingFiles.map((item, index) => (
-            <li
-              key={item.url}
-              className="group relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted"
-            >
-              {item.type === 'photo' ? (
-                <img src={item.url} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex flex-col items-center gap-0.5 text-fg-tertiary">
-                  <Play className="size-5" aria-hidden />
-                  <span className="text-[9px] font-semibold">видео</span>
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => removePending(index)}
-                aria-label="Удалить медиа"
-                className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                <span className="text-fg-tertiary">✓</span>
+                <button
+                  type="button"
+                  onClick={() => removeAsset(id)}
+                  aria-label="Убрать медиа"
+                  className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-danger-soft text-danger hover:bg-danger hover:text-white"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </motion.li>
+            ))}
+            {pendingFiles.map((item, index) => (
+              <motion.li
+                key={item.url}
+                layout
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.6 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                className="group relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted"
               >
-                <X className="size-2.5" aria-hidden />
-              </button>
-            </li>
-          ))}
+                {item.type === 'photo' ? (
+                  <img src={item.url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex flex-col items-center gap-0.5 text-fg-tertiary">
+                    <Play className="size-5" aria-hidden />
+                    <span className="text-[9px] font-semibold">видео</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removePending(index)}
+                  aria-label="Удалить медиа"
+                  className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                >
+                  <X className="size-2.5" aria-hidden />
+                </button>
+              </motion.li>
+            ))}
+          </AnimatePresence>
           {assetIds.length + pendingFiles.length < MAX_MEDIA && (
             <li>
               <label

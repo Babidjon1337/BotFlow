@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { BOT_VIEWS } from '../../routes';
 import type { AccountTab, AppRoute, BotView } from '../../routes';
 import { cn } from '../../lib/utils';
@@ -112,14 +113,23 @@ export function AppShell({
           data-app-scroll-container
           className="min-h-0 min-w-0 flex-1 overflow-y-auto"
         >
-          <div className={cn(
-            isFirstEntry
-              ? 'min-h-full w-full'
-              : 'mx-auto w-full px-4 pb-24 pt-4 lg:px-8 lg:pb-10 lg:pt-6',
-            !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-[1120px]'),
-          )}>
-            {children}
-          </div>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={route.level === 'account' ? `acc-${route.tab}` : `bot-${activeBot?.id ?? ''}-${route.view}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className={cn(
+                isFirstEntry
+                  ? 'min-h-full w-full'
+                  : 'mx-auto w-full px-4 pb-24 pt-4 lg:px-8 lg:pb-10 lg:pt-6',
+                !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-[1120px]'),
+              )}
+            >
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
 

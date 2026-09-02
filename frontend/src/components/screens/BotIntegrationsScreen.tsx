@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, Play, Settings2 } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
 import { Button } from '../ui/button';
@@ -342,7 +343,18 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                   aria-label="Скопировать webhook URL"
                   className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-card text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  {webhookCopied ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                      key={webhookCopied ? 'copied' : 'copy'}
+                      initial={{ scale: 0.4, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0.4, opacity: 0 }}
+                      transition={{ type: 'spring', stiffness: 600, damping: 28 }}
+                      className="flex"
+                    >
+                      {webhookCopied ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
+                    </motion.span>
+                  </AnimatePresence>
                 </button>
               </div>
             )}

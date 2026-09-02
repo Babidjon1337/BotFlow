@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   CalendarClock,
   Megaphone,
@@ -324,9 +324,12 @@ function AudienceTab({
           </p>
         ) : (
           <ul className="divide-y divide-border">
-            {leads.map((lead) => (
-              <li
+            {leads.map((lead, index) => (
+              <motion.li
                 key={lead.id}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.22, delay: Math.min(index, 12) * 0.03 }}
                 className="flex items-center gap-3 px-4 py-3"
               >
                 <span
@@ -364,7 +367,7 @@ function AudienceTab({
                     Счёт
                   </Button>
                 )}
-              </li>
+              </motion.li>
             ))}
           </ul>
         )}
@@ -761,8 +764,13 @@ function BroadcastsTabContent({
           broadcast.status === 'queued' || broadcast.status === 'sending';
 
         return (
-          <article
+          <motion.article
             key={broadcast.id}
+            layout
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
             className="rounded-3xl border border-border bg-card p-4"
           >
             <div className="flex items-start justify-between gap-3">
@@ -859,7 +867,7 @@ function BroadcastsTabContent({
                 {broadcast.lastError}
               </p>
             )}
-          </article>
+          </motion.article>
         );
       })}
       </div>

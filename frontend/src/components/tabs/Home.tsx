@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
  import { useAppState } from "../../providers/AppStateProvider";
 import { PageHeader } from "../common/PageHeader";
+import { AnimatedNumber } from "../common/AnimatedNumber";
 
 
 
@@ -139,9 +140,6 @@ const emptyResource = <T,>(): ResourceState<T> => ({
 
 const formatUpdatedAt = (date: Date) =>
   new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(date);
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(value) + " ₽";
 
 const getDashboardError = (error: unknown, subject: string) => {
   const detail = error instanceof Error ? error.message.trim() : "";
@@ -654,7 +652,12 @@ export const Home = () => {
             </div>
             <div>
               <div className="money-lg text-foreground">
-                {formatCurrency(stats.revenue)}
+                <AnimatedNumber
+                  value={stats.revenue}
+                  format={(n) =>
+                    new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(n) + " ₽"
+                  }
+                />
               </div>
               <div className="mt-2 text-[12px] font-medium text-[var(--color-foreground-tertiary)]">
                 {statsState.fetchedAt ? `Обновлено в ${formatUpdatedAt(statsState.fetchedAt)}` : ""}
