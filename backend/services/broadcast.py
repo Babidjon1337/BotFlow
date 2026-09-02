@@ -126,9 +126,13 @@ def _tariff_button_rows(tariffs: list[dict]) -> list[list[InlineKeyboardButton]]
     """Кнопки тарифов воронки: «Название — цена» со ссылкой оплаты (actionType link)."""
     rows: list[list[InlineKeyboardButton]] = []
     for tariff in tariffs:
-        if not isinstance(tariff, dict) or tariff.get("actionType") != "link":
+        if not isinstance(tariff, dict):
             continue
-        url = str(tariff.get("actionData") or "").strip()
+        # Схема хранится в camelCase (actionType), но старые записи могут быть snake_case.
+        action_type = tariff.get("actionType") or tariff.get("action_type")
+        if action_type != "link":
+            continue
+        url = str(tariff.get("actionData") or tariff.get("action_data") or "").strip()
         if not url.startswith(("https://", "http://")):
             continue
         name = str(tariff.get("name") or "Тариф").strip()[:48]
@@ -156,7 +160,10 @@ async def _broadcast_keyboard(broadcast, bot_config) -> InlineKeyboardMarkup | N
             schema = bot_config.funnel_schema or {}
             tariffs: list[dict] = []
             for node in schema.get("nodes") or []:
-                if node.get("type") == "payment":
+                if not isinstance(node, dict):
+                    continue
+                # Узел оплаты: kind="payment" в V2, type="payment" в старых записях.
+                if node.get("kind") == "payment" or node.get("type") == "payment":
                     tariffs.extend(t for t in (node.get("tariffs") or []) if isinstance(t, dict))
             by_id = {str(t.get("id")): t for t in tariffs}
             rows = _tariff_button_rows([by_id[i] for i in tariff_ids if i in by_id])

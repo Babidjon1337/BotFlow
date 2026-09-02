@@ -103,7 +103,7 @@ export function BroadcastComposerForm({
   tariffs = [],
   idPrefix = 'broadcast',
 }: BroadcastComposerFormProps) {
-  const { showConfirm, showAlert } = useAlert();
+  const { showAlert } = useAlert();
   const [text, setText] = useState('');
   const [audience, setAudience] = useState<AudienceFilter>('all');
   const [scheduleMode, setScheduleMode] = useState<'now' | 'later'>('now');
@@ -240,6 +240,7 @@ export function BroadcastComposerForm({
     }
   };
 
+  // Отправка сразу без окна подтверждения: ошибки показываются как alert.
   const handleSendClick = () => {
     if (scheduleMode === 'later') {
       const scheduleIssue = validateSchedule(scheduleAt);
@@ -257,33 +258,7 @@ export function BroadcastComposerForm({
       });
       return;
     }
-    if (!isValid) return;
-    const audienceLabel = recipients === null ? '—' : recipients.toLocaleString('ru-RU');
-    const mediaLabel =
-      assetIds.length + pendingFiles.length > 0 ? ' С медиа.' : '';
-    if (scheduleMode === 'later' && scheduledIso) {
-      const local = new Date(scheduleAt).toLocaleString('ru-RU', {
-        day: 'numeric',
-        month: 'long',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      showConfirm({
-        type: 'info',
-        title: 'Запланировать рассылку?',
-        message: `Сообщение получат ${audienceLabel} подписчиков — ${local}.${mediaLabel} До отправки рассылку можно отменить.`,
-        confirmText: 'Запланировать',
-        onConfirm: submit,
-      });
-      return;
-    }
-    showConfirm({
-      type: 'info',
-      title: 'Отправить рассылку?',
-      message: `Сообщение получат ${audienceLabel} подписчиков.${mediaLabel} Отменить отправку после запуска нельзя.`,
-      confirmText: 'Отправить',
-      onConfirm: submit,
-    });
+    void submit();
   };
 
   return (

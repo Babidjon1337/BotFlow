@@ -75,7 +75,7 @@ function collectTariffOptions(nodes: unknown[]): BroadcastTariffOption[] {
         id: t.id,
         name: t.name || 'Тариф',
         price: t.price || '',
-        isLink: t.actionType === 'link' && /^https:\/\//.test(t.actionData || ''),
+        isLink: t.actionType === 'link' && /^https?:\/\//.test(t.actionData || ''),
       });
     }
   }
