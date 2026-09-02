@@ -31,6 +31,7 @@ type TelegramWebApp = {
   enableClosingConfirmation?: () => void;
   disableClosingConfirmation?: () => void;
   disableVerticalSwipes?: () => void; requestFullscreen?: () => void;
+  platform?: string;
   setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
   isVersionAtLeast?: (version: string) => boolean;
@@ -137,11 +138,14 @@ export default function App() {
       } else {
         tg.disableClosingConfirmation?.();
       }
-      // Фулскрин только на десктопе: там системных кнопок нет, и приложение
-      // занимает всё окно. На мобилке Telegram рисует свои кнопки (закрыть/назад,
-      // свернуть) поверх контента, поэтому оставляем обычный режим с хедером.
-      const isMobile = window.innerWidth < 1024;
-      if (!isMobile && tg.requestFullscreen && tg.isVersionAtLeast?.('8.0')) {
+      // Фулскрин только для десктопных клиентов (platform "tdesktop"/"macos"/"windows"):
+      // там системных кнопок нет, и приложение занимает всё окно. На мобилке
+      // Telegram рисует свои кнопки (закрыть/назад, свернуть) поверх контента,
+      // поэтому оставляем обычный режим с хедером. Ширина окна не признак:
+      // на ПК Mini App может открыться в маленьком попапе.
+      const desktopPlatforms = new Set(['tdesktop', 'macos', 'windows']);
+      const isDesktop = desktopPlatforms.has(String(tg.platform || ''));
+      if (isDesktop && tg.requestFullscreen && tg.isVersionAtLeast?.('8.0')) {
         try {
           tg.requestFullscreen();
         } catch (error) {
