@@ -564,10 +564,12 @@ function BroadcastsTabContent({
   botId: string;
   counts: AudienceSummary | null;
   mediaReady: boolean;
+  /** Открыть шит-композер (нужно пустому состоянию на мобиле). */
   onCompose: () => void;
 }) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
   const [tariffs, setTariffs] = useState<BroadcastTariffOption[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Тарифы воронки — для кнопок рассылки (только actionType link).
   useEffect(() => {
@@ -610,7 +612,7 @@ function BroadcastsTabContent({
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadKey]);
 
   const hasActive = (broadcasts ?? []).some(
     (item) =>
@@ -734,7 +736,8 @@ function BroadcastsTabContent({
             <BroadcastComposerForm
               botId={botId}
               counts={counts}
-              onCreated={onCompose}
+              // После отправки просто обновляем ленту, ничего не открываем.
+              onCreated={() => setReloadKey((k) => k + 1)}
               mediaReady={mediaReady}
               tariffs={tariffs}
               idPrefix="broadcast-inline"

@@ -30,7 +30,7 @@ type TelegramWebApp = {
   ready?: () => void; expand?: () => void;
   enableClosingConfirmation?: () => void;
   disableClosingConfirmation?: () => void;
-  disableVerticalSwipes?: () => void;
+  disableVerticalSwipes?: () => void; requestFullscreen?: () => void;
   setHeaderColor?: (color: string) => void; setBackgroundColor?: (color: string) => void;
   setBottomBarColor?: (color: string) => void;
   isVersionAtLeast?: (version: string) => boolean;
@@ -137,9 +137,17 @@ export default function App() {
       } else {
         tg.disableClosingConfirmation?.();
       }
-      // Фулскрин не включаем: Telegram рисует свои кнопки (закрыть/назад, свернуть)
-      // поверх контента, и они перекрывают наш TopBar. Обычный режим даёт
-      // системный хедер, под которым начинается наш UI.
+      // Фулскрин только на десктопе: там системных кнопок нет, и приложение
+      // занимает всё окно. На мобилке Telegram рисует свои кнопки (закрыть/назад,
+      // свернуть) поверх контента, поэтому оставляем обычный режим с хедером.
+      const isMobile = window.innerWidth < 1024;
+      if (!isMobile && tg.requestFullscreen && tg.isVersionAtLeast?.('8.0')) {
+        try {
+          tg.requestFullscreen();
+        } catch (error) {
+          console.warn('requestFullscreen not supported:', error);
+        }
+      }
       if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
       const bgColor = theme === 'dark' ? '#0d0e12' : '#fcfcfd';
       tg.setHeaderColor?.(bgColor);
