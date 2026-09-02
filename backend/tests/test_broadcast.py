@@ -66,6 +66,19 @@ def test_broadcast_media_upload_does_not_require_funnel_node():
     assert 'if not is_broadcast_media and target_node is None and target_tariff_id is None:' in upload_src
 
 
+def test_access_link_validation():
+    from database.requests.access_link_rq import _generate_token
+    token = _generate_token()
+    assert len(token) == 10 and token.isalnum()
+    # period без срока - ошибка
+    import asyncio as _aio
+    from database.requests import access_link_rq
+    with pytest.raises(ValueError, match='срок'):
+        _aio.run(access_link_rq.create_access_link(kind='period', days=None, expires_at=None, note=None))
+    with pytest.raises(ValueError, match='Неизвестный тип'):
+        _aio.run(access_link_rq.create_access_link(kind='forever', days=1, expires_at=None, note=None))
+
+
 def test_broadcast_button_normalization():
     # Consult: без текста подставляется дефолт, url валидируется.
     btn = broadcast_rq.normalize_broadcast_button({'type': 'consult', 'url': 'https://t.me/owner'})

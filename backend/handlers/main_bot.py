@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 
 from keyboard.main_kb import *
 from database.requests import *
@@ -13,9 +13,20 @@ main_bot_router.message.filter(F.bot.id == MAIN_BOT_TG_ID)
 
 
 @main_bot_router.message(CommandStart())
-async def start_command_handler(message: Message):
+async def start_command_handler(message: Message, command: CommandObject | None = None):
     if not message.from_user:
         return
+
+    # Спец-ссылки админа: /start gl_<token> активирует бесплатный доступ.
+    payload = (command.args or "").strip() if command else ""
+    if payload.lower().startswith("gl_"):
+        from database.requests.access_link_rq import redeem_access_link
+
+        ok, text = await redeem_access_link(payload[3:], message.from_user.id)
+        await message.answer(text, parse_mode="HTML")
+        if ok:
+            await create_user_if_not_exists(message.from_user.id)
+            return
 
     # The main BotFlow registers SaaS owners. Client bots use their own
     # /start handler and only create leads for the configured funnel.

@@ -1,5 +1,6 @@
 import json
 import io
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
@@ -663,6 +664,81 @@ async def get_admin_system_endpoint(request: Request):
     from services.scheduler import get_scheduler_health
 
     return get_scheduler_health()
+
+
+# ── Спец-ссылки доступа (бесплатный период / бессрочный доступ) ──
+
+@api_router.get("/api/admin/access-links")
+async def list_access_links_endpoint(request: Request):
+    await get_current_admin(request)
+    from database.requests.access_link_rq import list_access_links
+
+    links = await list_access_links()
+    return {
+        "links": [
+            {
+                "id": str(link.id),
+                "token": link.token,
+                "note": link.note,
+                "kind": link.kind,
+                "days": link.days,
+                "expiresAt": link.expires_at.isoformat() if link.expires_at else None,
+                "isActive": link.is_active,
+                "activatedBy": link.activated_by,
+                "activatedAt": link.activated_at.isoformat() if link.activated_at else None,
+                "createdAt": link.created_at.isoformat(),
+            }
+            for link in links
+        ]
+    }
+
+
+@api_router.post("/api/admin/access-links")
+async def create_access_link_endpoint(request: Request, body: dict):
+    await get_current_admin(request)
+    from database.requests.access_link_rq import create_access_link
+
+    kind = str(body.get("kind") or "period")
+    days = body.get("days")
+    expires_raw = body.get("expiresAt")
+    expires_at = None
+    if expires_raw:
+        try:
+            expires_at = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Некорректная дата окончания") from exc
+    try:
+        link = await create_access_link(
+            kind=kind,
+            days=int(days) if days else None,
+            expires_at=expires_at,
+            note=str(body.get("note") or "") or None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "id": str(link.id),
+        "token": link.token,
+        "note": link.note,
+        "kind": link.kind,
+        "days": link.days,
+        "expiresAt": link.expires_at.isoformat() if link.expires_at else None,
+        "isActive": link.is_active,
+        "activatedBy": link.activated_by,
+        "activatedAt": link.activated_at.isoformat() if link.activated_at else None,
+        "createdAt": link.created_at.isoformat(),
+    }
+
+
+@api_router.post("/api/admin/access-links/{link_id}/deactivate")
+async def deactivate_access_link_endpoint(link_id: UUID, request: Request):
+    await get_current_admin(request)
+    from database.requests.access_link_rq import deactivate_access_link
+
+    ok = await deactivate_access_link(link_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Ссылка не найдена")
+    return {"status": "ok"}
 
 
 @api_router.post("/api/billing/checkout", response_model=BillingCheckoutResponse)

@@ -184,6 +184,19 @@ export interface AdminSystemStatus {
   }>;
 }
 
+export interface AccessLink {
+  id: string;
+  token: string;
+  note: string | null;
+  kind: "period" | "permanent";
+  days: number | null;
+  expiresAt: string | null;
+  isActive: boolean;
+  activatedBy: number | null;
+  activatedAt: string | null;
+  createdAt: string;
+}
+
 const BASE_URL = import.meta.env.VITE_API_URL || "";
 
 function getInitData(): string {
@@ -369,6 +382,29 @@ export const apiService = {
 
   async getAdminSystemStatus() {
     return fetchApi<AdminSystemStatus>("/api/admin/system");
+  },
+
+  async listAccessLinks() {
+    return fetchApi<{ links: AccessLink[] }>("/api/admin/access-links");
+  },
+
+  async createAccessLink(body: {
+    kind: "period" | "permanent";
+    days?: number;
+    expiresAt?: string;
+    note?: string;
+  }) {
+    return fetchApi<AccessLink>("/api/admin/access-links", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+
+  async deactivateAccessLink(linkId: string) {
+    return fetchApi<{ status: string }>(
+      `/api/admin/access-links/${linkId}/deactivate`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
   },
 
   async updateNotificationSettings(data: {

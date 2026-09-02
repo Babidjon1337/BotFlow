@@ -30,9 +30,10 @@ import {
   type AdminSystemStatus,
   type AdminUser,
   type AdminUserDetail,
+  type AccessLink,
 } from "../../services/api";
 
-type AdminSection = "overview" | "users" | "bots" | "payments" | "operations" | "system";
+type AdminSection = "overview" | "users" | "bots" | "payments" | "operations" | "system" | "access-links";
 type LoadState = "idle" | "loading" | "ready" | "error";
 type AdminUserAction = "access" | "licenses" | "pro" | "auto-renew";
 
@@ -43,6 +44,7 @@ const sections: Array<{ id: AdminSection; label: string }> = [
   { id: "payments", label: "Платежи" },
   { id: "operations", label: "Операции" },
   { id: "system", label: "Система" },
+  { id: "access-links", label: "Ссылки доступа" },
 ];
 
 const formatAmount = (amount: number, currency: string = "RUB") =>
@@ -113,6 +115,7 @@ export function AdminStats() {
   const [operations, setOperations] = useState<AdminOperation[]>([]);
   const [auditEntries, setAuditEntries] = useState<AdminAuditEntry[]>([]);
   const [systemStatus, setSystemStatus] = useState<AdminSystemStatus | null>(null);
+  const [accessLinks, setAccessLinks] = useState<AccessLink[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [usersQuery, setUsersQuery] = useState("");
@@ -165,6 +168,10 @@ export function AdminStats() {
         ]);
         setAuditEntries(nextAudit.entries);
         setSystemStatus(nextSystemStatus);
+      }
+      if (section === "access-links") {
+        const nextLinks = await apiService.listAccessLinks();
+        setAccessLinks(nextLinks.links);
       }
       setState("ready");
     } catch (requestError) {
@@ -411,6 +418,7 @@ export function AdminStats() {
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
+      {state !== "error" && section === "access-links" ? <AccessLinksSection links={accessLinks} loading={state === "loading"} onChanged={() => void refreshSection()} /> : null}
       {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
       {selectedUser ? <UserProfileSheet detail={selectedUser} state={selectedUserState} error={selectedUserError} busyBotId={botActionId} onClose={() => { setSelectedUser(null); setSelectedUserState("idle"); setSelectedUserError(null); }} onRetry={() => void loadUserProfile(selectedUser.user.id)} onManageAccess={() => setActionUser(selectedUser.user)} onAction={requestBotAction} onCheckReadiness={checkBotReadiness} onArchiveLeads={archiveBotLeads} /> : null}
     </section>
@@ -494,6 +502,151 @@ function PaymentsSection({ payments, loading }: { payments: AdminSaasPayment[]; 
 
 function OperationsSection({ operations, loading, onRetryOperation, retryingOperationId }: { operations: AdminOperation[]; loading: boolean; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
   return <Section title="Операции" description="Оплата уже подтверждена, но выдача доступа или уведомление владельца требует внимания.">{loading ? <RowsSkeleton count={4} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} expanded onRetry={onRetryOperation} busy={retryingOperationId === operation.payment_id} />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Ничего не требует действий" description="Все подтверждённые платежи обработаны или ожидают штатной очереди." />}</Section>;
+}
+
+function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]; loading: boolean; onChanged: () => void }) {
+  const { setToastMessage, setToastType } = useAppState();
+  const { showConfirm } = useAlert();
+  const [kind, setKind] = useState<"period" | "permanent">("period");
+  const [days, setDays] = useState("30");
+  const [note, setNote] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [lastLink, setLastLink] = useState<AccessLink | null>(null);
+
+  const create = async () => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const body: Parameters<typeof apiService.createAccessLink>[0] =
+        kind === "permanent" ? { kind, note } : { kind, days: Number(days) || undefined, note };
+      const created = await apiService.createAccessLink(body);
+      setLastLink(created);
+      setNote("");
+      setToastType("success");
+      setToastMessage("Ссылка создана");
+      onChanged();
+    } catch (requestError) {
+      setToastType("error");
+      setToastMessage(requestError instanceof Error ? requestError.message : "Не удалось создать ссылку.");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const copyLink = async (token: string) => {
+    const url = `https://t.me/${import.meta.env.VITE_MAIN_BOT_USERNAME ?? "botflow_bot"}?start=gl_${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setToastType("success");
+      setToastMessage("Ссылка скопирована");
+    } catch {
+      setToastType("error");
+      setToastMessage("Не удалось скопировать — выделите ссылку вручную: " + url);
+    }
+  };
+
+  const deactivate = (link: AccessLink) => {
+    showConfirm({
+      title: "Деактивировать ссылку?",
+      message: "Она больше не даст доступ. Активированный доступ не отзывается.",
+      type: "warning",
+      confirmText: "Деактивировать",
+      cancelText: "Отмена",
+      onConfirm: () => {
+        void apiService
+          .deactivateAccessLink(link.id)
+          .then(() => {
+            setToastType("success");
+            setToastMessage("Ссылка деактивирована");
+            onChanged();
+          })
+          .catch((error) => {
+            setToastType("error");
+            setToastMessage(error instanceof Error ? error.message : "Не удалось деактивировать.");
+          });
+      },
+    });
+  };
+
+  const linkLabel = (link: AccessLink) =>
+    link.kind === "permanent"
+      ? "Бессрочный доступ"
+      : link.days
+        ? `${link.days} дн. бесплатно`
+        : "Бесплатно до срока";
+
+  return (
+    <div className="space-y-6">
+      <Section title="Создать спец-ссылку" description="Человек переходит по ссылке, нажимает START у главного бота BotFlow — и получает бесплатный доступ: на срок или навсегда.">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+          <div className="flex gap-1 rounded-xl bg-[var(--color-surface-2)] p-1" role="radiogroup" aria-label="Тип доступа">
+            {([["period", "На срок"], ["permanent", "Навсегда"]] as const).map(([value, label]) => (
+              <button key={value} type="button" role="radio" aria-checked={kind === value}
+                onClick={() => setKind(value)}
+                className={`h-9 flex-1 rounded-lg px-4 text-sm font-semibold transition-colors lg:flex-none ${kind === value ? "bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-xs" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {kind === "period" ? (
+            <label className="block"><span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Срок, дней</span>
+              <input type="number" min={1} max={3650} value={days} onChange={(event) => setDays(event.target.value.replace(/\D/g, ""))}
+                className="mt-1 h-11 w-32 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+            </label>
+          ) : null}
+          <label className="block flex-1"><span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Заметка (кому)</span>
+            <input type="text" value={note} onChange={(event) => setNote(event.target.value)} maxLength={255} placeholder="Например: блогер Иванов, партнёрка"
+              className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
+          </label>
+          <button type="button" onClick={() => void create()} disabled={creating}
+            className="h-11 shrink-0 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60">
+            {creating ? "Создаём…" : "Создать ссылку"}
+          </button>
+        </div>
+        {lastLink ? (
+          <div className="mt-4 rounded-xl border border-[var(--color-success)]/40 bg-[var(--color-success-soft)] p-4">
+            <p className="text-sm font-bold text-[var(--color-foreground)]">Ссылка готова — отправьте её человеку:</p>
+            <code className="mt-2 block break-all rounded-lg bg-[var(--color-surface)] px-3 py-2 text-xs">
+              https://t.me/{import.meta.env.VITE_MAIN_BOT_USERNAME ?? "botflow_bot"}?start=gl_{lastLink.token}
+            </code>
+            <button type="button" onClick={() => void copyLink(lastLink.token)}
+              className="mt-2 h-9 rounded-lg bg-[var(--color-primary)] px-3 text-xs font-bold text-white hover:opacity-90">Копировать</button>
+          </div>
+        ) : null}
+      </Section>
+
+      <Section title="Созданные ссылки" description="Активированные ссылки помечены пользователем. Доступ, уже выданный по ссылке, не отзывается.">
+        {loading ? <RowsSkeleton count={4} /> : links.length ? (
+          <div className="divide-y divide-[var(--color-border)]">
+            {links.map((link) => (
+              <div key={link.id} className="flex flex-col gap-2 py-4 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge tone={link.isActive ? "success" : "neutral"}>{link.isActive ? "Активна" : link.activatedBy ? "Использована" : "Деактивирована"}</StatusBadge>
+                    <span className="text-sm font-semibold text-[var(--color-foreground)]">{linkLabel(link)}</span>
+                    {link.note ? <span className="text-xs text-[var(--color-foreground-secondary)]">· {link.note}</span> : null}
+                  </div>
+                  <p className="mt-1 break-all text-xs text-[var(--color-foreground-secondary)]">
+                    gl_{link.token}{link.activatedBy ? ` · активировал ${link.activatedBy}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button type="button" onClick={() => void copyLink(link.token)}
+                    className="h-9 rounded-lg border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)]">Копировать</button>
+                  {link.isActive ? (
+                    <button type="button" onClick={() => deactivate(link)}
+                      className="h-9 rounded-lg border border-[var(--color-danger)] px-3 text-xs font-semibold text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]">Отключить</button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState icon={<CheckCircle2 size={21} />} title="Ссылок пока нет" description="Создайте первую — и отправьте её человеку в личку или в рассылке." />
+        )}
+      </Section>
+    </div>
+  );
 }
 
 function SystemSection({ entries, systemStatus, loading }: { entries: AdminAuditEntry[]; systemStatus: AdminSystemStatus | null; loading: boolean }) {

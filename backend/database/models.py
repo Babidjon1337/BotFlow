@@ -482,6 +482,37 @@ class BroadcastRecipient(Base):
     lead: Mapped["Lead"] = relationship()
 
 
+class AccessLink(Base):
+    """Спец-ссылка админа: /start gl_<token> у главного бота даёт доступ.
+
+    kind="period" — подписка аккаунта до expires_at (или +days от активации),
+    kind="permanent" — бессрочный доступ (бесплатная публикация всех ботов).
+    Одноразовые ссылки помечаются activated_at при первом применении.
+    """
+
+    __tablename__ = "access_links"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    token: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    note: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # period | permanent
+    kind: Mapped[str] = mapped_column(String(16), default="period")
+    # Для period: сколько дней даём (от активации). None = до expires_at.
+    days: Mapped[Optional[int]] = mapped_column(Integer)
+    # Фиксированная дата окончания (если задана, days игнорируется).
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    activated_by: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
+    activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 engine = create_async_engine(url=DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 async def init_models():
