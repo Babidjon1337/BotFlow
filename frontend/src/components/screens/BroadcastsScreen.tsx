@@ -63,7 +63,7 @@ const formatDate = (iso: string | null) =>
 
 const formatNumber = (value: number) => value.toLocaleString('ru-RU');
 
-/** Тарифы воронки → опции кнопок рассылки/счёта (ссылка оплаты обязательна). */
+/** Тарифы воронки → опции кнопок рассылки/счёта (ссылка оплаты генерируется ботом). */
 function collectTariffOptions(nodes: unknown[]): BroadcastTariffOption[] {
   const options: BroadcastTariffOption[] = [];
   for (const node of nodes) {
@@ -76,7 +76,7 @@ function collectTariffOptions(nodes: unknown[]): BroadcastTariffOption[] {
         id: t.id,
         name: t.name || 'Тариф',
         price: t.price || '',
-        isLink: t.actionType === 'link' && /^https?:\/\//.test(t.actionData || ''),
+        isLink: true,
       });
     }
   }

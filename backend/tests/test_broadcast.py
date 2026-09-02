@@ -120,9 +120,11 @@ def test_broadcast_response_uses_camel_case_and_hides_nothing_sensitive():
     assert "botId" not in payload
 
 
-def test_tariff_keyboard_builds_from_v2_schema_with_kind_payment():
-    """Регресс: V2-схема хранит kind="payment" (не type) и camelCase actionType —
-    кнопки тарифов обязаны собираться и для kind, и для type, и для snake_case."""
+def test_tariff_keyboard_builds_callback_payment_flow():
+    """Кнопка тарифов в рассылке — callback в платёжный флоу, а не сырая ссылка:
+    1 тариф → bc_tariff:<id>:0 с подписью; несколько → bc_tariffs:<id> «Выбрать тариф».
+    V2 (kind=payment, camelCase) и старые записи (type=payment, snake_case) читаются,
+    фильтр по actionType больше не нужен — ссылку оплаты генерирует бот."""
     from services.broadcast import _broadcast_keyboard
 
     funnel_schema = {
@@ -133,55 +135,38 @@ def test_tariff_keyboard_builds_from_v2_schema_with_kind_payment():
                 "kind": "payment",
                 "step": "Оплата",
                 "tariffs": [
-                    {
-                        "id": "t1",
-                        "name": "Базовый",
-                        "price": "990",
-                        "actionType": "link",
-                        "actionData": "https://pay.example/1",
-                    },
-                    {
-                        "id": "t2",
-                        "name": "Без ссылки",
-                        "price": "100",
-                        "actionType": "text",
-                        "actionData": "спасибо",
-                    },
+                    {"id": "t1", "name": "Базовый", "price": "990", "actionType": "link", "actionData": "https://pay.example/1"},
+                    {"id": "t2", "name": "Премиум", "price": "1900", "actionType": "text", "actionData": "спасибо"},
                 ],
             }
         ],
     }
-    broadcast = SimpleNamespace(button={"type": "tariffs", "tariffIds": ["t1", "t2"]})
-    bot_config = SimpleNamespace(funnel_schema=funnel_schema)
+    bid = uuid.uuid4()
 
-    kb = asyncio.run(_broadcast_keyboard(broadcast, bot_config))
+    # Один выбранный тариф — прямая кнопка на счёт.
+    single = SimpleNamespace(id=bid, button={"type": "tariffs", "tariffIds": ["t1"]})
+    kb = asyncio.run(_broadcast_keyboard(single, SimpleNamespace(funnel_schema=funnel_schema)))
     assert kb is not None
-    assert len(kb.inline_keyboard) == 1
     assert kb.inline_keyboard[0][0].text == "Базовый — 990 ₽"
-    assert kb.inline_keyboard[0][0].url == "https://pay.example/1"
+    assert kb.inline_keyboard[0][0].callback_data == f"bc_tariff:{bid}:0"
+    assert kb.inline_keyboard[0][0].url is None
 
-    # Старая запись snake_case: type="payment" + action_type/action_data.
+    # Несколько тарифов — одна кнопка ведёт на выбор.
+    multi = SimpleNamespace(id=bid, button={"type": "tariffs", "tariffIds": ["t1", "t2"]})
+    kb = asyncio.run(_broadcast_keyboard(multi, SimpleNamespace(funnel_schema=funnel_schema)))
+    assert kb is not None
+    assert kb.inline_keyboard[0][0].text == "Выбрать тариф"
+    assert kb.inline_keyboard[0][0].callback_data == f"bc_tariffs:{bid}"
+
+    # Старая запись snake_case (type=payment) тоже резолвится.
     legacy_schema = {
         "nodes": [
-            {
-                "type": "payment",
-                "tariffs": [
-                    {
-                        "id": "t1",
-                        "name": "Старый",
-                        "price": "500",
-                        "action_type": "link",
-                        "action_data": "http://pay.example/old",
-                    }
-                ],
-            }
+            {"type": "payment", "tariffs": [{"id": "t1", "name": "Старый", "price": "500", "action_type": "link", "action_data": "http://x"}]}
         ]
     }
-    kb = asyncio.run(
-        _broadcast_keyboard(broadcast, SimpleNamespace(funnel_schema=legacy_schema))
-    )
+    kb = asyncio.run(_broadcast_keyboard(single, SimpleNamespace(funnel_schema=legacy_schema)))
     assert kb is not None
-    assert kb.inline_keyboard[0][0].url == "http://pay.example/old"
+    assert kb.inline_keyboard[0][0].callback_data == f"bc_tariff:{bid}:0"
 
 
 def test_create_broadcast_endpoint_maps_empty_audience_to_400(monkeypatch):

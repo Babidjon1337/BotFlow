@@ -1,4 +1,5 @@
 from html import escape
+from uuid import UUID
 
 from aiogram import Router, F
 from aiogram.types import (
@@ -616,6 +617,101 @@ async def return_to_tariff_choices(callback: CallbackQuery):
         return
     await _remove_callback_message(callback)
     await _send_tariff_selection_message(callback, node_checkout, tariffs)
+
+
+# ── Кнопки тарифов в рассылках: платёжный флоу, а не выдача доступа ──
+
+async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
+    """Возвращает (bot_config, funnel, node_checkout, selected_tariffs) или None."""
+    try:
+        broadcast = await get_broadcast(UUID(bid))
+    except (ValueError, TypeError):
+        return None
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    funnel = await get_funnel_by_bot_id(callback.bot.id)
+    if not broadcast or not bot_config or not funnel:
+        return None
+    node_checkout = _get_payment_node(funnel)
+    tariff_ids = [str(t) for t in (broadcast.button or {}).get("tariffIds") or []]
+    by_id = {str(t.id): t for t in (getattr(node_checkout, "tariffs", []) or [])}
+    selected = [by_id[i] for i in tariff_ids if i in by_id]
+    if not selected:
+        return None
+    return bot_config, funnel, node_checkout, selected
+
+
+def _broadcast_tariff_selection_keyboard(bid: str, tariffs) -> InlineKeyboardMarkup:
+    rows = []
+    for idx, tariff in enumerate(tariffs):
+        title = (getattr(tariff, "name", "Тариф") or "Тариф").strip()
+        price = getattr(tariff, "price", 0)
+        label = f"{title} · {price:,.0f} ₽".replace(",", " ")
+        rows.append([InlineKeyboardButton(text=label[:64], callback_data=f"bc_tariff:{bid}:{idx}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _broadcast_tariff_selection_text(node_checkout, tariffs) -> str:
+    header = to_telegram_html(
+        getattr(node_checkout, "tariff_selection_text", "") or "Выберите подходящий тариф:"
+    )
+    blocks = [header] if header else ["Выберите подходящий тариф:"]
+    for tariff in tariffs:
+        name = escape(str(getattr(tariff, "name", "Тариф") or "Тариф"))
+        price = getattr(tariff, "price", 0)
+        line = f"<b>{name}</b> — {price:,.0f} ₽".replace(",", " ")
+        description = to_telegram_html(getattr(tariff, "description", "") or "")
+        if description:
+            line += f"\n{description}"
+        blocks.append(line)
+    return "\n\n".join(blocks)
+
+
+@user_bot_router.callback_query(F.data.startswith("bc_tariffs:"))
+async def process_broadcast_tariffs(callback: CallbackQuery):
+    """Кнопка «Выбрать тариф» из рассылки: один тариф — сразу счёт, несколько — выбор."""
+    await callback.answer()
+    bid = callback.data.split(":", 1)[1]
+    context = await _broadcast_payment_context(callback, bid)
+    if not context:
+        await callback.message.answer(
+            "Тарифы больше недоступны. Обратитесь к владельцу бота."
+        )
+        return
+    bot_config, funnel, node_checkout, selected = context
+    if len(selected) == 1:
+        await _send_tariff_invoice(
+            callback, bot_config, funnel, selected[0], edit_message=False
+        )
+        return
+    await _send_payment_message(
+        callback,
+        _broadcast_tariff_selection_text(node_checkout, selected),
+        _broadcast_tariff_selection_keyboard(bid, selected),
+    )
+
+
+@user_bot_router.callback_query(F.data.startswith("bc_tariff:"))
+async def process_broadcast_tariff_choice(callback: CallbackQuery):
+    """Выбор конкретного тарифа из рассылочного списка → счёт со ссылкой оплаты."""
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer()
+        return
+    _, bid, idx = parts
+    context = await _broadcast_payment_context(callback, bid)
+    if not context:
+        await callback.answer("Тариф больше недоступен.", show_alert=True)
+        return
+    bot_config, funnel, node_checkout, selected = context
+    try:
+        position = int(idx)
+    except ValueError:
+        await callback.answer()
+        return
+    if not 0 <= position < len(selected):
+        await callback.answer("Тариф больше недоступен.", show_alert=True)
+        return
+    await _send_tariff_invoice(callback, bot_config, funnel, selected[position])
 
 
 @user_bot_router.callback_query(F.data.startswith("manual_invoice:"))

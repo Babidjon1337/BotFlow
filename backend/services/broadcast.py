@@ -122,28 +122,36 @@ async def _deliver_media_then_text(
         await _deliver_one(bot, telegram_id, text, keyboard)
 
 
-def _tariff_button_rows(tariffs: list[dict]) -> list[list[InlineKeyboardButton]]:
-    """Кнопки тарифов воронки: «Название — цена» со ссылкой оплаты (actionType link)."""
-    rows: list[list[InlineKeyboardButton]] = []
-    for tariff in tariffs:
-        if not isinstance(tariff, dict):
+def _tariff_button_label(tariff: dict) -> str:
+    """Подпись кнопки тарифа: «Название — цена ₽»."""
+    name = str(tariff.get("name") or "Тариф").strip()[:48]
+    price = str(tariff.get("price") or "").strip()
+    return f"{name} — {price} ₽" if price else name
+
+
+def _selected_broadcast_tariffs(broadcast, bot_config) -> list[dict]:
+    """Тарифы, выбранные в кнопке рассылки, в порядке tariffIds (любого actionType —
+    ссылка оплаты генерируется ботом на ходу, а не берётся из воронки)."""
+    tariff_ids = [str(t) for t in (broadcast.button or {}).get("tariffIds") or []]
+    schema = bot_config.funnel_schema or {}
+    tariffs: list[dict] = []
+    for node in schema.get("nodes") or []:
+        if not isinstance(node, dict):
             continue
-        # Схема хранится в camelCase (actionType), но старые записи могут быть snake_case.
-        action_type = tariff.get("actionType") or tariff.get("action_type")
-        if action_type != "link":
-            continue
-        url = str(tariff.get("actionData") or tariff.get("action_data") or "").strip()
-        if not url.startswith(("https://", "http://")):
-            continue
-        name = str(tariff.get("name") or "Тариф").strip()[:48]
-        price = str(tariff.get("price") or "").strip()
-        label = f"{name} — {price} ₽" if price else name
-        rows.append([InlineKeyboardButton(text=label[:64], url=url[:256])])
-    return rows
+        # Узел оплаты: kind="payment" в V2, type="payment" в старых записях.
+        if node.get("kind") == "payment" or node.get("type") == "payment":
+            tariffs.extend(t for t in (node.get("tariffs") or []) if isinstance(t, dict))
+    by_id = {str(t.get("id")): t for t in tariffs}
+    return [by_id[i] for i in tariff_ids if i in by_id]
 
 
 async def _broadcast_keyboard(broadcast, bot_config) -> InlineKeyboardMarkup | None:
-    """Inline-клавиатура рассылки: ссылка-консультация или кнопки тарифов."""
+    """Inline-клавиатура рассылки: ссылка-консультация или callback на оплату тарифов.
+
+    Тарифы больше не отдают сырую ссылку из воронки: кнопка ведёт в платёжный флоу
+    бота (1 тариф — сразу счёт со ссылкой оплаты; несколько — выбор тарифов с
+    описаниями), чтобы рассылка продавала, а не выдавала доступ.
+    """
     button = broadcast.button if isinstance(broadcast.button, dict) else None
     if not button:
         return None
@@ -156,19 +164,22 @@ async def _broadcast_keyboard(broadcast, bot_config) -> InlineKeyboardMarkup | N
                     inline_keyboard=[[InlineKeyboardButton(text=label[:64], url=url[:256])]]
                 )
         if button.get("type") == "tariffs":
-            tariff_ids = [str(t) for t in (button.get("tariffIds") or [])]
-            schema = bot_config.funnel_schema or {}
-            tariffs: list[dict] = []
-            for node in schema.get("nodes") or []:
-                if not isinstance(node, dict):
-                    continue
-                # Узел оплаты: kind="payment" в V2, type="payment" в старых записях.
-                if node.get("kind") == "payment" or node.get("type") == "payment":
-                    tariffs.extend(t for t in (node.get("tariffs") or []) if isinstance(t, dict))
-            by_id = {str(t.get("id")): t for t in tariffs}
-            rows = _tariff_button_rows([by_id[i] for i in tariff_ids if i in by_id])
-            if rows:
-                return InlineKeyboardMarkup(inline_keyboard=rows)
+            selected = _selected_broadcast_tariffs(broadcast, bot_config)
+            if not selected:
+                return None
+            bid = str(broadcast.id)
+            if len(selected) == 1:
+                label = _tariff_button_label(selected[0])
+                return InlineKeyboardMarkup(
+                    inline_keyboard=[[
+                        InlineKeyboardButton(text=label[:64], callback_data=f"bc_tariff:{bid}:0")
+                    ]]
+                )
+            return InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(text="Выбрать тариф", callback_data=f"bc_tariffs:{bid}")
+                ]]
+            )
     except Exception as exc:  # кнопка не должна ломать доставку текста
         logger.warning("Рассылка %s: не удалось собрать клавиатуру: %s", broadcast.id, exc)
     return None
