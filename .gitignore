@@ -37,7 +37,7 @@ GEMINI.md
 
 # Dev artifacts
 gemini_image/
-/test*
+/tests*
 /backend/test_integration.py
 frontend/.playwright-cli/
 frontend/*.png
@@ -59,4 +59,5 @@ opencode.json
 shots
 frontend/vite-dev.log
 .playwright-mcp
-/*.png
+/*.png
+tests/
