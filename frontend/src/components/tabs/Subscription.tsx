@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Bot, CheckCircle2, CreditCard, Crown, RefreshCcw, ShieldCheck, XCircle } from "lucide-react";
+import { Bot, CheckCircle2, ChevronDown, CreditCard, Crown, RefreshCcw, ShieldCheck, XCircle } from "lucide-react";
 
 import { useAppState } from "../../providers/AppStateProvider";
 import { PageHeader } from "../common/PageHeader";
@@ -15,56 +15,91 @@ const formatDate = (iso: string | null) =>
     ? new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })
     : "—";
 
+const plural = (n: number, one: string, few: string, many: string) => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+};
+
+const formatPrice = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
+
 /**
- * Подписка — оплата за каждого опубликованного бота (990 ₽/мес).
+ * Подписка — оплата за каждого опубликованного бота (от 990 ₽/мес).
  * Черновики бесплатны, бот со спец-лицензией бесплатен навсегда.
- * Автосписание отключается по аккаунту: доступ доживает до конца периода,
- * затем бот можно подключить заново оплатой.
+ * До подключения per-bot оплаты активный аккаунтный доступ (тестовые granting
+ * «3 месяца») покрывает опубликованных ботов — это legacy-ветка.
  */
 export const Subscription = () => {
   const { appState, setAppState, setActiveTab, setToastMessage, isAdmin } = useAppState();
   const { showConfirm } = useAlert();
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const bots = appState.bots;
   const published = bots.filter((bot) => bot.status === "active");
   const freeBots = published.filter((bot) => bot.hasLifetimeLicense);
   const paidBots = published.filter((bot) => !bot.hasLifetimeLicense);
-  const monthlyTotal = isAdmin ? 0 : paidBots.length * MONTH_PRICE;
+  const monthlyTotal = isAdmin
+    ? 0
+    : paidBots.reduce(
+        (sum, bot) => sum + (bot.subscriptionAmountRub ?? MONTH_PRICE),
+        0
+      );
 
   const status = isAdmin ? "active" : appState.subscriptionStatus;
   const autoRenew = Boolean(appState.subscriptionAutoRenew);
   // Рубильник: пока бэкенд не подтвердил оплату, кнопка не показывается.
   const billingEnabled = Boolean(appState.billingEnabled);
 
-  useEffect(() => {
-    let cancelled = false;
-    void import("../../services/api")
-      .then(({ apiService }) => apiService.getBillingStatus())
-      .then((billing) => {
-        if (cancelled) return;
-        setAppState((prev) => ({
-          ...prev,
-          subscriptionStatus: billing.subscription_status,
-          subscriptionUntil: billing.subscription_until,
-          subscriptionAutoRenew: billing.subscription_auto_renew,
-          billingEnabled: billing.billing_enabled,
-        }));
-      })
-      .catch(() => {
-        // Статус придёт при следующем открытии — экран остаётся рабочим.
-      });
-    return () => {
-      cancelled = true;
-    };
+  const loadBilling = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const { apiService } = await import("../../services/api");
+      const { mapApiBot } = await import("../../services/botMapper");
+      const [billing, botsRes] = await Promise.all([
+        apiService.getBillingStatus(),
+        apiService.getBots(),
+      ]);
+      setAppState((prev) => ({
+        ...prev,
+        subscriptionStatus: billing.subscription_status,
+        subscriptionUntil: billing.subscription_until,
+        subscriptionAutoRenew: billing.subscription_auto_renew,
+        billingEnabled: billing.billing_enabled,
+        bots: botsRes.bots.map(mapApiBot),
+      }));
+    } catch {
+      // Статус придёт при следующем открытии — экран остаётся рабочим.
+    } finally {
+      setRefreshing(false);
+    }
   }, [setAppState]);
 
-  const payForBot = async () => {
-    if (busy) return;
+  useEffect(() => {
+    void loadBilling();
+  }, [loadBilling]);
+
+  // Возврат из внешнего браузера после оплаты: обновляем статус, не полагаясь на remount.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadBilling();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadBilling]);
+
+  const payForBot = async (botId?: string) => {
+    if (busy || !billingEnabled) return;
     setBusy(true);
     try {
       const { apiService } = await import("../../services/api");
-      const checkout = await apiService.createBillingCheckout("pro", appState.userEmail || undefined);
+      const checkout = await apiService.createBillingCheckout(
+        "pro",
+        appState.userEmail || undefined,
+        botId
+      );
       const telegram = (window as Window & {
         Telegram?: { WebApp?: { openLink?: (url: string) => void } };
       }).Telegram?.WebApp;
@@ -77,7 +112,7 @@ export const Subscription = () => {
     }
   };
 
-  const cancelAutoRenew = () => {
+  const cancelAutoRenew = (botId?: string) => {
     showConfirm({
       type: "warning",
       title: "Отключить автосписание?",
@@ -89,13 +124,8 @@ export const Subscription = () => {
           setBusy(true);
           try {
             const { apiService } = await import("../../services/api");
-            const billing = await apiService.cancelBilling();
-            setAppState((prev) => ({
-              ...prev,
-              subscriptionStatus: billing.subscription_status,
-              subscriptionUntil: billing.subscription_until,
-              subscriptionAutoRenew: billing.subscription_auto_renew,
-            }));
+            await apiService.cancelBilling(botId);
+            await loadBilling();
             setToastMessage("Автосписание отключено");
           } catch (error) {
             setToastMessage(error instanceof Error ? error.message : "Не удалось отключить автосписание.");
@@ -105,6 +135,20 @@ export const Subscription = () => {
         })();
       },
     });
+  };
+
+  // Покрытие бота: per-bot подписка → legacy аккаунтный доступ → нет доступа.
+  const coverage = (bot: (typeof bots)[number]) => {
+    if (bot.hasLifetimeLicense) return { kind: "free" as const };
+    if (bot.status !== "active") return { kind: "draft" as const };
+    if (bot.subscriptionStatus === "active" && bot.subscriptionEndsAt) {
+      return { kind: "sub" as const, endsAt: bot.subscriptionEndsAt, autoRenew: Boolean(bot.subscriptionAutoRenew) };
+    }
+    if (bot.subscriptionStatus === "expired") return { kind: "unpaid" as const };
+    if (status === "active") {
+      return { kind: "legacy" as const, endsAt: appState.subscriptionUntil };
+    }
+    return { kind: "unpaid" as const };
   };
 
   return (
@@ -117,11 +161,11 @@ export const Subscription = () => {
       <PageHeader
         kicker="Подписка"
         tone="violet"
-        title="Подписка"
-        hint="Оплата за каждого опубликованного бота — 990 ₽/мес. Черновики бесплатны."
+        title="Управление подписками"
+        hint="Каждый опубликованный бот оплачивается отдельно — от 990 ₽/мес. Черновики и спец-доступ бесплатны."
       />
 
-      {/* Сводка: сумма в месяц + состояние продления */}
+      {/* Сводка: итог по активным подпискам + один CTA */}
       <section className="rounded-[20px] border border-border bg-card p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
@@ -135,13 +179,13 @@ export const Subscription = () => {
               {isAdmin
                 ? "Администратор платформы — публикация бесплатна"
                 : paidBots.length > 0
-                  ? `${paidBots.length} ${paidBots.length === 1 ? "бот" : "бота"} × ${MONTH_PRICE} ₽`
-                  : "Нет платных ботов — опубликуйте бота, чтобы начать"}
+                  ? `${paidBots.length} ${plural(paidBots.length, "оплаченный бот", "оплаченных бота", "оплаченных ботов")} · ${plural(published.length, "опубликован", "опубликовано", "опубликовано")} ${published.length}`
+                  : "Оплаченных ботов пока нет — опубликуйте бота, чтобы подключить подписку"}
             </p>
           </div>
           <StatusBadge
             tone={status === "active" ? "success" : status === "expired" ? "warning" : "neutral"}
-            label={status === "active" ? "Активна" : status === "expired" ? "Истекла" : "Не подключена"}
+            label={status === "active" ? "Доступ активен" : status === "expired" ? "Доступ истёк" : "Доступ не подключён"}
           />
         </div>
 
@@ -152,30 +196,18 @@ export const Subscription = () => {
                 <RefreshCcw className="size-3" aria-hidden /> Следующее списание
               </p>
               <p className="mt-1 text-body font-semibold text-fg-primary">
-                {status === "active" ? formatDate(appState.subscriptionUntil) : "—"}
+                {paidBots.some((bot) => bot.subscriptionStatus === "active") || status === "active"
+                  ? formatDate(appState.subscriptionUntil ?? paidBots.find((b) => b.subscriptionEndsAt)?.subscriptionEndsAt ?? null)
+                  : "—"}
               </p>
             </div>
             <div className="rounded-[14px] border border-border bg-muted/40 px-4 py-3">
               <p className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary">Автосписание</p>
-              {autoRenew ? (
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5 text-body font-semibold text-success">
-                    <span className="size-1.5 rounded-full bg-success" aria-hidden /> Включено
-                  </span>
-                  <button
-                    type="button"
-                    onClick={cancelAutoRenew}
-                    disabled={busy}
-                    className="text-meta font-semibold text-danger hover:underline disabled:opacity-60"
-                  >
-                    Отключить
-                  </button>
-                </div>
-              ) : (
-                <p className="mt-1 text-body-sm text-fg-secondary">
-                  Выключено — боты работают до конца периода
-                </p>
-              )}
+              <p className="mt-1 text-body-sm text-fg-secondary">
+                {autoRenew
+                  ? "Включено — боты продлеваются автоматически"
+                  : "Выключено — боты работают до конца периода"}
+              </p>
             </div>
           </div>
         )}
@@ -184,7 +216,7 @@ export const Subscription = () => {
           billingEnabled ? (
             <Button className="mt-4 w-full" disabled={busy} onClick={() => void payForBot()}>
               <CreditCard data-icon="inline-start" aria-hidden />
-              {status === "active" ? "Продлить подписку" : "Оплатить 990 ₽ / мес"}
+              {status === "active" ? "Продлить подписку" : `Оплатить ${formatPrice(MONTH_PRICE)} / мес`}
             </Button>
           ) : (
             <p className="mt-4 rounded-[14px] border border-dashed border-border-strong px-4 py-3 text-center text-body-sm text-fg-tertiary">
@@ -194,13 +226,19 @@ export const Subscription = () => {
         )}
       </section>
 
-      {/* Боты: за что платим */}
+      {/* Боты: покрытие и цена каждого */}
       <section className="rounded-[20px] border border-border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-body-lg font-bold text-fg-primary">Ваши боты</h2>
-          <span className="text-meta text-fg-tertiary">
-            {published.length} из {bots.length} опубликовано
-          </span>
+          <button
+            type="button"
+            onClick={() => void loadBilling()}
+            disabled={refreshing}
+            className="min-h-11 inline-flex items-center gap-1.5 rounded-full px-3 text-meta font-semibold text-fg-secondary hover:text-fg-primary disabled:opacity-60"
+          >
+            <RefreshCcw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} aria-hidden />
+            Обновить
+          </button>
         </div>
 
         {bots.length === 0 ? (
@@ -210,8 +248,7 @@ export const Subscription = () => {
         ) : (
           <ul className="mt-3 divide-y divide-border">
             {bots.map((bot) => {
-              const isPublished = bot.status === "active";
-              const isFree = Boolean(bot.hasLifetimeLicense);
+              const cov = coverage(bot);
               return (
                 <li key={bot.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3">
                   <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-muted text-fg-secondary">
@@ -220,37 +257,70 @@ export const Subscription = () => {
                   <span className="min-w-0 flex-1 truncate text-body-sm font-semibold text-fg-primary">
                     {bot.name}
                   </span>
-                  {isFree ? (
+                  {cov.kind === "free" ? (
                     <StatusBadge tone="success" label="Бесплатно навсегда" />
+                  ) : cov.kind === "draft" ? (
+                    <StatusBadge tone="neutral" label="Черновик" />
+                  ) : cov.kind === "sub" ? (
+                    <StatusBadge tone="success" label={`До ${formatDate(cov.endsAt)}`} />
+                  ) : cov.kind === "legacy" ? (
+                    <StatusBadge tone="success" label={`Доступ до ${formatDate(cov.endsAt)}`} />
                   ) : (
-                    <StatusBadge
-                      tone={isPublished ? "success" : "neutral"}
-                      label={isPublished ? "Опубликован" : "Черновик"}
-                    />
+                    <StatusBadge tone="warning" label="Нужна оплата" />
                   )}
                   <span className="ml-auto shrink-0 text-meta tabular-nums text-fg-secondary">
-                    {isFree || isAdmin ? (
+                    {cov.kind === "free" || cov.kind === "draft" || isAdmin ? (
                       <span className="text-success">0 ₽</span>
-                    ) : isPublished ? (
-                      <span className="font-accent font-semibold text-fg-primary">{MONTH_PRICE} ₽/мес</span>
+                    ) : cov.kind === "sub" ? (
+                      <span className="font-accent font-semibold text-fg-primary">
+                        {formatPrice(bot.subscriptionAmountRub ?? MONTH_PRICE)}/мес
+                      </span>
+                    ) : cov.kind === "legacy" ? (
+                      <span className="text-success">0 ₽</span>
                     ) : (
-                      "0 ₽"
+                      <span className="font-accent font-semibold text-fg-primary">
+                        {formatPrice(MONTH_PRICE)}/мес
+                      </span>
                     )}
                   </span>
+                  {billingEnabled && !isAdmin && cov.kind === "unpaid" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="min-h-11"
+                      disabled={busy}
+                      onClick={() => void payForBot(bot.id)}
+                    >
+                      Оплатить
+                    </Button>
+                  )}
+                  {billingEnabled && !isAdmin && (cov.kind === "sub" || cov.kind === "legacy") && autoRenew && (
+                    <button
+                      type="button"
+                      onClick={() => cancelAutoRenew(cov.kind === "sub" ? bot.id : undefined)}
+                      disabled={busy}
+                      className="min-h-11 rounded-full px-3 text-meta font-semibold text-danger hover:underline disabled:opacity-60"
+                    >
+                      Отключить авто
+                    </button>
+                  )}
                 </li>
               );
             })}
           </ul>
         )}
 
-        <Button variant="outline" className="mt-4 w-full" onClick={() => setActiveTab("manage")}>
-          К моим ботам
+        <Button variant="ghost" className="mt-4 w-full" onClick={() => setActiveTab("manage")}>
+          Управлять ботами
         </Button>
       </section>
 
-      {/* Что входит — коротко, без маркетинга */}
-      <section className="rounded-[20px] border border-border bg-card p-5">
-        <h2 className="text-body-lg font-bold text-fg-primary">Что входит в 990 ₽</h2>
+      {/* Что входит — свёрнуто, чтобы не толкать страницу управления */}
+      <details className="group rounded-[20px] border border-border bg-card p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-body-lg font-bold text-fg-primary [&::-webkit-details-marker]:hidden">
+          Что входит в {formatPrice(MONTH_PRICE)}
+          <ChevronDown className="size-4 text-fg-tertiary transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
         <ul className="mt-3 grid gap-2 sm:grid-cols-2">
           {[
             "Публикация бота в Telegram",
@@ -266,7 +336,7 @@ export const Subscription = () => {
             </li>
           ))}
         </ul>
-      </section>
+      </details>
 
       {isAdmin && (
         <section className="flex items-start gap-3 rounded-[20px] border border-success/40 bg-success-soft/50 p-5">
@@ -285,7 +355,9 @@ export const Subscription = () => {
           <Crown className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
           <div>
             <p className="text-body font-bold text-fg-primary">
-              {freeBots.length === 1 ? "Один бот работает бесплатно" : `${freeBots.length} бота работают бесплатно`}
+              {freeBots.length === 1
+                ? "Один бот работает бесплатно"
+                : `${freeBots.length} ${plural(freeBots.length, "бот", "бота", "ботов")} работают бесплатно`}
             </p>
             <p className="mt-0.5 text-body-sm text-fg-secondary">
               Спец-доступ по ссылке: {freeBots.map((bot) => bot.name).join(", ")}. Подписка на них не нужна.

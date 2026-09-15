@@ -722,8 +722,11 @@ export const apiService = {
     return fetchApi<BillingState>("/api/billing/status");
   },
 
-  async cancelBilling() {
-    return fetchApi<BillingState>("/api/billing/cancel", { method: "POST" });
+  async cancelBilling(botId?: string | number) {
+    return fetchApi<BillingState>("/api/billing/cancel", {
+      method: "POST",
+      body: JSON.stringify(botId ? { botId } : {}),
+    });
   },
 };
 

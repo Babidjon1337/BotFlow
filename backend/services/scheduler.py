@@ -30,6 +30,7 @@ from database.requests.bot_rq import (
     enforce_non_pro_bot_limits,
     claim_expired_bot_subscription,
     finalize_bot_subscription_expiry,
+    get_bot_subscriptions_due_for_renewal,
     get_expired_published_bots,
     get_expired_account_subscription_bots,
     get_subscription_paused_bots_to_resume,
@@ -38,7 +39,7 @@ from database.requests.bot_rq import (
 )
 from services.bot_lifecycle import BotLifecycleService
 from database.models import Lead, ClientPayment
-from config import PROXY_URL, TG_WEBHOOK_URL
+from config import PROXY_URL, SAAS_BOT_BASE_PRICE_RUB, TG_WEBHOOK_URL
 from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.broadcast import run_broadcast_sending
@@ -107,6 +108,42 @@ async def renew_pro_subscriptions_job():
                 await notify_billing_user(
                     user.telegram_id,
                     "⚠️ Не удалось автоматически продлить <b>подписку</b>. Мы повторим попытку завтра.",
+                )
+
+
+async def renew_bot_subscriptions_job():
+    """Автопродление per-bot подписок: каждый бот списывается по своей цене."""
+    for subscription, bot_config, user in await get_bot_subscriptions_due_for_renewal():
+        amount = subscription.amount_rub or SAAS_BOT_BASE_PRICE_RUB
+        try:
+            was_applied, _ = await create_recurring_payment(
+                user,
+                amount,
+                bot_id=bot_config.id,
+                attempt=subscription.retry_count + 1,
+            )
+            if was_applied:
+                await notify_billing_user(
+                    user.telegram_id,
+                    f"✅ С карты списано <b>{amount:,} ₽</b>".replace(",", " ")
+                    + f" — подписка бота <b>{bot_config.display_name}</b> продлена на 30 дней.",
+                )
+        except BillingError as exc:
+            logger.warning(
+                "Не удалось продлить подписку бота %s: %s", bot_config.id, exc
+            )
+            if subscription.retry_count + 1 >= 3:
+                await notify_billing_user(
+                    user.telegram_id,
+                    f"❌ Не удалось продлить подписку бота <b>{bot_config.display_name}</b> "
+                    "после трёх попыток. Бот остановлен; настройки и клиенты сохранены — "
+                    "оплатите, и публикация вернётся.",
+                )
+            else:
+                await notify_billing_user(
+                    user.telegram_id,
+                    f"⚠️ Не удалось автоматически продлить подписку бота "
+                    f"<b>{bot_config.display_name}</b>. Повторим попытку завтра.",
                 )
 
 
@@ -340,6 +377,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="pro-renewals",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        renew_bot_subscriptions_job,
+        trigger="interval",
+        minutes=15,
+        max_instances=1,
+        coalesce=True,
+        id="bot-subscription-renewals",
         replace_existing=True,
     )
     scheduler.add_job(

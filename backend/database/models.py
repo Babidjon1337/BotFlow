@@ -307,6 +307,9 @@ class SaasPayment(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    bot_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     product: Mapped[str] = mapped_column(String(32))  # license | pro_initial | pro_renewal
     amount: Mapped[float] = mapped_column(Numeric(10, 2))
     currency: Mapped[str] = mapped_column(String(3), default="RUB")
@@ -347,6 +350,12 @@ class BotSubscription(Base):
     starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    # Per-bot биллинг: цена этого бота (990 ₽ + доплаты), автосписание и ретраи.
+    amount_rub: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    auto_renew: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    grace_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AdminAuditLog(Base):

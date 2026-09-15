@@ -23,6 +23,8 @@ from database.requests.bot_rq import (
     get_user_by_tg_id,
     get_user_bots,
     get_bot_subscription,
+    get_user_bot_subscriptions,
+    set_bot_subscription_auto_renew,
     create_bot_config,
     update_bot_config,
     delete_bot_config,
@@ -72,6 +74,7 @@ from schemas.api_schemas import (
     GatewayConnectionCreateRequest,
     BotApiResponse,
     BillingCheckoutRequest,
+    BillingCancelRequest,
     BillingCheckoutResponse,
     NotificationSettingsRequest,
     AdminLifetimeLicenseRequest,
@@ -244,7 +247,7 @@ async def _toggle_client_bot(
             if available <= 0:
                 raise HTTPException(
                     status_code=403,
-                    detail="Чтобы запустить этот бот, купите лицензию или подключите PRO.",
+                    detail="Чтобы запустить этого бота, оплатите его подписку или используйте бесплатный доступ.",
                 )
             bot = await assign_lifetime_license(bot.id) or bot
         for owner_bot in owner_bots:
@@ -766,8 +769,10 @@ async def create_billing_checkout(request: Request, body: BillingCheckoutRequest
     try:
         # Итог берём из серверного квоута бота: база 990 ₽ + доплаты за функционал.
         quote_total_rub: int | None = None
+        bot_id: int | None = None
         if body.bot_id:
             bot = await get_owned_bot(int(body.bot_id), request)
+            bot_id = bot.id
             scenario_type = getattr(bot, "scenario_type", None) or BASE_SCENARIO_TYPE
             quote = bot_pricing_service.quote(scenario_type, {"telegram"})
             quote_total_rub = quote.total_minor // 100
@@ -776,6 +781,7 @@ async def create_billing_checkout(request: Request, body: BillingCheckoutRequest
             body.product,
             receipt_email=checkout_email if user.email_receipts_enabled else None,
             amount_rub=quote_total_rub,
+            bot_id=bot_id,
         )
     except (UnsupportedScenarioError, UnsupportedPlatformError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -823,11 +829,15 @@ async def billing_status(request: Request):
 
 
 @api_router.post("/api/billing/cancel")
-async def cancel_billing(request: Request):
+async def cancel_billing(request: Request, body: BillingCancelRequest | None = None):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
-    updated = await cancel_subscription_auto_renew(user.id)
-    return _user_payload(updated or user, current_user.telegram_id)
+    if body and body.bot_id:
+        await get_owned_bot(int(body.bot_id), request)
+        await set_bot_subscription_auto_renew(int(body.bot_id), False)
+    else:
+        user = await cancel_subscription_auto_renew(user.id) or user
+    return _user_payload(user, current_user.telegram_id)
 
 
 @api_router.get("/api/gateway-connections")
@@ -876,13 +886,22 @@ async def list_bots(request: Request):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     bots = await get_user_bots(owner_id=user.id)
-    
+    subscriptions = await get_user_bot_subscriptions(owner_id=user.id)
+
     bots_resp = []
     for b in bots:
         resp = BotApiResponse.from_orm_bot(b, TG_WEBHOOK_URL, WEBHOOK_URL)
         sales, revenue = await get_client_payment_stats(b.id)
         resp.sales = sales
         resp.revenue = float(revenue)
+        subscription = subscriptions.get(b.id)
+        if subscription is not None:
+            resp.subscription_status = subscription.status
+            resp.subscription_ends_at = (
+                subscription.ends_at.isoformat() if subscription.ends_at else None
+            )
+            resp.subscription_amount_rub = subscription.amount_rub
+            resp.subscription_auto_renew = subscription.auto_renew
         bots_resp.append(resp)
         
     return {"bots": [b.model_dump(by_alias=True) for b in bots_resp]}

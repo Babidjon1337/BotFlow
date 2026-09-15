@@ -57,8 +57,12 @@ async def create_checkout(
     *,
     receipt_email: str | None = None,
     amount_rub: int | None = None,
+    bot_id: int | None = None,
 ) -> dict[str, str]:
-    """Создаёт платёж подписки. amount_rub задаёт итог с доплатами за функционал."""
+    """Создаёт платёж подписки. amount_rub задаёт итог с доплатами за функционал.
+
+    bot_id — per-bot модель: платёж относится к подписке конкретного бота.
+    """
     try:
         product, base_amount, description = PRODUCTS[product_key]
     except KeyError as exc:
@@ -68,7 +72,14 @@ async def create_checkout(
     if amount < SAAS_BOT_BASE_PRICE_RUB:
         raise BillingError("Сумма подписки меньше базовой цены")
 
-    payment = await create_saas_payment(user_id, product, amount)
+    payment = await create_saas_payment(user_id, product, amount, bot_id=bot_id)
+    metadata: dict[str, str] = {
+        "saas_payment_id": str(payment.id),
+        "user_id": str(user_id),
+        "product": product,
+    }
+    if bot_id is not None:
+        metadata["bot_id"] = str(bot_id)
     payload: dict[str, Any] = {
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
@@ -77,11 +88,7 @@ async def create_checkout(
             "return_url": WEBAPP_URL or "https://t.me/",
         },
         "description": description,
-        "metadata": {
-            "saas_payment_id": str(payment.id),
-            "user_id": str(user_id),
-            "product": product,
-        },
+        "metadata": metadata,
     }
     if receipt_email:
         payload["receipt"] = {
@@ -185,11 +192,18 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
         raise BillingError("Verified payment does not match the local order") from exc
 
 
-async def create_recurring_payment(user, amount_rub: int | None = None):
+async def create_recurring_payment(
+    user,
+    amount_rub: int | None = None,
+    *,
+    bot_id: int | None = None,
+    attempt: int | None = None,
+):
     """Одно серверное продление подписки; выдача остаётся webhook-driven.
 
     Сумма продления берётся из последнего успешного платежа пользователя,
     поэтому доплаты за функционал сохраняются при автосписании.
+    bot_id — продление per-bot подписки (сумма = цена этого бота).
     """
     if not user.subscription_payment_method_enc:
         raise BillingError("Saved payment method is missing")
@@ -199,15 +213,23 @@ async def create_recurring_payment(user, amount_rub: int | None = None):
         user.id,
         "pro_renewal",
         amount,
-        attempt=user.subscription_retry_count + 1,
+        attempt=attempt if attempt is not None else user.subscription_retry_count + 1,
+        bot_id=bot_id,
     )
     method_id = crypto.decrypt(user.subscription_payment_method_enc)
+    metadata = {
+        "saas_payment_id": str(payment.id),
+        "user_id": str(user.id),
+        "product": "pro_renewal",
+    }
+    if bot_id is not None:
+        metadata["bot_id"] = str(bot_id)
     payload = {
         "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
         "capture": True,
         "payment_method_id": method_id,
         "description": "Продление подписки бота BotFlow",
-        "metadata": {"saas_payment_id": str(payment.id), "user_id": str(user.id), "product": "pro_renewal"},
+        "metadata": metadata,
     }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

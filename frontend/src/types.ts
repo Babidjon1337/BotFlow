@@ -62,6 +62,11 @@ export interface BotConfig {
   isTokenLocked: boolean;
   /** Бот опубликован бесплатно (спец-ссылка «1 бот навсегда»). */
   hasLifetimeLicense?: boolean;
+  /** Per-bot подписка (R3): null — подписки на бота нет (черновик/legacy/бесплатный). */
+  subscriptionStatus?: string | null;
+  subscriptionEndsAt?: string | null;
+  subscriptionAmountRub?: number | null;
+  subscriptionAutoRenew?: boolean | null;
   sales?: number;
   revenue?: number;
   token?: string;

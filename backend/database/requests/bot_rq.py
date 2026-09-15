@@ -81,10 +81,73 @@ async def get_bot_subscription(bot_id: int) -> BotSubscription | None:
         )
 
 
+async def get_user_bot_subscriptions(owner_id: int) -> dict[int, BotSubscription]:
+    """Per-bot подписки всех ботов владельца — для отдачи в /api/bots."""
+    async with async_session() as session:
+        result = await session.scalars(
+            select(BotSubscription)
+            .join(BotConfig, BotConfig.id == BotSubscription.bot_id)
+            .where(BotConfig.owner_id == owner_id)
+        )
+        return {subscription.bot_id: subscription for subscription in result.all()}
+
+
+async def get_bot_subscriptions_due_for_renewal(
+    now: datetime | None = None,
+) -> list[tuple[BotSubscription, BotConfig, User]]:
+    """Подписки ботов, которым пора автосписание (метод оплаты есть у владельца)."""
+    effective_now = now or datetime.now(timezone.utc)
+    async with async_session() as session:
+        result = await session.execute(
+            select(BotSubscription, BotConfig, User)
+            .join(BotConfig, BotConfig.id == BotSubscription.bot_id)
+            .join(User, User.id == BotConfig.owner_id)
+            .where(
+                BotSubscription.status == "active",
+                BotSubscription.auto_renew.is_(True),
+                BotSubscription.ends_at.is_not(None),
+                BotSubscription.ends_at <= effective_now,
+                BotSubscription.retry_count < 3,
+                BotSubscription.next_retry_at.is_not(None),
+                BotSubscription.next_retry_at <= effective_now,
+                User.subscription_payment_method_enc.is_not(None),
+            )
+        )
+        return [(row[0], row[1], row[2]) for row in result.all()]
+
+
+async def set_bot_subscription_auto_renew(
+    bot_id: int, enabled: bool
+) -> BotSubscription | None:
+    """Включает/выключает автосписание по конкретному боту."""
+    async with async_session() as session:
+        subscription = await session.scalar(
+            select(BotSubscription)
+            .where(BotSubscription.bot_id == bot_id)
+            .with_for_update(of=BotSubscription)
+        )
+        if not subscription:
+            return None
+        subscription.auto_renew = enabled
+        if not enabled:
+            subscription.next_retry_at = None
+            subscription.grace_until = None
+        elif subscription.ends_at and subscription.ends_at > datetime.now(timezone.utc):
+            subscription.next_retry_at = subscription.ends_at
+            subscription.retry_count = 0
+        await session.commit()
+        await session.refresh(subscription)
+        return subscription
+
+
 async def get_expired_published_bots(
     now: datetime | None = None,
 ) -> list[BotConfig]:
-    """Return only published bots whose dedicated subscription has ended."""
+    """Return only published bots whose dedicated subscription has ended.
+
+    При включённом автосписании бот не останавливается в день окончания —
+    ждём завершения грейс-периода ретраев (grace_until) или исчерпания попыток.
+    """
     effective_now = now or datetime.now(timezone.utc)
     async with async_session() as session:
         result = await session.scalars(
@@ -95,6 +158,12 @@ async def get_expired_published_bots(
                 BotSubscription.status == "active",
                 BotSubscription.ends_at.is_not(None),
                 BotSubscription.ends_at <= effective_now,
+                or_(
+                    BotSubscription.auto_renew.is_(False),
+                    BotSubscription.retry_count >= 3,
+                    BotSubscription.grace_until.is_not(None)
+                    & (BotSubscription.grace_until <= effective_now),
+                ),
             )
         )
         return list(result.all())

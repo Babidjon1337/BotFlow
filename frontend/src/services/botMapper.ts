@@ -10,6 +10,10 @@ export interface ApiBot {
   revenue?: number;
   isTokenLocked?: boolean;
   hasLifetimeLicense?: boolean;
+  subscriptionStatus?: string | null;
+  subscriptionEndsAt?: string | null;
+  subscriptionAmountRub?: number | null;
+  subscriptionAutoRenew?: boolean | null;
   paymentProvider?: string;
   hasPaymentCredentials?: boolean;
   tokenPreview?: string;
@@ -35,6 +39,10 @@ export function mapApiBot(bot: ApiBot): BotConfig {
     revenue: bot.revenue || 0,
     isTokenLocked: bot.isTokenLocked === true,
     hasLifetimeLicense: bot.hasLifetimeLicense === true,
+    subscriptionStatus: bot.subscriptionStatus ?? null,
+    subscriptionEndsAt: bot.subscriptionEndsAt ?? null,
+    subscriptionAmountRub: bot.subscriptionAmountRub ?? null,
+    subscriptionAutoRenew: bot.subscriptionAutoRenew ?? null,
     paymentProvider: bot.paymentProvider,
     hasPaymentCredentials: bot.hasPaymentCredentials === true,
     tokenPreview: bot.tokenPreview,

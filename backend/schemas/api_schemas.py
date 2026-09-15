@@ -46,6 +46,14 @@ class BillingCheckoutRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class BillingCancelRequest(BaseModel):
+    # Без bot_id — legacy отключение автосписания аккаунта;
+    # с bot_id — отключение автосписания подписки конкретного бота.
+    bot_id: Optional[int] = Field(None, alias="botId")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class NotificationSettingsRequest(BaseModel):
     email: Optional[str] = None
     email_receipts_enabled: bool = Field(default=True, alias="emailReceiptsEnabled")
@@ -141,6 +149,11 @@ class BotApiResponse(BaseModel):
     media_sync_done: bool = Field(default=False, alias="mediaSyncDone")
     is_token_locked: bool = Field(default=False, alias="isTokenLocked")
     has_lifetime_license: bool = Field(default=False, alias="hasLifetimeLicense")
+    # Per-bot подписка (R3): есть только если бот оплачен как отдельный продукт.
+    subscription_status: Optional[str] = Field(None, alias="subscriptionStatus")
+    subscription_ends_at: Optional[str] = Field(None, alias="subscriptionEndsAt")
+    subscription_amount_rub: Optional[int] = Field(None, alias="subscriptionAmountRub")
+    subscription_auto_renew: Optional[bool] = Field(None, alias="subscriptionAutoRenew")
     sales: int = Field(default=0)
     revenue: float = Field(default=0.0)
     payment_provider: Optional[str] = Field(None, alias="paymentProvider")

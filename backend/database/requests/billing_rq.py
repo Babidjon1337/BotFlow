@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from config import SAAS_BOT_BASE_PRICE_RUB
-from database.models import SaasPayment, User, async_session
+from database.models import BotSubscription, SaasPayment, User, async_session
 
 
 class SaasPaymentInvariantError(ValueError):
@@ -55,11 +55,16 @@ async def get_last_paid_amount(user_id: int) -> int:
 
 
 async def create_saas_payment(
-    user_id: int, product: str, amount: int, attempt: int = 0
+    user_id: int,
+    product: str,
+    amount: int,
+    attempt: int = 0,
+    bot_id: int | None = None,
 ) -> SaasPayment:
     async with async_session() as session:
         payment = SaasPayment(
             user_id=user_id,
+            bot_id=bot_id,
             product=product,
             amount=Decimal(str(amount)),
             idempotence_key=str(uuid.uuid4()),
@@ -93,6 +98,58 @@ async def get_saas_payment_by_provider_id(provider_payment_id: str) -> SaasPayme
             .options(joinedload(SaasPayment.user))
             .where(SaasPayment.yookassa_payment_id == provider_payment_id)
         )
+
+
+async def _apply_bot_subscription(
+    session,
+    bot_id: int,
+    amount_rub: int,
+    now: datetime,
+    payment_method_enc: bytes | None,
+) -> BotSubscription:
+    """Upsert per-bot подписки по успешному платежу: +30 дней от конца периода."""
+    subscription = await session.scalar(
+        select(BotSubscription)
+        .where(BotSubscription.bot_id == bot_id)
+        .with_for_update(of=BotSubscription)
+    )
+    if subscription is None:
+        subscription = BotSubscription(
+            bot_id=bot_id,
+            status="active",
+            starts_at=now,
+            product_code="bot_monthly",
+        )
+        session.add(subscription)
+    period_start = max(subscription.ends_at or now, now)
+    subscription.ends_at = period_start + timedelta(days=30)
+    subscription.status = "active"
+    subscription.amount_rub = amount_rub
+    subscription.retry_count = 0
+    subscription.next_retry_at = subscription.ends_at
+    subscription.grace_until = None
+    if payment_method_enc is not None:
+        subscription.auto_renew = True
+    return subscription
+
+
+async def _apply_bot_renewal_failure(session, payment: SaasPayment, now: datetime) -> None:
+    """Пер-бот ретраи: 3 дневные попытки, затем автосписание выключается."""
+    subscription = await session.scalar(
+        select(BotSubscription)
+        .where(BotSubscription.bot_id == payment.bot_id)
+        .with_for_update(of=BotSubscription)
+    )
+    if not subscription:
+        return
+    subscription.retry_count = max(subscription.retry_count, payment.attempt)
+    if payment.attempt >= 3:
+        subscription.auto_renew = False
+        subscription.next_retry_at = None
+        subscription.grace_until = None
+    else:
+        subscription.next_retry_at = now + timedelta(days=1)
+        subscription.grace_until = (subscription.ends_at or now) + timedelta(days=3)
 
 
 async def apply_successful_saas_payment(
@@ -137,6 +194,14 @@ async def apply_successful_saas_payment(
         payment.paid_at = now
         if payment.product == "license":
             user.lifetime_slots += 1
+        elif payment.bot_id is not None:
+            # Per-bot модель: оплата продлевает подписку конкретного бота,
+            # аккаунт-уровень не трогаем (legacy-подписки живут отдельно).
+            await _apply_bot_subscription(
+                session, payment.bot_id, int(payment.amount), now, payment_method_enc
+            )
+            if payment_method_enc is not None and user.subscription_payment_method_enc is None:
+                user.subscription_payment_method_enc = payment_method_enc
         else:
             period_start = max(user.subscription_ends_at or now, now)
             user.subscription_ends_at = period_start + timedelta(days=30)
@@ -188,7 +253,9 @@ async def mark_saas_payment_failed(
         )
         if not user:
             raise SaasPaymentInvariantError("Payment user does not exist")
-        if payment.product == "pro_renewal":
+        if payment.product == "pro_renewal" and payment.bot_id is not None:
+            await _apply_bot_renewal_failure(session, payment, now)
+        elif payment.product == "pro_renewal":
             user.subscription_retry_count = max(user.subscription_retry_count, payment.attempt)
             if payment.attempt >= 3:
                 user.subscription_auto_renew = False
@@ -219,7 +286,9 @@ async def mark_saas_payment_failed_by_id(payment_id: uuid.UUID) -> User | None:
         )
         if not user:
             return None
-        if payment.product == "pro_renewal":
+        if payment.product == "pro_renewal" and payment.bot_id is not None:
+            await _apply_bot_renewal_failure(session, payment, now)
+        elif payment.product == "pro_renewal":
             user.subscription_retry_count = max(user.subscription_retry_count, payment.attempt)
             if payment.attempt >= 3:
                 user.subscription_auto_renew = False
