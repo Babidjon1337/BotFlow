@@ -10,6 +10,7 @@ export interface BillingState {
   slots_bought: number;
   subscription_auto_renew: boolean;
   subscription_retry_count: number;
+  billing_enabled: boolean;
   is_admin: boolean;
   email: string | null;
   email_receipts_enabled: boolean;

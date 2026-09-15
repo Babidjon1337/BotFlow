@@ -87,6 +87,8 @@ export interface AppState {
   isAdmin?: boolean;
   subscriptionAutoRenew?: boolean;
   subscriptionRetryCount?: number;
+  /** Рубильник оплаты (тестовый период): false — кнопки оплаты скрываются. */
+  billingEnabled?: boolean;
   userEmail: string;
   emailReceiptsEnabled?: boolean;
   emailBillingNotificationsEnabled?: boolean;

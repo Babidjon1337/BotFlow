@@ -140,6 +140,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
           isAdmin: res.user.is_admin,
           subscriptionAutoRenew: res.user.subscription_auto_renew,
           subscriptionRetryCount: res.user.subscription_retry_count,
+          billingEnabled: res.user.billing_enabled,
           userEmail: res.user.email || '',
           emailReceiptsEnabled: res.user.email_receipts_enabled,
           emailBillingNotificationsEnabled: res.user.email_billing_notifications_enabled,

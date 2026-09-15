@@ -9,6 +9,7 @@ from loggers import logger
 from config import (
     ADMIN_TELEGRAM_IDS,
     ALLOW_INSECURE_DEV_AUTH,
+    BILLING_ENABLED,
     SECRET_KEY,
     TG_WEBHOOK_URL,
     WEBHOOK_URL,
@@ -307,6 +308,7 @@ def _user_payload(user, telegram_id: int) -> dict:
         "slots_bought": user.lifetime_slots,
         "subscription_auto_renew": user.subscription_auto_renew,
         "subscription_retry_count": user.subscription_retry_count,
+        "billing_enabled": BILLING_ENABLED,
         "email": user.email,
         "email_receipts_enabled": user.email_receipts_enabled,
         "email_billing_notifications_enabled": user.email_billing_notifications_enabled,
@@ -744,6 +746,11 @@ async def deactivate_access_link_endpoint(link_id: UUID, request: Request):
 
 @api_router.post("/api/billing/checkout", response_model=BillingCheckoutResponse)
 async def create_billing_checkout(request: Request, body: BillingCheckoutRequest):
+    if not BILLING_ENABLED:
+        raise HTTPException(
+            status_code=403,
+            detail="Оплата временно недоступна — приложение на тесте. Доступ выдаёт поддержка.",
+        )
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     checkout_email = body.email.strip().lower() if body.email else user.email

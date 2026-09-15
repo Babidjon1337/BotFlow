@@ -34,6 +34,8 @@ export const Subscription = () => {
 
   const status = isAdmin ? "active" : appState.subscriptionStatus;
   const autoRenew = Boolean(appState.subscriptionAutoRenew);
+  // Рубильник: пока бэкенд не подтвердил оплату, кнопка не показывается.
+  const billingEnabled = Boolean(appState.billingEnabled);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,6 +48,7 @@ export const Subscription = () => {
           subscriptionStatus: billing.subscription_status,
           subscriptionUntil: billing.subscription_until,
           subscriptionAutoRenew: billing.subscription_auto_renew,
+          billingEnabled: billing.billing_enabled,
         }));
       })
       .catch(() => {
@@ -178,10 +181,16 @@ export const Subscription = () => {
         )}
 
         {!isAdmin && (status !== "active" || !autoRenew) && (
-          <Button className="mt-4 w-full" disabled={busy} onClick={() => void payForBot()}>
-            <CreditCard data-icon="inline-start" aria-hidden />
-            {status === "active" ? "Продлить подписку" : "Оплатить 990 ₽ / мес"}
-          </Button>
+          billingEnabled ? (
+            <Button className="mt-4 w-full" disabled={busy} onClick={() => void payForBot()}>
+              <CreditCard data-icon="inline-start" aria-hidden />
+              {status === "active" ? "Продлить подписку" : "Оплатить 990 ₽ / мес"}
+            </Button>
+          ) : (
+            <p className="mt-4 rounded-[14px] border border-dashed border-border-strong px-4 py-3 text-center text-body-sm text-fg-tertiary">
+              Приложение на тесте — оплата откроется позже. Доступ уже выдан вручную.
+            </p>
+          )
         )}
       </section>
 
