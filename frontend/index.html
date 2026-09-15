@@ -13,18 +13,17 @@
     <script>
       // Глобальный перехватчик вообще всех ошибок до запуска React
       window.addEventListener("error", function (e) {
-        // ResizeObserver loop — известное безвредное предупреждение браузера,
-        // не влияющее на работу приложения. Не показываем пользователю.
-        if (e.message && e.message.includes("ResizeObserver loop")) {
+        if (e.message && (e.message.includes("ResizeObserver loop") || e.message.includes("WebSocket"))) {
           return;
         }
-        alert("JS Error: " + e.message + " at " + e.filename + ":" + e.lineno);
+        console.error("JS Error:", e.message, e.filename, e.lineno);
       });
       window.addEventListener("unhandledrejection", function (e) {
-        alert(
-          "Promise Rejection: " +
-            (e.reason && e.reason.message ? e.reason.message : e.reason),
-        );
+        var msg = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+        if (msg && (msg.includes("WebSocket") || msg.includes("ResizeObserver"))) {
+          return;
+        }
+        console.error("Promise Rejection:", e.reason);
       });
     </script>
   </head>

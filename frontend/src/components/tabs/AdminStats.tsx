@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Bot,
   CheckCircle2,
+  ChevronRight,
   ClipboardList,
   Clock,
   CreditCard,
@@ -485,7 +486,10 @@ export function AdminStats() {
               <button
                 key={item.id}
                 type="button"
-                onClick={() => setSection(item.id)}
+                onClick={() => {
+                  setSelectedUser(null);
+                  setSection(item.id);
+                }}
                 aria-current={active ? "page" : undefined}
                 className={`relative h-10 shrink-0 px-3 text-sm font-semibold transition-colors ${
                   active
@@ -504,39 +508,44 @@ export function AdminStats() {
       {state === "error" ? <ErrorState message={error ?? "Не удалось загрузить данные."} onRetry={refreshSection} /> : null}
       {state !== "error" && section === "overview" ? <Overview overview={overview} operations={operations} loading={state === "loading"} onNavigate={setSection} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "users" ? (
-        <UsersSection
-          users={users}
-          query={usersQuery}
-          onQueryChange={setUsersQuery}
-          loading={state === "loading"}
-          quickGrantLoadingId={quickGrantUserId}
-          onOpenProfile={openUserProfile}
-          onQuickGrant={openGrantForUser}
-        />
+        selectedUser ? (
+          <UserProfileScreen
+            detail={selectedUser}
+            state={selectedUserState}
+            error={selectedUserError}
+            busyBotId={botActionId}
+            onClose={() => {
+              setSelectedUser(null);
+              setSelectedUserState("idle");
+              setSelectedUserError(null);
+            }}
+            onRetry={() => void loadUserProfile(selectedUser.user.id)}
+            onManageAccess={() => setActionUser(selectedUser.user)}
+            onAction={requestBotAction}
+            onCheckReadiness={checkBotReadiness}
+            onArchiveLeads={archiveBotLeads}
+            onOpenGrantBot={openGrantForBot}
+            onOpenGrantUser={(user: AdminUser, bots: AdminBot[]) => setGrantTarget({ type: "user", user, bots })}
+            onRevokeSubscription={revokeSubscription}
+            onEditFunnel={handleEditFunnel}
+          />
+        ) : (
+          <UsersSection
+            users={users}
+            query={usersQuery}
+            onQueryChange={setUsersQuery}
+            loading={state === "loading"}
+            quickGrantLoadingId={quickGrantUserId}
+            onOpenProfile={openUserProfile}
+            onQuickGrant={openGrantForUser}
+          />
+        )
       ) : null}
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
       {state !== "error" && section === "access-links" ? <AccessLinksSection links={accessLinks} loading={state === "loading"} onChanged={() => void refreshSection()} /> : null}
       {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
-      {selectedUser ? (
-        <UserProfileSheet
-          detail={selectedUser}
-          state={selectedUserState}
-          error={selectedUserError}
-          busyBotId={botActionId}
-          onClose={() => { setSelectedUser(null); setSelectedUserState("idle"); setSelectedUserError(null); }}
-          onRetry={() => void loadUserProfile(selectedUser.user.id)}
-          onManageAccess={() => setActionUser(selectedUser.user)}
-          onAction={requestBotAction}
-          onCheckReadiness={checkBotReadiness}
-          onArchiveLeads={archiveBotLeads}
-          onOpenGrantBot={openGrantForBot}
-          onOpenGrantUser={(user, bots) => setGrantTarget({ type: "user", user, bots })}
-          onRevokeSubscription={revokeSubscription}
-          onEditFunnel={handleEditFunnel}
-        />
-      ) : null}
       {grantTarget ? (
         <GrantSubscriptionDialog
           key={grantTarget.type === "bot" ? `bot-${grantTarget.bot.id}` : `user-${grantTarget.user.id}`}
@@ -682,7 +691,7 @@ function UsersSection({
                       {formatDate(user.created_at)}
                     </td>
                     <td className="py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-3">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -700,16 +709,9 @@ function UsersSection({
                           )}
                           +3 мес на бота
                         </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenProfile(user);
-                          }}
-                          className="h-9 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                        >
-                          Профиль
-                        </button>
+                        <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] group-hover:bg-[var(--color-surface-2)] group-hover:text-[var(--color-primary)] transition-colors">
+                          <ChevronRight size={18} aria-hidden="true" />
+                        </span>
                       </div>
                     </td>
                   </tr>
@@ -790,7 +792,7 @@ function UserCard({
           </dd>
         </div>
       </dl>
-      <div className="mt-4 flex items-center gap-2 border-t border-[var(--color-border)]/60 pt-3">
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)]/60 pt-3">
         <button
           type="button"
           onClick={(e) => {
@@ -798,7 +800,7 @@ function UserCard({
             onQuickGrant(user);
           }}
           disabled={loadingGrant}
-          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3.5 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
         >
           {loadingGrant ? (
             <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
@@ -807,22 +809,16 @@ function UserCard({
           )}
           +3 мес на бота
         </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenProfile(user);
-          }}
-          className="h-10 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)]"
-        >
-          Профиль
-        </button>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-foreground-secondary)] group-hover:text-[var(--color-primary)] transition-colors">
+          Карточка
+          <ChevronRight size={15} aria-hidden="true" />
+        </span>
       </div>
     </article>
   );
 }
 
-function UserProfileSheet({
+function UserProfileScreen({
   detail,
   state,
   error,
@@ -873,28 +869,55 @@ function UserProfileSheet({
   );
 
   return (
-    <div className="fixed inset-0 z-[140] flex justify-end bg-black/60 backdrop-blur-sm" role="presentation">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="admin-user-profile-title"
-        className="flex h-[100dvh] w-full max-w-4xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl"
-      >
-        {/* Шапка профиля */}
-        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-5 sm:px-7">
-          <div className="min-w-0">
-            <button
-              type="button"
-              onClick={onClose}
-              className="-ml-2 inline-flex h-9 items-center gap-2 rounded-xl px-2 text-xs font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"
-            >
-              <ArrowLeft size={16} aria-hidden="true" />
-              К списку пользователей
-            </button>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+    <div className="w-full space-y-6" aria-labelledby="admin-user-profile-title">
+      {/* Верхняя панель навигации и действий */}
+      <div className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-xs font-bold text-[var(--color-foreground)] shadow-sm transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+          >
+            <ArrowLeft size={16} aria-hidden="true" />
+            Назад ко всем пользователям
+          </button>
+          <div className="hidden h-5 w-px bg-[var(--color-border)] sm:block" />
+          <div className="flex items-center gap-1.5 text-xs text-[var(--color-foreground-secondary)]">
+            <span>Пользователи</span>
+            <ChevronRight size={13} aria-hidden="true" />
+            <span className="font-semibold text-[var(--color-foreground)]">
+              {user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onManageAccess}
+            className="h-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+          >
+            {user.is_disabled ? "Разблокировать доступ" : "Ограничить доступ"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenGrantUser(user, bots)}
+            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-4 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+          >
+            <Gift size={16} aria-hidden="true" />
+            +3 мес на бота
+          </button>
+        </div>
+      </div>
+
+      {/* Карточка пользователя с метаданными */}
+      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5">
               <h2
                 id="admin-user-profile-title"
-                className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--color-foreground)]"
+                className="text-2xl font-black tracking-tight text-[var(--color-foreground)]"
               >
                 {user.username ? `@${user.username.replace(/^@/, "")}` : `Пользователь ${user.telegram_id}`}
               </h2>
@@ -914,164 +937,155 @@ function UserProfileSheet({
               {user.is_platform_admin ? (
                 <StatusBadge tone="warning">
                   <Crown size={12} className="mr-1 inline" aria-hidden="true" />
-                  Администратор
+                  Администратор платформы
                 </StatusBadge>
               ) : null}
             </div>
-            <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
-              Telegram ID: {user.telegram_id} · Внутренний ID BotFlow: {user.id}
+            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-foreground-secondary)]">
+              <span>Telegram ID: <strong className="font-semibold text-[var(--color-foreground)]">{user.telegram_id}</strong></span>
+              <span>·</span>
+              <span>BotFlow ID: <strong className="font-semibold text-[var(--color-foreground)]">#{user.id}</strong></span>
+              <span>·</span>
+              <span>Дата регистрации: <strong className="font-semibold text-[var(--color-foreground)]">{formatDate(user.created_at)}</strong></span>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть профиль пользователя"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"
-          >
-            <X size={20} aria-hidden="true" />
-          </button>
-        </header>
-
-        {/* Тело профиля — разбитое на чёткие карточки */}
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-7 sm:py-8">
-          <div className="mx-auto max-w-3xl space-y-6">
-            {state === "loading" ? (
-              <RowsSkeleton count={5} />
-            ) : state === "error" ? (
-              <ErrorState message={error ?? "Не удалось открыть профиль."} onRetry={onRetry} />
-            ) : (
-              <>
-                {/* 1. Сводные метрики профиля */}
-                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <ProfileMetric
-                    label="Всего ботов"
-                    value={String(bots.length)}
-                    note={`В аккаунте: ${user.bots_count}`}
-                    icon={<Bot size={18} />}
-                  />
-                  <ProfileMetric
-                    label="Работает сейчас"
-                    value={`${activeRunningCount} / ${bots.length}`}
-                    note="Активные боты"
-                    icon={<Activity size={18} />}
-                  />
-                  <ProfileMetric
-                    label="С подпиской"
-                    value={`${activeSubCount} / ${bots.length}`}
-                    note="Активна или бессрочно"
-                    icon={<ShieldCheck size={18} />}
-                  />
-                  <ProfileMetric
-                    label="Регистрация"
-                    value={formatDate(user.created_at)}
-                    note="Дата создания"
-                    icon={<Clock size={18} />}
-                  />
-                </section>
-
-                {/* 2. Hero-карточка: Выдача бесплатного периода на бота */}
-                <section className="relative overflow-hidden rounded-2xl border border-[var(--color-primary)]/30 bg-gradient-to-br from-[var(--color-primary-soft)]/30 via-[var(--color-surface)] to-[var(--color-surface)] p-5 shadow-sm">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-start gap-3.5">
-                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--color-primary)] text-white shadow-md">
-                        <Gift size={22} aria-hidden="true" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-[var(--color-foreground)]">
-                            Бесплатный период на бота
-                          </h3>
-                          <span className="rounded-md bg-[var(--color-primary)] px-2 py-0.5 text-[10px] font-extrabold text-white uppercase tracking-wide">
-                            Акция 90 дн.
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
-                          Начислите 3 месяца бесплатно или бессрочный доступ на любого бота пользователя. Привязка карты не требуется.
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onOpenGrantUser(user, bots)}
-                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-4 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                    >
-                      <Gift size={16} aria-hidden="true" />
-                      Выдать бесплатный период
-                    </button>
-                  </div>
-                </section>
-
-                {/* 3. Карточка: Безопасность и доступ в Mini App */}
-                <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-[var(--color-foreground)]">
-                          Доступ к сервису (Mini App)
-                        </h3>
-                        <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
-                          {user.is_disabled ? "Вход заблокирован" : "Вход разрешён"}
-                        </StatusBadge>
-                      </div>
-                      <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
-                        {user.is_disabled
-                          ? "Пользователь временно не может открывать интерфейс BotFlow и редактировать воронки."
-                          : "Пользователь имеет стандартный доступ к платформе, созданию и настройке воронок."}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={onManageAccess}
-                      className="h-10 shrink-0 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                    >
-                      {user.is_disabled ? "Разблокировать вход" : "Ограничить доступ"}
-                    </button>
-                  </div>
-                </section>
-
-                {/* 4. Карточка: Боты пользователя с прямым переходом в воронку */}
-                <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
-                  <header className="mb-4 flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-bold text-[var(--color-foreground)]">
-                        Боты пользователя · {bots.length}
-                      </h3>
-                      <p className="mt-0.5 text-xs text-[var(--color-foreground-secondary)]">
-                        1 опубликованный бот = 1 подписка на него. Открывайте и настраивайте воронку любого бота прямо отсюда.
-                      </p>
-                    </div>
-                  </header>
-
-                  {bots.length ? (
-                    <div className="space-y-3">
-                      {bots.map((bot) => (
-                        <AdminBotRow
-                          key={bot.id}
-                          bot={bot}
-                          busy={busyBotId === bot.id}
-                          showOwner={false}
-                          onAction={onAction}
-                          onCheckReadiness={onCheckReadiness}
-                          onArchiveLeads={onArchiveLeads}
-                          onOpenGrant={onOpenGrantBot}
-                          onRevokeSubscription={onRevokeSubscription}
-                          onEditFunnel={onEditFunnel}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <EmptyState
-                      icon={<Bot size={21} />}
-                      title="У пользователя пока нет ботов"
-                      description="Как только пользователь создаст бота в интерфейсе, он появится здесь с возможностью мгновенно заполнить воронку."
-                    />
-                  )}
-                </section>
-              </>
-            )}
-          </div>
-        </main>
+        </div>
       </div>
+
+      {state === "loading" ? (
+        <RowsSkeleton count={5} />
+      ) : state === "error" ? (
+        <ErrorState message={error ?? "Не удалось открыть профиль."} onRetry={onRetry} />
+      ) : (
+        <>
+          {/* 1. Сводные метрики профиля */}
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ProfileMetric
+              label="Всего ботов"
+              value={String(bots.length)}
+              note={`В аккаунте: ${user.bots_count}`}
+              icon={<Bot size={20} />}
+            />
+            <ProfileMetric
+              label="Работает сейчас"
+              value={`${activeRunningCount} / ${bots.length}`}
+              note="Активные боты"
+              icon={<Activity size={20} />}
+            />
+            <ProfileMetric
+              label="С активной подпиской"
+              value={`${activeSubCount} / ${bots.length}`}
+              note="1 бот = 1 подписка"
+              icon={<ShieldCheck size={20} />}
+            />
+            <ProfileMetric
+              label="Регистрация"
+              value={formatDate(user.created_at)}
+              note="Дата создания аккаунта"
+              icon={<Clock size={20} />}
+            />
+          </section>
+
+          {/* 2. Hero-карточка: Выдача бесплатного периода на бота */}
+          <section className="relative overflow-hidden rounded-2xl border border-[var(--color-primary)]/30 bg-gradient-to-br from-[var(--color-primary-soft)]/40 via-[var(--color-surface)] to-[var(--color-surface)] p-6 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary)] text-white shadow-md">
+                  <Gift size={24} aria-hidden="true" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-[var(--color-foreground)]">
+                      Бесплатный период на бота
+                    </h3>
+                    <span className="rounded-md bg-[var(--color-primary)] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white">
+                      Акция 90 дн.
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+                    Начислите 3 месяца бесплатно или бессрочный доступ на любого бота пользователя. Привязка карты не требуется.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenGrantUser(user, bots)}
+                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-5 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              >
+                <Gift size={16} aria-hidden="true" />
+                Выдать бесплатный период
+              </button>
+            </div>
+          </section>
+
+          {/* 3. Карточка: Безопасность и доступ в Mini App */}
+          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-[var(--color-foreground)]">
+                    Доступ к сервису (Mini App)
+                  </h3>
+                  <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
+                    {user.is_disabled ? "Вход заблокирован" : "Вход разрешён"}
+                  </StatusBadge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+                  {user.is_disabled
+                    ? "Пользователь временно не может открывать интерфейс BotFlow и редактировать воронки."
+                    : "Пользователь имеет стандартный доступ к платформе, созданию и настройке воронок."}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onManageAccess}
+                className="h-10 shrink-0 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              >
+                {user.is_disabled ? "Разблокировать вход" : "Ограничить доступ"}
+              </button>
+            </div>
+          </section>
+
+          {/* 4. Карточка: Боты пользователя с прямым переходом в воронку */}
+          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+            <header className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-[var(--color-foreground)]">
+                  Боты пользователя · {bots.length}
+                </h3>
+                <p className="mt-0.5 text-xs text-[var(--color-foreground-secondary)]">
+                  1 опубликованный бот = 1 подписка на него. Открывайте и настраивайте воронку любого бота прямо отсюда.
+                </p>
+              </div>
+            </header>
+
+            {bots.length ? (
+              <div className="space-y-3">
+                {bots.map((bot) => (
+                  <AdminBotRow
+                    key={bot.id}
+                    bot={bot}
+                    busy={busyBotId === bot.id}
+                    showOwner={false}
+                    onAction={onAction}
+                    onCheckReadiness={onCheckReadiness}
+                    onArchiveLeads={onArchiveLeads}
+                    onOpenGrant={onOpenGrantBot}
+                    onRevokeSubscription={onRevokeSubscription}
+                    onEditFunnel={onEditFunnel}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<Bot size={21} />}
+                title="У пользователя пока нет ботов"
+                description="Как только пользователь создаст бота в интерфейсе, он появится здесь с возможностью мгновенно заполнить воронку."
+              />
+            )}
+          </section>
+        </>
+      )}
     </div>
   );
 }
