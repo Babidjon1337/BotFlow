@@ -584,8 +584,12 @@ async def grant_admin_bot_subscription(
                     subscription.auto_renew = False
                 ends_at_iso = None
             else:
+                bot.has_lifetime_license = False
                 days = duration_days or 90
-                period_start = max(subscription.ends_at if subscription and subscription.ends_at else now, now)
+                sub_ends = subscription.ends_at if subscription and subscription.ends_at else None
+                if sub_ends and sub_ends.tzinfo is None:
+                    sub_ends = sub_ends.replace(tzinfo=timezone.utc)
+                period_start = max(sub_ends, now) if sub_ends else now
                 next_ends_at = period_start + timedelta(days=days)
                 if subscription is None:
                     subscription = BotSubscription(
@@ -698,6 +702,12 @@ async def grant_admin_user_bot_subscription(
                 target_bot_id = bots[0].id
             else:
                 raise AdminMutationError("У пользователя несколько ботов. Выберите конкретного бота.")
+        else:
+            bot = await session.scalar(
+                select(BotConfig).where(BotConfig.id == target_bot_id, BotConfig.owner_id == user_id)
+            )
+            if not bot:
+                raise AdminMutationError("Указанный бот не найден у данного пользователя.")
 
     return await grant_admin_bot_subscription(
         bot_id=target_bot_id,

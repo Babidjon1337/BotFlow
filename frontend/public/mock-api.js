@@ -165,7 +165,20 @@
         };
         return ok({ status: 'ok', message: body.isLifetime ? 'Бессрочный доступ выдан' : `Подписка на бота выдана на ${days} дн.`, subscription: adminBot.subscription });
       }
-      if (path.endsWith('/access') || path.includes('/lifetime-licenses') || path.includes('/pro') || path.includes('/cancel-auto-renew')) return ok({ status: 'ok', message: 'Готово' });
+      if (path.includes('/pro')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        const days = body.days || 90;
+        const newEnds = new Date(Date.now() + days * 86400000).toISOString();
+        adminUser.subscription_ends_at = newEnds;
+        return ok({ user_id: adminUser.id, subscription_ends_at: newEnds });
+      }
+      if (path.includes('/lifetime-licenses')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        const qty = body.quantity || 1;
+        adminUser.lifetime_slots = (adminUser.lifetime_slots || 0) + qty;
+        return ok({ user_id: adminUser.id, lifetime_slots: adminUser.lifetime_slots, used_lifetime_licenses: 0 });
+      }
+      if (path.endsWith('/access') || path.includes('/cancel-auto-renew')) return ok({ status: 'ok', message: 'Готово' });
       if (/\/users\/\d+$/.test(path)) return ok({ user: adminUser, bots: [adminBot] });
       return ok({ users: [adminUser] });
     }

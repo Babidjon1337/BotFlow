@@ -136,6 +136,7 @@ export function AdminStats() {
     | null
   >(null);
   const [grantBusy, setGrantBusy] = useState(false);
+  const [quickGrantUserId, setQuickGrantUserId] = useState<number | null>(null);
 
   const refreshSection = useCallback(async () => {
     setState("loading");
@@ -373,11 +374,14 @@ export function AdminStats() {
   }, [refreshSection, setToastMessage, setToastType, showConfirm]);
 
   const openGrantForUser = useCallback(async (user: AdminUser) => {
+    setQuickGrantUserId(user.id);
     try {
       const detail = await apiService.getAdminUserDetail(user.id);
       setGrantTarget({ type: "user", user, bots: detail.bots });
     } catch {
       setGrantTarget({ type: "user", user, bots: [] });
+    } finally {
+      setQuickGrantUserId(null);
     }
   }, []);
 
@@ -386,25 +390,48 @@ export function AdminStats() {
   }, []);
 
   const applyGrant = useCallback(
-    async (data: { botId?: number; days?: number; isLifetime?: boolean }) => {
+    async (data: {
+      mode?: "bot" | "pro" | "license";
+      botId?: number;
+      days?: number;
+      isLifetime?: boolean;
+      quantity?: number;
+    }) => {
       if (!grantTarget) return;
       setGrantBusy(true);
       try {
-        if (grantTarget.type === "bot") {
-          const result = await apiService.grantAdminBotSubscription(grantTarget.bot.id, {
-            days: data.days,
-            isLifetime: data.isLifetime,
+        const mode = data.mode ?? "bot";
+        if (grantTarget.type === "bot" || mode === "bot") {
+          const targetBotId = grantTarget.type === "bot" ? grantTarget.bot.id : data.botId;
+          if (grantTarget.type === "bot") {
+            const result = await apiService.grantAdminBotSubscription(grantTarget.bot.id, {
+              days: data.days,
+              isLifetime: data.isLifetime,
+            });
+            setToastType("success");
+            setToastMessage(result.message || "Подписка выдана.");
+          } else {
+            const result = await apiService.grantAdminUserBotPeriod(grantTarget.user.id, {
+              botId: targetBotId,
+              days: data.days,
+              isLifetime: data.isLifetime,
+            });
+            setToastType("success");
+            setToastMessage(result.message || "Подписка выдана.");
+          }
+        } else if (mode === "pro" && grantTarget.type === "user") {
+          const days = data.days || 90;
+          const result = await apiService.extendAdminUserPro(grantTarget.user.id, days);
+          setToastType("success");
+          setToastMessage(`PRO аккаунта продлён до ${formatDate(result.subscription_ends_at)} (+${days} дн.).`);
+        } else if (mode === "license" && grantTarget.type === "user") {
+          const qty = data.quantity || 1;
+          const result = await apiService.changeAdminLifetimeLicenses(grantTarget.user.id, {
+            direction: "grant",
+            quantity: qty,
           });
           setToastType("success");
-          setToastMessage(result.message || "Подписка выдана.");
-        } else {
-          const result = await apiService.grantAdminUserBotPeriod(grantTarget.user.id, {
-            botId: data.botId,
-            days: data.days,
-            isLifetime: data.isLifetime,
-          });
-          setToastType("success");
-          setToastMessage(result.message || "Подписка выдана.");
+          setToastMessage(`Выдано лицензий: ${qty} (всего слотов: ${result.lifetime_slots}).`);
         }
         setGrantTarget(null);
         await refreshSection();
@@ -413,7 +440,7 @@ export function AdminStats() {
         }
       } catch (requestError) {
         const message =
-          requestError instanceof Error ? requestError.message : "Не удалось выдать подписку.";
+          requestError instanceof Error ? requestError.message : "Не удалось выдать доступ.";
         setToastType("error");
         setToastMessage(message);
       } finally {
@@ -512,6 +539,7 @@ export function AdminStats() {
           query={usersQuery}
           onQueryChange={setUsersQuery}
           loading={state === "loading"}
+          quickGrantLoadingId={quickGrantUserId}
           onOpenProfile={openUserProfile}
           onQuickGrant={openGrantForUser}
         />
@@ -556,10 +584,15 @@ export function AdminStats() {
       ) : null}
       {grantTarget ? (
         <GrantSubscriptionDialog
+          key={grantTarget.type === "bot" ? `bot-${grantTarget.bot.id}` : `user-${grantTarget.user.id}`}
           target={grantTarget}
           busy={grantBusy}
           onClose={() => setGrantTarget(null)}
           onApply={applyGrant}
+          onNavigateToLinks={() => {
+            setGrantTarget(null);
+            setSection("access-links");
+          }}
         />
       ) : null}
     </section>
@@ -598,6 +631,7 @@ function UsersSection({
   query,
   onQueryChange,
   loading,
+  quickGrantLoadingId,
   onOpenProfile,
   onQuickGrant,
 }: {
@@ -605,6 +639,7 @@ function UsersSection({
   query: string;
   onQueryChange: (value: string) => void;
   loading: boolean;
+  quickGrantLoadingId?: number | null;
   onOpenProfile: (user: AdminUser) => void;
   onQuickGrant: (user: AdminUser) => void;
 }) {
@@ -627,6 +662,7 @@ function UsersSection({
               <UserCard
                 key={user.id}
                 user={user}
+                loadingGrant={quickGrantLoadingId === user.id}
                 onOpenProfile={onOpenProfile}
                 onQuickGrant={onQuickGrant}
               />
@@ -686,10 +722,15 @@ function UsersSection({
                         <button
                           type="button"
                           onClick={() => onQuickGrant(user)}
-                          className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                          title="Выдать бесплатный доступ на 3 месяца"
+                          disabled={quickGrantLoadingId === user.id}
+                          className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                          title="Выдать бесплатный доступ (3 месяца на бота или PRO)"
                         >
-                          <Gift size={14} aria-hidden="true" />
+                          {quickGrantLoadingId === user.id ? (
+                            <RefreshCw size={13} className="animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Gift size={14} aria-hidden="true" />
+                          )}
                           +3 мес
                         </button>
                         <button
@@ -720,10 +761,12 @@ function UsersSection({
 
 function UserCard({
   user,
+  loadingGrant,
   onOpenProfile,
   onQuickGrant,
 }: {
   user: AdminUser;
+  loadingGrant?: boolean;
   onOpenProfile: (user: AdminUser) => void;
   onQuickGrant: (user: AdminUser) => void;
 }) {
@@ -764,9 +807,14 @@ function UserCard({
         <button
           type="button"
           onClick={() => onQuickGrant(user)}
-          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90"
+          disabled={loadingGrant}
+          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
         >
-          <Gift size={15} aria-hidden="true" />
+          {loadingGrant ? (
+            <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
+          ) : (
+            <Gift size={15} aria-hidden="true" />
+          )}
           +3 мес на бота
         </button>
         <button
@@ -989,8 +1037,88 @@ function UserActionDialog({ user, busy, onClose, onApply }: { user: AdminUser; b
   const [days, setDays] = useState(30);
   const isRestricting = !user.is_disabled;
   const submit = () => void onApply(action, { stopActiveBots, direction: licenseDirection, quantity, days });
-  const submitLabel = action === "access" ? (isRestricting ? "Ограничить доступ" : "Восстановить доступ") : action === "pro" ? "Продлить подписку" : "Отключить автосписание";
-  return <div className="fixed inset-0 z-[150] flex items-end bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="admin-user-action-title" className="w-full max-w-lg rounded-t-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl sm:rounded-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold text-[var(--color-foreground-secondary)]">Пользователь {user.telegram_id}</p><h2 id="admin-user-action-title" className="mt-1 text-lg font-bold text-[var(--color-foreground)]">Управление доступом</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Закрыть" className="rounded-lg p-2 text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-50"><X size={18} /></button></div><label className="mt-6 block text-xs font-semibold text-[var(--color-foreground-secondary)]" htmlFor="admin-user-action">Действие</label><select id="admin-user-action" value={action} onChange={(event) => setAction(event.target.value as AdminUserAction)} disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="access">{isRestricting ? "Ограничить доступ" : "Восстановить доступ"}</option><option value="pro">Продлить подписку</option><option value="auto-renew">Отключить автосписание</option></select>{action === "access" ? <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"><p className="text-sm font-semibold text-[var(--color-foreground)]">{isRestricting ? "Вход в Mini App будет запрещён." : "Пользователь снова сможет войти в Mini App."}</p>{isRestricting ? <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-5 text-[var(--color-foreground-secondary)]"><input type="checkbox" checked={stopActiveBots} onChange={(event) => setStopActiveBots(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" /><span><strong className="text-[var(--color-foreground)]">Также остановить все активные боты.</strong><br />Боты станут черновиками и не запустятся автоматически после восстановления доступа.</span></label> : null}</div> : null}{action === "licenses" ? <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_112px]"><select value={licenseDirection} onChange={(event) => setLicenseDirection(event.target.value as "grant" | "revoke")} disabled={busy} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]"><option value="grant">Выдать лицензии</option><option value="revoke">Отозвать свободные лицензии</option></select><label><span className="sr-only">Количество</span><input value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} type="number" min="1" max="100" disabled={busy} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /></label><p className="sm:col-span-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Отозвать можно только лицензии, не закреплённые за ботами.</p></div> : null}{action === "pro" ? <div className="mt-5"><label htmlFor="admin-pro-days" className="text-sm font-semibold text-[var(--color-foreground)]">Продлить на дней</label><input id="admin-pro-days" value={days} onChange={(event) => setDays(Math.max(1, Math.min(365, Number(event.target.value) || 1)))} type="number" min="1" max="365" disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /><p className="mt-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Срок добавится к текущему оплаченному периоду. Автопродление не включится.</p></div> : null}{action === "auto-renew" ? <p className="mt-5 rounded-xl bg-[var(--color-warning-soft)] p-4 text-sm leading-6 text-[var(--color-foreground)]">Будущие автоматические списания будут отменены. Уже оплаченный срок PRO останется без изменений.</p> : null}<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl px-4 text-sm font-semibold text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] disabled:opacity-50">Отмена</button><button type="button" onClick={submit} disabled={busy} className={`h-11 rounded-xl px-4 text-sm font-semibold text-white transition-opacity disabled:cursor-wait disabled:opacity-60 ${action === "access" && isRestricting || action === "licenses" && licenseDirection === "revoke" ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>{busy ? "Сохраняем…" : submitLabel}</button></div></div></div>;
+  const submitLabel =
+    action === "access"
+      ? isRestricting
+        ? "Ограничить доступ"
+        : "Восстановить доступ"
+      : action === "licenses"
+        ? licenseDirection === "grant"
+          ? "Выдать лицензии"
+          : "Отозвать лицензии"
+        : action === "pro"
+          ? "Продлить подписку"
+          : "Отключить автосписание";
+  return (
+    <div className="fixed inset-0 z-[150] flex items-end bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-5" role="presentation">
+      <div role="dialog" aria-modal="true" aria-labelledby="admin-user-action-title" className="w-full max-w-lg rounded-t-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl sm:rounded-2xl sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-[var(--color-foreground-secondary)]">Пользователь {user.telegram_id}</p>
+            <h2 id="admin-user-action-title" className="mt-1 text-lg font-bold text-[var(--color-foreground)]">Управление доступом</h2>
+          </div>
+          <button type="button" onClick={onClose} disabled={busy} aria-label="Закрыть" className="rounded-lg p-2 text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-50">
+            <X size={18} />
+          </button>
+        </div>
+        <label className="mt-6 block text-xs font-semibold text-[var(--color-foreground-secondary)]" htmlFor="admin-user-action">Действие</label>
+        <select
+          id="admin-user-action"
+          value={action}
+          onChange={(event) => setAction(event.target.value as AdminUserAction)}
+          disabled={busy}
+          className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+        >
+          <option value="access">{isRestricting ? "Ограничить доступ" : "Восстановить доступ"}</option>
+          <option value="licenses">Вечные лицензии</option>
+          <option value="pro">Продлить подписку PRO</option>
+          <option value="auto-renew">Отключить автосписание</option>
+        </select>
+        {action === "access" ? (
+          <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+            <p className="text-sm font-semibold text-[var(--color-foreground)]">{isRestricting ? "Вход в Mini App будет запрещён." : "Пользователь снова сможет войти в Mini App."}</p>
+            {isRestricting ? (
+              <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-5 text-[var(--color-foreground-secondary)]">
+                <input type="checkbox" checked={stopActiveBots} onChange={(event) => setStopActiveBots(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" />
+                <span><strong className="text-[var(--color-foreground)]">Также остановить все активные боты.</strong><br />Боты станут черновиками и не запустятся автоматически после восстановления доступа.</span>
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+        {action === "licenses" ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_112px]">
+            <select value={licenseDirection} onChange={(event) => setLicenseDirection(event.target.value as "grant" | "revoke")} disabled={busy} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]">
+              <option value="grant">Выдать лицензии</option>
+              <option value="revoke">Отозвать свободные лицензии</option>
+            </select>
+            <label>
+              <span className="sr-only">Количество</span>
+              <input value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} type="number" min="1" max="100" disabled={busy} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" />
+            </label>
+            <p className="sm:col-span-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Отозвать можно только лицензии, не закреплённые за ботами.</p>
+          </div>
+        ) : null}
+        {action === "pro" ? (
+          <div className="mt-5">
+            <label htmlFor="admin-pro-days" className="text-sm font-semibold text-[var(--color-foreground)]">Продлить на дней</label>
+            <input id="admin-pro-days" value={days} onChange={(event) => setDays(Math.max(1, Math.min(365, Number(event.target.value) || 1)))} type="number" min="1" max="365" disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" />
+            <p className="mt-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Срок добавится к текущему оплаченному периоду. Автопродление не включится.</p>
+          </div>
+        ) : null}
+        {action === "auto-renew" ? (
+          <p className="mt-5 rounded-xl bg-[var(--color-warning-soft)] p-4 text-sm leading-6 text-[var(--color-foreground)]">Будущие автоматические списания будут отменены. Уже оплаченный срок PRO останется без изменений.</p>
+        ) : null}
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl px-4 text-sm font-semibold text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] disabled:opacity-50">
+            Отмена
+          </button>
+          <button type="button" onClick={submit} disabled={busy} className={`h-11 rounded-xl px-4 text-sm font-semibold text-white transition-opacity disabled:cursor-wait disabled:opacity-60 ${action === "access" && isRestricting || action === "licenses" && licenseDirection === "revoke" ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>
+            {busy ? "Сохраняем…" : submitLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface GrantSubscriptionDialogProps {
@@ -999,7 +1127,14 @@ interface GrantSubscriptionDialogProps {
     | { type: "bot"; bot: AdminBot };
   busy: boolean;
   onClose: () => void;
-  onApply: (data: { botId?: number; days?: number; isLifetime?: boolean }) => Promise<void>;
+  onApply: (data: {
+    mode?: "bot" | "pro" | "license";
+    botId?: number;
+    days?: number;
+    isLifetime?: boolean;
+    quantity?: number;
+  }) => Promise<void>;
+  onNavigateToLinks?: () => void;
 }
 
 function GrantSubscriptionDialog({
@@ -1007,25 +1142,31 @@ function GrantSubscriptionDialog({
   busy,
   onClose,
   onApply,
+  onNavigateToLinks,
 }: GrantSubscriptionDialogProps) {
   const isBotTarget = target.type === "bot";
   const user = isBotTarget ? null : target.user;
   const fixedBot = isBotTarget ? target.bot : null;
   const userBots = isBotTarget ? [] : target.bots ?? [];
 
+  const [mode, setMode] = useState<"bot" | "pro" | "license">(
+    isBotTarget ? "bot" : userBots.length > 0 ? "bot" : "pro"
+  );
+
   const [selectedBotId, setSelectedBotId] = useState<number | undefined>(
     fixedBot ? fixedBot.id : userBots.length > 0 ? userBots[0].id : undefined
   );
   const [selectedPreset, setSelectedPreset] = useState<"30" | "90" | "180" | "365" | "lifetime" | "custom">("90");
   const [customDays, setCustomDays] = useState("90");
+  const [quantity, setQuantity] = useState(1);
 
   const effectiveDays = useMemo(() => {
-    if (selectedPreset === "lifetime") return undefined;
+    if (selectedPreset === "lifetime" && mode === "bot") return undefined;
     if (selectedPreset === "custom") return Math.max(1, Number(customDays) || 30);
-    return Number(selectedPreset);
-  }, [selectedPreset, customDays]);
+    return Number(selectedPreset) || 90;
+  }, [selectedPreset, customDays, mode]);
 
-  const isLifetime = selectedPreset === "lifetime";
+  const isLifetime = mode === "bot" && selectedPreset === "lifetime";
 
   const targetTitle = isBotTarget
     ? `Бот «${fixedBot?.display_name}»`
@@ -1048,24 +1189,36 @@ function GrantSubscriptionDialog({
   }, [currentSub]);
 
   const submitLabel = useMemo(() => {
-    if (isLifetime) return "Выдать бессрочный доступ";
-    if (selectedPreset === "90") return "Выдать 3 месяца бесплатно";
-    if (selectedPreset === "30") return "Выдать 1 месяц (30 дн.)";
-    if (selectedPreset === "180") return "Выдать 6 месяцев (180 дн.)";
-    if (selectedPreset === "365") return "Выдать 1 год (365 дн.)";
-    return `Выдать ${effectiveDays} дн.`;
-  }, [effectiveDays, isLifetime, selectedPreset]);
+    if (mode === "license") {
+      return `Выдать ${quantity} ${quantity === 1 ? "вечную лицензию" : quantity < 5 ? "вечные лицензии" : "вечных лицензий"}`;
+    }
+    if (mode === "pro") {
+      if (selectedPreset === "90") return "Выдать 3 месяца PRO бесплатно";
+      if (selectedPreset === "30") return "Выдать 1 месяц PRO (30 дн.)";
+      if (selectedPreset === "180") return "Выдать 6 месяцев PRO (180 дн.)";
+      if (selectedPreset === "365") return "Выдать 1 год PRO (365 дн.)";
+      return `Выдать ${effectiveDays} дн. PRO на аккаунт`;
+    }
+    if (isLifetime) return "Выдать бессрочный доступ на бота";
+    if (selectedPreset === "90") return "Выдать 3 месяца бесплатно на бота";
+    if (selectedPreset === "30") return "Выдать 1 месяц на бота (30 дн.)";
+    if (selectedPreset === "180") return "Выдать 6 месяцев на бота (180 дн.)";
+    if (selectedPreset === "365") return "Выдать 1 год на бота (365 дн.)";
+    return `Выдать ${effectiveDays} дн. на бота`;
+  }, [effectiveDays, isLifetime, mode, quantity, selectedPreset]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     void onApply({
-      botId: selectedBotId,
-      days: effectiveDays,
-      isLifetime,
+      mode,
+      botId: mode === "bot" ? selectedBotId : undefined,
+      days: mode === "license" ? undefined : effectiveDays,
+      isLifetime: mode === "bot" && isLifetime,
+      quantity: mode === "license" ? quantity : undefined,
     });
   };
 
-  const presets: Array<{ id: "30" | "90" | "180" | "365" | "lifetime"; label: string; badge?: string; hint: string }> = [
+  const botPresets: Array<{ id: "30" | "90" | "180" | "365" | "lifetime"; label: string; badge?: string; hint: string }> = [
     { id: "30", label: "1 месяц", hint: "30 дней" },
     { id: "90", label: "3 месяца", badge: "Хит", hint: "90 дней бесплатно" },
     { id: "180", label: "6 месяцев", hint: "180 дней" },
@@ -1073,7 +1226,12 @@ function GrantSubscriptionDialog({
     { id: "lifetime", label: "Бессрочно", badge: "VIP", hint: "Навсегда без списаний" },
   ];
 
-  const hasBots = isBotTarget || userBots.length > 0;
+  const proPresets: Array<{ id: "30" | "90" | "180" | "365"; label: string; badge?: string; hint: string }> = [
+    { id: "30", label: "1 месяц", hint: "30 дней" },
+    { id: "90", label: "3 месяца", badge: "Хит", hint: "90 дней бесплатно" },
+    { id: "180", label: "6 месяцев", hint: "180 дней" },
+    { id: "365", label: "1 год", hint: "365 дней" },
+  ];
 
   return (
     <div
@@ -1093,7 +1251,7 @@ function GrantSubscriptionDialog({
                 <Gift size={16} aria-hidden="true" />
               </div>
               <h2 id="admin-grant-sub-title" className="text-lg font-bold text-[var(--color-foreground)]">
-                Выдать подписку
+                Выдать бесплатный доступ
               </h2>
             </div>
             <p className="mt-1 truncate text-xs text-[var(--color-foreground-secondary)]">
@@ -1111,109 +1269,305 @@ function GrantSubscriptionDialog({
           </button>
         </div>
 
+        {!isBotTarget && (
+          <div className="mt-4 flex rounded-xl bg-[var(--color-surface-2)] p-1 gap-1">
+            <button
+              type="button"
+              onClick={() => setMode("bot")}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all ${
+                mode === "bot"
+                  ? "bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm"
+                  : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
+              }`}
+            >
+              <Bot size={15} />
+              <span>На бота ({userBots.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("pro")}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all ${
+                mode === "pro"
+                  ? "bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm"
+                  : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
+              }`}
+            >
+              <Crown size={15} />
+              <span>PRO-аккаунт</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("license")}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-bold transition-all ${
+                mode === "license"
+                  ? "bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm"
+                  : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
+              }`}
+            >
+              <Gift size={15} />
+              <span>Лицензия</span>
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-          {!isBotTarget && (
-            <div>
-              <label htmlFor="grant-bot-select" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
-                Выберите бота пользователя
-              </label>
-              {userBots.length > 0 ? (
-                <select
-                  id="grant-bot-select"
-                  value={selectedBotId ?? ""}
-                  onChange={(e) => setSelectedBotId(Number(e.target.value) || undefined)}
-                  disabled={busy}
-                  className="mt-1.5 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-                >
-                  {userBots.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.display_name} {b.username ? `(@${b.username})` : ""} [ID: {b.id}]
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className="mt-1.5 rounded-xl border border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)]/20 p-3 text-xs leading-5 text-[var(--color-foreground)]">
-                  У этого пользователя ещё нет ботов. Чтобы выдать доступ новому пользователю, отправьте специальную ссылку в разделе «Ссылки доступа».
+          {mode === "bot" && (
+            <>
+              {!isBotTarget && (
+                <div>
+                  <label htmlFor="grant-bot-select" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                    Выберите бота пользователя
+                  </label>
+                  {userBots.length > 0 ? (
+                    <select
+                      id="grant-bot-select"
+                      value={selectedBotId ?? ""}
+                      onChange={(e) => setSelectedBotId(Number(e.target.value) || undefined)}
+                      disabled={busy}
+                      className="mt-1.5 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                    >
+                      {userBots.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.display_name} {b.username ? `(@${b.username})` : ""} [ID: {b.id}]
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="mt-1.5 rounded-xl border border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)]/20 p-4 text-xs leading-5 text-[var(--color-foreground)]">
+                      <p className="font-bold">У этого пользователя ещё нет созданных ботов</p>
+                      <p className="mt-1 text-[var(--color-foreground-secondary)]">
+                        Чтобы дать пользователю возможность пользоваться платформой прямо сейчас, выберите «PRO-аккаунт» или отправьте специальную ссылку.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setMode("pro")}
+                          className="rounded-lg bg-[var(--color-primary)] px-3 py-1.5 text-xs font-bold text-white transition-opacity hover:opacity-90"
+                        >
+                          Выдать PRO на аккаунт (+3 мес)
+                        </button>
+                        {onNavigateToLinks && (
+                          <button
+                            type="button"
+                            onClick={onNavigateToLinks}
+                            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)]"
+                          >
+                            Раздел «Ссылки доступа»
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+
+              {(isBotTarget || userBots.length > 0) && (
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-foreground-secondary)]">
+                  {currentStatusText}
+                </div>
+              )}
+
+              {(isBotTarget || userBots.length > 0) && (
+                <div>
+                  <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                    Срок бесплатного доступа к боту
+                  </span>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {botPresets.map((preset) => {
+                      const active = selectedPreset === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => setSelectedPreset(preset.id)}
+                          className={`relative flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                            active
+                              ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
+                              : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
+                          }`}
+                        >
+                          <div className="flex w-full items-center justify-between">
+                            <span className="text-sm font-bold text-[var(--color-foreground)]">{preset.label}</span>
+                            {preset.badge && (
+                              <span className="rounded-md bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-extrabold text-white uppercase">
+                                {preset.badge}
+                              </span>
+                            )}
+                          </div>
+                          <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">{preset.hint}</span>
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPreset("custom")}
+                      className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                        selectedPreset === "custom"
+                          ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
+                          : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
+                      }`}
+                    >
+                      <span className="text-sm font-bold text-[var(--color-foreground)]">Свой срок</span>
+                      <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">Указать дни</span>
+                    </button>
+                  </div>
+
+                  {selectedPreset === "custom" && (
+                    <div className="mt-3">
+                      <label htmlFor="grant-custom-days" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                        Количество дней
+                      </label>
+                      <input
+                        id="grant-custom-days"
+                        type="number"
+                        min="1"
+                        max="3650"
+                        value={customDays}
+                        onChange={(e) => setCustomDays(e.target.value.replace(/\D/g, ""))}
+                        className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                        placeholder="Например, 90"
+                      />
+                    </div>
+                  )}
+
+                  <p className="mt-3 text-xs leading-5 text-[var(--color-foreground-tertiary)]">
+                    {isLifetime
+                      ? "Бессрочная лицензия закрепляется за ботом. Бот сможет работать всегда без списаний."
+                      : `Срок будет добавлен к периоду бота. Если подписки не было, активируется на ${effectiveDays} дн. с сегодняшнего дня.`}
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
-          {hasBots && (
-            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-foreground-secondary)]">
-              {currentStatusText}
-            </div>
-          )}
+          {mode === "pro" && (
+            <>
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-foreground-secondary)]">
+                Текущий статус PRO аккаунта:{" "}
+                <strong className="text-[var(--color-foreground)]">
+                  {user?.subscription_ends_at
+                    ? `🟢 Подписка до ${formatDate(user.subscription_ends_at)}`
+                    : "🟡 Не подключена"}
+                </strong>
+              </div>
 
-          <div>
-            <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
-              Срок бесплатного доступа
-            </span>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {presets.map((preset) => {
-                const active = selectedPreset === preset.id;
-                return (
+              <div>
+                <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                  Срок PRO-подписки на аккаунт
+                </span>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {proPresets.map((preset) => {
+                    const active = selectedPreset === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setSelectedPreset(preset.id)}
+                        className={`relative flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                          active
+                            ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
+                            : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
+                        }`}
+                      >
+                        <div className="flex w-full items-center justify-between">
+                          <span className="text-sm font-bold text-[var(--color-foreground)]">{preset.label}</span>
+                          {preset.badge && (
+                            <span className="rounded-md bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-extrabold text-white uppercase">
+                              {preset.badge}
+                            </span>
+                          )}
+                        </div>
+                        <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">{preset.hint}</span>
+                      </button>
+                    );
+                  })}
+
                   <button
-                    key={preset.id}
                     type="button"
-                    onClick={() => setSelectedPreset(preset.id)}
-                    className={`relative flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
-                      active
+                    onClick={() => setSelectedPreset("custom")}
+                    className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                      selectedPreset === "custom"
                         ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
                         : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
                     }`}
                   >
-                    <div className="flex w-full items-center justify-between">
-                      <span className="text-sm font-bold text-[var(--color-foreground)]">{preset.label}</span>
-                      {preset.badge && (
-                        <span className="rounded-md bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-extrabold text-white uppercase">
-                          {preset.badge}
-                        </span>
-                      )}
-                    </div>
-                    <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">{preset.hint}</span>
+                    <span className="text-sm font-bold text-[var(--color-foreground)]">Свой срок</span>
+                    <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">Указать дни</span>
                   </button>
-                );
-              })}
+                </div>
 
-              <button
-                type="button"
-                onClick={() => setSelectedPreset("custom")}
-                className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
-                  selectedPreset === "custom"
-                    ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
-                    : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
-                }`}
-              >
-                <span className="text-sm font-bold text-[var(--color-foreground)]">Свой срок</span>
-                <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">Указать дни</span>
-              </button>
-            </div>
-          </div>
+                {selectedPreset === "custom" && (
+                  <div className="mt-3">
+                    <label htmlFor="grant-pro-custom-days" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                      Количество дней
+                    </label>
+                    <input
+                      id="grant-pro-custom-days"
+                      type="number"
+                      min="1"
+                      max="3650"
+                      value={customDays}
+                      onChange={(e) => setCustomDays(e.target.value.replace(/\D/g, ""))}
+                      className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                      placeholder="Например, 90"
+                    />
+                  </div>
+                )}
 
-          {selectedPreset === "custom" && (
-            <div>
-              <label htmlFor="grant-custom-days" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
-                Количество дней
-              </label>
-              <input
-                id="grant-custom-days"
-                type="number"
-                min="1"
-                max="3650"
-                value={customDays}
-                onChange={(e) => setCustomDays(e.target.value.replace(/\D/g, ""))}
-                className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-                placeholder="Например, 90"
-              />
-            </div>
+                <p className="mt-3 text-xs leading-5 text-[var(--color-foreground-tertiary)]">
+                  Срок добавится к оплаченному периоду PRO пользователя (+{effectiveDays} дн.). Пользователь сможет запускать и настраивать ботов в Mini App.
+                </p>
+              </div>
+            </>
           )}
 
-          <p className="text-xs leading-5 text-[var(--color-foreground-tertiary)]">
-            {isLifetime
-              ? "Бессрочная лицензия закрепляется за ботом. Бот сможет работать всегда без списаний."
-              : `Срок будет добавлен к периоду бота. Если подписки не было, активируется на ${effectiveDays} дн. с сегодняшнего дня.`}
-          </p>
+          {mode === "license" && (
+            <>
+              <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-foreground-secondary)]">
+                Вечных лицензий на аккаунте:{" "}
+                <strong className="text-[var(--color-foreground)]">
+                  {user?.lifetime_slots ?? 0} (привязано к ботам: {userBots.filter((b) => b.has_lifetime_license || b.subscription?.is_lifetime).length})
+                </strong>
+              </div>
+
+              <div>
+                <label htmlFor="grant-license-qty" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                  Количество вечных лицензий для начисления
+                </label>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    id="grant-license-qty"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                    className="h-11 w-28 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                  />
+                  <div className="flex gap-1.5">
+                    {[1, 2, 5].map((q) => (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setQuantity(q)}
+                        className={`h-11 rounded-xl border px-3 text-xs font-bold transition-all ${
+                          quantity === q
+                            ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)] ring-2 ring-[var(--color-primary)]/20"
+                            : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)]"
+                        }`}
+                      >
+                        +{q}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="mt-3 text-xs leading-5 text-[var(--color-foreground-tertiary)]">
+                  Каждая вечная лицензия даёт право закрепить одного бота навсегда: бот будет работать непрерывно без необходимости продлевать подписку.
+                </p>
+              </div>
+            </>
+          )}
 
           <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button
@@ -1226,7 +1580,7 @@ function GrantSubscriptionDialog({
             </button>
             <button
               type="submit"
-              disabled={busy || (!isBotTarget && userBots.length === 0)}
+              disabled={busy || (mode === "bot" && !isBotTarget && userBots.length === 0)}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Gift size={16} aria-hidden="true" />
@@ -1606,12 +1960,28 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {kind === "period" ? (
-              <label className="block">
+              <div className="block">
                 <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Доступ, дней</span>
                 <input type="number" min={1} max={3650} value={days}
                   onChange={(event) => setDays(event.target.value.replace(/\D/g, ""))}
                   className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
-              </label>
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {[["30", "1 мес"], ["90", "3 мес"], ["180", "6 мес"], ["365", "1 год"]].map(([d, l]) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setDays(d)}
+                      className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+                        days === d
+                          ? "bg-[var(--color-primary)] text-white"
+                          : "bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] hover:bg-[var(--color-border)]"
+                      }`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : null}
             <label className="block">
               <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Сколько людей</span>
