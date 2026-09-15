@@ -52,8 +52,8 @@ export const Subscription = () => {
   // Рубильник: пока бэкенд не подтвердил оплату, кнопка не показывается.
   const billingEnabled = Boolean(appState.billingEnabled);
 
-  const loadBilling = useCallback(async () => {
-    setRefreshing(true);
+  const loadBilling = useCallback(async (showIndicator = false) => {
+    if (showIndicator) setRefreshing(true);
     try {
       const { apiService } = await import("../../services/api");
       const { mapApiBot } = await import("../../services/botMapper");
@@ -77,7 +77,10 @@ export const Subscription = () => {
   }, [setAppState]);
 
   useEffect(() => {
-    void loadBilling();
+    const timer = window.setTimeout(() => {
+      void loadBilling();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadBilling]);
 
   // Возврат из внешнего браузера после оплаты: обновляем статус, не полагаясь на remount.

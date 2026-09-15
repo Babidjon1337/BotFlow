@@ -67,6 +67,9 @@ from database.requests.admin_rq import (
     disable_admin_user_auto_renew,
     extend_admin_user_pro,
     set_admin_user_access,
+    grant_admin_bot_subscription,
+    revoke_admin_bot_subscription,
+    grant_admin_user_bot_subscription,
 )
 from schemas.api_schemas import (
     BotCreateApiRequest,
@@ -81,6 +84,8 @@ from schemas.api_schemas import (
     AdminProExtensionRequest,
     AdminUserAccessRequest,
     AdminBotActionRequest,
+    AdminBotSubscriptionRequest,
+    AdminUserGrantBotRequest,
     ManualInvoiceRequest,
     ChatDeliveryVerifyRequest,
     FunnelApiResponse,
@@ -527,6 +532,24 @@ async def disable_admin_user_auto_renew_endpoint(user_id: int, request: Request)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@api_router.post("/api/admin/users/{user_id}/grant-bot-subscription")
+async def grant_admin_user_bot_subscription_endpoint(
+    user_id: int, request: Request, body: AdminUserGrantBotRequest
+):
+    """Grant free subscription time or lifetime license to a bot owned by user."""
+    admin = await get_current_admin(request)
+    try:
+        return await grant_admin_user_bot_subscription(
+            user_id=user_id,
+            bot_id=body.bot_id,
+            duration_days=body.days,
+            is_lifetime=body.is_lifetime,
+            actor_telegram_id=admin.telegram_id,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @api_router.get("/api/admin/bots")
 async def get_admin_bots_endpoint(
     request: Request,
@@ -577,6 +600,38 @@ async def admin_bot_action_endpoint(
         details={"owner_id": bot.owner_id, "status": result["botStatus"]},
     )
     return result
+
+
+@api_router.post("/api/admin/bots/{bot_id}/subscription")
+async def grant_admin_bot_subscription_endpoint(
+    bot_id: int, request: Request, body: AdminBotSubscriptionRequest
+):
+    """Grant or extend a bot's subscription (e.g. 3 months free) from the admin panel."""
+    admin = await get_current_admin(request)
+    try:
+        return await grant_admin_bot_subscription(
+            bot_id=bot_id,
+            duration_days=body.days,
+            is_lifetime=body.is_lifetime,
+            actor_telegram_id=admin.telegram_id,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@api_router.delete("/api/admin/bots/{bot_id}/subscription")
+async def revoke_admin_bot_subscription_endpoint(
+    bot_id: int, request: Request
+):
+    """Revoke a bot's subscription or lifetime license from the admin panel."""
+    admin = await get_current_admin(request)
+    try:
+        return await revoke_admin_bot_subscription(
+            bot_id=bot_id,
+            actor_telegram_id=admin.telegram_id,
+        )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @api_router.get("/api/admin/bots/{bot_id}/readiness")

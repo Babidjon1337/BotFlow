@@ -108,6 +108,14 @@ export interface AdminUserDetail {
   bots: AdminBot[];
 }
 
+export interface AdminBotSubscription {
+  status: "active" | "inactive" | "expiring";
+  ends_at: string | null;
+  auto_renew: boolean;
+  amount_rub: number | null;
+  is_lifetime: boolean;
+}
+
 export interface AdminBot {
   id: number;
   owner_id: number;
@@ -124,6 +132,7 @@ export interface AdminBot {
   payment_provider: string | null;
   has_payment_credentials: boolean;
   created_at: string | null;
+  subscription?: AdminBotSubscription | null;
 }
 
 export type AdminBotAction = "start" | "stop" | "reinstall_webhook";
@@ -322,6 +331,39 @@ export const apiService = {
     return fetchApi<{ user_id: number; subscription_auto_renew: boolean; changed: boolean }>(
       `/api/admin/users/${userId}/cancel-auto-renew`,
       { method: "POST" },
+    );
+  },
+
+  async grantAdminUserBotPeriod(
+    userId: number,
+    payload: { botId?: number; days?: number; isLifetime?: boolean } = {}
+  ) {
+    return fetchApi<{ status: string; message: string; subscription?: AdminBotSubscription }>(
+      `/api/admin/users/${userId}/grant-bot-subscription`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async grantAdminBotSubscription(
+    botId: number,
+    payload: { days?: number; isLifetime?: boolean } = {}
+  ) {
+    return fetchApi<{ status: string; message: string; subscription?: AdminBotSubscription }>(
+      `/api/admin/bots/${botId}/subscription`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  async revokeAdminBotSubscription(botId: number) {
+    return fetchApi<{ status: string; message: string }>(
+      `/api/admin/bots/${botId}/subscription`,
+      { method: "DELETE" },
     );
   },
 

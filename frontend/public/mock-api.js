@@ -64,7 +64,16 @@
     tg_bot_id: 9001, status: 'draft', users_count: 0, is_token_locked: false, has_lifetime_license: false,
     funnel_complete: false, media_sync_done: true, payment_provider: 'yookassa',
     has_payment_credentials: true, created_at: '2026-08-20T10:00:00Z',
+    subscription: { status: 'inactive', ends_at: null, auto_renew: false, amount_rub: 0, is_lifetime: false },
   };
+  const mockAccessLinks = [
+    {
+      id: 'al-1', token: 'demo3months', note: 'Подарок клиенту (3 месяца)',
+      kind: 'period', days: 90, expiresAt: null, maxActivations: 1, activationsCount: 0,
+      validUntil: '2026-10-01T00:00:00Z', isActive: true, activatedBy: null, activatedAt: null,
+      createdAt: '2026-08-25T12:00:00Z',
+    }
+  ];
 
   window.fetch = async function (input, init) {
     const url = typeof input === 'string' ? input : String((input && input.url) || '');
@@ -113,12 +122,72 @@
     if (path === '/api/bots/14' && method === 'PATCH') return ok(botPayload);
     if (path === '/api/profile/notification-settings') return ok({ user });
     if (path === '/api/admin/overview') return ok({ users_total: 1, bots_total: 1, bots_active: 0, saas_payments_succeeded: 1, saas_revenue: 990, operations_requiring_attention: 0 });
+    if (path.startsWith('/api/admin/access-links')) {
+      if (path.includes('/deactivate')) {
+        const id = path.split('/')[4];
+        const link = mockAccessLinks.find((l) => l.id === id);
+        if (link) link.isActive = false;
+        return ok({ status: 'ok' });
+      }
+      if (method === 'POST') {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        const newLink = {
+          id: 'al-' + Date.now(),
+          token: 'gl_' + Math.random().toString(36).slice(2, 8),
+          note: body.note || null,
+          kind: body.kind || 'period',
+          days: body.days || (body.kind === 'period' ? 30 : null),
+          expiresAt: body.expiresAt || null,
+          maxActivations: body.maxActivations || 1,
+          activationsCount: 0,
+          validUntil: body.validUntil || null,
+          isActive: true,
+          activatedBy: null,
+          activatedAt: null,
+          createdAt: new Date().toISOString(),
+        };
+        mockAccessLinks.unshift(newLink);
+        return ok(newLink);
+      }
+      return ok({ links: mockAccessLinks });
+    }
     if (path.startsWith('/api/admin/users')) {
+      if (path.includes('/grant-bot-subscription')) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        const days = body.days || 90;
+        adminBot.has_lifetime_license = Boolean(body.isLifetime);
+        adminBot.subscription = {
+          status: 'active',
+          ends_at: body.isLifetime ? null : new Date(Date.now() + days * 86400000).toISOString(),
+          auto_renew: false,
+          amount_rub: 0,
+          is_lifetime: Boolean(body.isLifetime),
+        };
+        return ok({ status: 'ok', message: body.isLifetime ? 'Бессрочный доступ выдан' : `Подписка на бота выдана на ${days} дн.`, subscription: adminBot.subscription });
+      }
       if (path.endsWith('/access') || path.includes('/lifetime-licenses') || path.includes('/pro') || path.includes('/cancel-auto-renew')) return ok({ status: 'ok', message: 'Готово' });
       if (/\/users\/\d+$/.test(path)) return ok({ user: adminUser, bots: [adminBot] });
       return ok({ users: [adminUser] });
     }
     if (path.startsWith('/api/admin/bots')) {
+      if (path.includes('/subscription')) {
+        if (method === 'DELETE') {
+          adminBot.has_lifetime_license = false;
+          adminBot.subscription = { status: 'inactive', ends_at: null, auto_renew: false, amount_rub: 0, is_lifetime: false };
+          return ok({ status: 'ok', message: 'Подписка бота отозвана' });
+        }
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
+        const days = body.days || 90;
+        adminBot.has_lifetime_license = Boolean(body.isLifetime);
+        adminBot.subscription = {
+          status: 'active',
+          ends_at: body.isLifetime ? null : new Date(Date.now() + days * 86400000).toISOString(),
+          auto_renew: false,
+          amount_rub: 0,
+          is_lifetime: Boolean(body.isLifetime),
+        };
+        return ok({ status: 'ok', message: body.isLifetime ? 'Бессрочный доступ выдан' : `Подписка выдана на ${days} дн.`, subscription: adminBot.subscription });
+      }
       if (path.includes('/action')) return ok({ status: 'ok', message: 'Действие выполнено', botStatus: 'active' });
       if (path.includes('/readiness')) return ok({ isReady: false, reasons: ['Не заполнен Дожим 2', 'Не указана касса'] });
       if (path.includes('/archive-leads')) return ok({ archivedCount: 0 });

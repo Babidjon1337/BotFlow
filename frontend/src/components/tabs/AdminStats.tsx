@@ -8,11 +8,13 @@ import {
   ArrowLeft,
   CalendarClock,
   Crown,
+  Gift,
   Link2,
   MoreHorizontal,
   RefreshCw,
   ScanSearch,
   Search,
+  ShieldAlert,
   ShieldCheck,
   X,
   Users,
@@ -128,6 +130,12 @@ export function AdminStats() {
   const [actionBusy, setActionBusy] = useState(false);
   const [botActionId, setBotActionId] = useState<number | null>(null);
   const [operationActionId, setOperationActionId] = useState<string | null>(null);
+  const [grantTarget, setGrantTarget] = useState<
+    | { type: "user"; user: AdminUser; bots?: AdminBot[] }
+    | { type: "bot"; bot: AdminBot }
+    | null
+  >(null);
+  const [grantBusy, setGrantBusy] = useState(false);
 
   const refreshSection = useCallback(async () => {
     setState("loading");
@@ -364,6 +372,91 @@ export function AdminStats() {
     });
   }, [refreshSection, setToastMessage, setToastType, showConfirm]);
 
+  const openGrantForUser = useCallback(async (user: AdminUser) => {
+    try {
+      const detail = await apiService.getAdminUserDetail(user.id);
+      setGrantTarget({ type: "user", user, bots: detail.bots });
+    } catch {
+      setGrantTarget({ type: "user", user, bots: [] });
+    }
+  }, []);
+
+  const openGrantForBot = useCallback((bot: AdminBot) => {
+    setGrantTarget({ type: "bot", bot });
+  }, []);
+
+  const applyGrant = useCallback(
+    async (data: { botId?: number; days?: number; isLifetime?: boolean }) => {
+      if (!grantTarget) return;
+      setGrantBusy(true);
+      try {
+        if (grantTarget.type === "bot") {
+          const result = await apiService.grantAdminBotSubscription(grantTarget.bot.id, {
+            days: data.days,
+            isLifetime: data.isLifetime,
+          });
+          setToastType("success");
+          setToastMessage(result.message || "Подписка выдана.");
+        } else {
+          const result = await apiService.grantAdminUserBotPeriod(grantTarget.user.id, {
+            botId: data.botId,
+            days: data.days,
+            isLifetime: data.isLifetime,
+          });
+          setToastType("success");
+          setToastMessage(result.message || "Подписка выдана.");
+        }
+        setGrantTarget(null);
+        await refreshSection();
+        if (selectedUser) {
+          await loadUserProfile(selectedUser.user.id);
+        }
+      } catch (requestError) {
+        const message =
+          requestError instanceof Error ? requestError.message : "Не удалось выдать подписку.";
+        setToastType("error");
+        setToastMessage(message);
+      } finally {
+        setGrantBusy(false);
+      }
+    },
+    [grantTarget, loadUserProfile, refreshSection, selectedUser, setToastMessage, setToastType]
+  );
+
+  const revokeSubscription = useCallback(
+    (bot: AdminBot) => {
+      showConfirm({
+        title: "Отозвать подписку бота?",
+        message: `Подписка на бота «${bot.display_name}» будет отключена. Бот перестанет работать, если у него нет активного тарифа.`,
+        type: "danger",
+        confirmText: "Отозвать",
+        cancelText: "Отмена",
+        onConfirm: () => {
+          void (async () => {
+            setBotActionId(bot.id);
+            try {
+              const result = await apiService.revokeAdminBotSubscription(bot.id);
+              setToastType("success");
+              setToastMessage(result.message || "Подписка бота отозвана.");
+              await refreshSection();
+              if (selectedUser) {
+                await loadUserProfile(selectedUser.user.id);
+              }
+            } catch (requestError) {
+              const message =
+                requestError instanceof Error ? requestError.message : "Не удалось отозвать подписку.";
+              setToastType("error");
+              setToastMessage(message);
+            } finally {
+              setBotActionId(null);
+            }
+          })();
+        },
+      });
+    },
+    [loadUserProfile, refreshSection, selectedUser, setToastMessage, setToastType, showConfirm]
+  );
+
   return (
     <section className="w-full pb-16" aria-labelledby="admin-title">
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
@@ -413,14 +506,62 @@ export function AdminStats() {
 
       {state === "error" ? <ErrorState message={error ?? "Не удалось загрузить данные."} onRetry={refreshSection} /> : null}
       {state !== "error" && section === "overview" ? <Overview overview={overview} operations={operations} loading={state === "loading"} onNavigate={setSection} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
-      {state !== "error" && section === "users" ? <UsersSection users={users} query={usersQuery} onQueryChange={setUsersQuery} loading={state === "loading"} onOpenProfile={openUserProfile} /> : null}
-      {state !== "error" && section === "bots" ? <BotsSection bots={bots} query={botsQuery} onQueryChange={setBotsQuery} status={botsStatus} onStatusChange={setBotsStatus} loading={state === "loading"} busyBotId={botActionId} onAction={requestBotAction} onCheckReadiness={checkBotReadiness} onArchiveLeads={archiveBotLeads} /> : null}
+      {state !== "error" && section === "users" ? (
+        <UsersSection
+          users={users}
+          query={usersQuery}
+          onQueryChange={setUsersQuery}
+          loading={state === "loading"}
+          onOpenProfile={openUserProfile}
+          onQuickGrant={openGrantForUser}
+        />
+      ) : null}
+      {state !== "error" && section === "bots" ? (
+        <BotsSection
+          bots={bots}
+          query={botsQuery}
+          onQueryChange={setBotsQuery}
+          status={botsStatus}
+          onStatusChange={setBotsStatus}
+          loading={state === "loading"}
+          busyBotId={botActionId}
+          onAction={requestBotAction}
+          onCheckReadiness={checkBotReadiness}
+          onArchiveLeads={archiveBotLeads}
+          onOpenGrant={openGrantForBot}
+          onRevokeSubscription={revokeSubscription}
+        />
+      ) : null}
       {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
       {state !== "error" && section === "access-links" ? <AccessLinksSection links={accessLinks} loading={state === "loading"} onChanged={() => void refreshSection()} /> : null}
       {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
-      {selectedUser ? <UserProfileSheet detail={selectedUser} state={selectedUserState} error={selectedUserError} busyBotId={botActionId} onClose={() => { setSelectedUser(null); setSelectedUserState("idle"); setSelectedUserError(null); }} onRetry={() => void loadUserProfile(selectedUser.user.id)} onManageAccess={() => setActionUser(selectedUser.user)} onAction={requestBotAction} onCheckReadiness={checkBotReadiness} onArchiveLeads={archiveBotLeads} /> : null}
+      {selectedUser ? (
+        <UserProfileSheet
+          detail={selectedUser}
+          state={selectedUserState}
+          error={selectedUserError}
+          busyBotId={botActionId}
+          onClose={() => { setSelectedUser(null); setSelectedUserState("idle"); setSelectedUserError(null); }}
+          onRetry={() => void loadUserProfile(selectedUser.user.id)}
+          onManageAccess={() => setActionUser(selectedUser.user)}
+          onAction={requestBotAction}
+          onCheckReadiness={checkBotReadiness}
+          onArchiveLeads={archiveBotLeads}
+          onOpenGrantBot={openGrantForBot}
+          onOpenGrantUser={(user, bots) => setGrantTarget({ type: "user", user, bots })}
+          onRevokeSubscription={revokeSubscription}
+        />
+      ) : null}
+      {grantTarget ? (
+        <GrantSubscriptionDialog
+          target={grantTarget}
+          busy={grantBusy}
+          onClose={() => setGrantTarget(null)}
+          onApply={applyGrant}
+        />
+      ) : null}
     </section>
   );
 }
@@ -452,18 +593,388 @@ function Overview({ overview, operations, loading, onNavigate, onRetryOperation,
   );
 }
 
-function UsersSection({ users, query, onQueryChange, loading, onOpenProfile }: { users: AdminUser[]; query: string; onQueryChange: (value: string) => void; loading: boolean; onOpenProfile: (user: AdminUser) => void }) {
-  return <Section title="Пользователи" description="Откройте профиль владельца, чтобы увидеть его доступ и все связанные боты. Поиск: @username, Telegram ID или ID BotFlow."><SearchInput value={query} onChange={onQueryChange} placeholder="@username, Telegram ID или ID BotFlow" />{loading ? <RowsSkeleton count={5} /> : users.length ? <><div className="mt-5 space-y-3 lg:hidden">{users.map((user) => <UserCard key={user.id} user={user} onOpenProfile={onOpenProfile} />)}</div><div className="mt-5 hidden overflow-x-auto lg:block"><table className="w-full min-w-[900px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Роль и доступ</th><th className="pb-3">Боты</th><th className="pb-3">Регистрация</th><th className="pb-3" aria-label="Открыть профиль" /></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4"><p className="font-semibold tabular-nums text-[var(--color-foreground)]">{user.username ? `@${user.username.replace(/^@/, "")}` : user.telegram_id}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Telegram ID · {user.telegram_id} · ID BotFlow · {user.id}</p></td><td className="py-4"><div className="flex flex-wrap gap-2"><StatusBadge tone={user.is_disabled ? "danger" : "success"}>{user.is_disabled ? "Ограничен" : "Активен"}</StatusBadge>{user.is_platform_admin ? <StatusBadge tone="warning">Администратор</StatusBadge> : null}</div></td><td className="py-4"><p className="font-semibold tabular-nums text-[var(--color-foreground)]">{user.bots_count} ботов</p></td><td className="py-4"><StatusBadge tone={user.subscription_ends_at ? "success" : "neutral"}>{user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Не подключён"}</StatusBadge></td><td className="py-4 whitespace-nowrap text-[var(--color-foreground-secondary)]">{formatDate(user.created_at)}</td><td className="py-4 text-right"><button type="button" onClick={() => onOpenProfile(user)} className="h-10 whitespace-nowrap rounded-xl border border-[var(--color-border)] px-4 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">Открыть профиль</button></td></tr>)}</tbody></table></div></> : <EmptyState icon={<Users size={21} />} title="Пользователи не найдены" description="Проверьте @username, Telegram ID или внутренний ID BotFlow." />}</Section>;
+function UsersSection({
+  users,
+  query,
+  onQueryChange,
+  loading,
+  onOpenProfile,
+  onQuickGrant,
+}: {
+  users: AdminUser[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  loading: boolean;
+  onOpenProfile: (user: AdminUser) => void;
+  onQuickGrant: (user: AdminUser) => void;
+}) {
+  return (
+    <Section
+      title="Пользователи"
+      description="Откройте профиль владельца, чтобы увидеть его доступ и все связанные боты. Выдавайте подписку на 3 месяца или бессрочно в 1 клик."
+    >
+      <SearchInput
+        value={query}
+        onChange={onQueryChange}
+        placeholder="@username, Telegram ID или ID BotFlow"
+      />
+      {loading ? (
+        <RowsSkeleton count={5} />
+      ) : users.length ? (
+        <>
+          <div className="mt-5 space-y-3 lg:hidden">
+            {users.map((user) => (
+              <UserCard
+                key={user.id}
+                user={user}
+                onOpenProfile={onOpenProfile}
+                onQuickGrant={onQuickGrant}
+              />
+            ))}
+          </div>
+          <div className="mt-5 hidden overflow-x-auto lg:block">
+            <table className="w-full min-w-[960px] text-left text-sm">
+              <thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]">
+                <tr>
+                  <th className="pb-3">Пользователь</th>
+                  <th className="pb-3">Роль и доступ</th>
+                  <th className="pb-3">Боты</th>
+                  <th className="pb-3">Подписка</th>
+                  <th className="pb-3">Регистрация</th>
+                  <th className="pb-3 text-right">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr
+                    key={user.id}
+                    className="border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]/40 transition-colors"
+                  >
+                    <td className="py-4">
+                      <p className="font-semibold tabular-nums text-[var(--color-foreground)]">
+                        {user.username ? `@${user.username.replace(/^@/, "")}` : user.telegram_id}
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
+                        Telegram ID · {user.telegram_id} · ID BotFlow · {user.id}
+                      </p>
+                    </td>
+                    <td className="py-4">
+                      <div className="flex flex-wrap gap-2">
+                        <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
+                          {user.is_disabled ? "Ограничен" : "Активен"}
+                        </StatusBadge>
+                        {user.is_platform_admin ? (
+                          <StatusBadge tone="warning">Администратор</StatusBadge>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      <p className="font-semibold tabular-nums text-[var(--color-foreground)]">
+                        {user.bots_count} ботов
+                      </p>
+                    </td>
+                    <td className="py-4">
+                      <StatusBadge tone={user.subscription_ends_at ? "success" : "neutral"}>
+                        {user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Не подключён"}
+                      </StatusBadge>
+                    </td>
+                    <td className="py-4 whitespace-nowrap text-[var(--color-foreground-secondary)]">
+                      {formatDate(user.created_at)}
+                    </td>
+                    <td className="py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onQuickGrant(user)}
+                          className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                          title="Выдать бесплатный доступ на 3 месяца"
+                        >
+                          <Gift size={14} aria-hidden="true" />
+                          +3 мес
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenProfile(user)}
+                          className="h-9 whitespace-nowrap rounded-xl border border-[var(--color-border)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                        >
+                          Профиль
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : (
+        <EmptyState
+          icon={<Users size={21} />}
+          title="Пользователи не найдены"
+          description="Проверьте @username, Telegram ID или внутренний ID BotFlow."
+        />
+      )}
+    </Section>
+  );
 }
 
-function UserCard({ user, onOpenProfile }: { user: AdminUser; onOpenProfile: (user: AdminUser) => void }) {
-  return <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold tabular-nums text-[var(--color-foreground)]">{user.username ? `@${user.username.replace(/^@/, "")}` : user.telegram_id}</p><p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Telegram ID · {user.telegram_id} · ID BotFlow · {user.id}</p></div><StatusBadge tone={user.is_disabled ? "danger" : "success"}>{user.is_disabled ? "Ограничен" : "Активен"}</StatusBadge></div><dl className="mt-4 grid grid-cols-2 gap-3 text-sm"><div><dt className="text-xs text-[var(--color-foreground-secondary)]">Боты</dt><dd className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">{user.bots_count}</dd></div><div className="col-span-2"><dt className="text-xs text-[var(--color-foreground-secondary)]">План</dt><dd className="mt-1 text-sm text-[var(--color-foreground)]">{user.is_platform_admin ? "Администратор платформы" : user.subscription_ends_at ? `Подписка до ${formatDate(user.subscription_ends_at)}` : "Без подписки"}</dd></div></dl><button type="button" onClick={() => onOpenProfile(user)} className="mt-4 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-sm font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">Открыть профиль</button></article>;
+function UserCard({
+  user,
+  onOpenProfile,
+  onQuickGrant,
+}: {
+  user: AdminUser;
+  onOpenProfile: (user: AdminUser) => void;
+  onQuickGrant: (user: AdminUser) => void;
+}) {
+  return (
+    <article className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold tabular-nums text-[var(--color-foreground)]">
+            {user.username ? `@${user.username.replace(/^@/, "")}` : user.telegram_id}
+          </p>
+          <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
+            Telegram ID · {user.telegram_id} · ID BotFlow · {user.id}
+          </p>
+        </div>
+        <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
+          {user.is_disabled ? "Ограничен" : "Активен"}
+        </StatusBadge>
+      </div>
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <dt className="text-xs text-[var(--color-foreground-secondary)]">Боты</dt>
+          <dd className="mt-1 font-semibold tabular-nums text-[var(--color-foreground)]">
+            {user.bots_count}
+          </dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="text-xs text-[var(--color-foreground-secondary)]">План</dt>
+          <dd className="mt-1 text-sm text-[var(--color-foreground)]">
+            {user.is_platform_admin
+              ? "Администратор платформы"
+              : user.subscription_ends_at
+                ? `Подписка до ${formatDate(user.subscription_ends_at)}`
+                : "Без подписки"}
+          </dd>
+        </div>
+      </dl>
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onQuickGrant(user)}
+          className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white transition-opacity hover:opacity-90"
+        >
+          <Gift size={15} aria-hidden="true" />
+          +3 мес на бота
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenProfile(user)}
+          className="h-10 flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)]"
+        >
+          Профиль
+        </button>
+      </div>
+    </article>
+  );
 }
 
-function UserProfileSheet({ detail, state, error, busyBotId, onClose, onRetry, onManageAccess, onAction, onCheckReadiness, onArchiveLeads }: { detail: AdminUserDetail; state: LoadState; error: string | null; busyBotId: number | null; onClose: () => void; onRetry: () => void; onManageAccess: () => void; onAction: (bot: AdminBot, action: AdminBotAction) => void; onCheckReadiness: (bot: AdminBot) => void; onArchiveLeads: (bot: AdminBot) => void }) {
+function UserProfileSheet({
+  detail,
+  state,
+  error,
+  busyBotId,
+  onClose,
+  onRetry,
+  onManageAccess,
+  onAction,
+  onCheckReadiness,
+  onArchiveLeads,
+  onOpenGrantBot,
+  onOpenGrantUser,
+  onRevokeSubscription,
+}: {
+  detail: AdminUserDetail;
+  state: LoadState;
+  error: string | null;
+  busyBotId: number | null;
+  onClose: () => void;
+  onRetry: () => void;
+  onManageAccess: () => void;
+  onAction: (bot: AdminBot, action: AdminBotAction) => void;
+  onCheckReadiness: (bot: AdminBot) => void;
+  onArchiveLeads: (bot: AdminBot) => void;
+  onOpenGrantBot: (bot: AdminBot) => void;
+  onOpenGrantUser: (user: AdminUser, bots: AdminBot[]) => void;
+  onRevokeSubscription: (bot: AdminBot) => void;
+}) {
   const { user, bots } = detail;
   const planLabel = user.is_platform_admin ? "Администратор" : user.subscription_ends_at ? "Подписка" : "Без подписки";
-  return <div className="fixed inset-0 z-[140] flex justify-end bg-black/55 backdrop-blur-sm" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="admin-user-profile-title" className="flex h-[100dvh] w-full max-w-4xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl"><header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-5 sm:px-7"><div className="min-w-0"><button type="button" onClick={onClose} className="-ml-2 inline-flex h-11 items-center gap-2 rounded-xl px-2 text-sm font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"><ArrowLeft size={18} aria-hidden="true" />К пользователям</button><div className="mt-4 flex flex-wrap items-center gap-2"><h2 id="admin-user-profile-title" className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--color-foreground)]">{user.username ? `@${user.username.replace(/^@/, "")}` : `Пользователь ${user.telegram_id}`}</h2><StatusBadge tone={user.is_disabled ? "danger" : "success"}>{user.is_disabled ? "Доступ ограничен" : "Активен"}</StatusBadge>{user.is_platform_admin ? <StatusBadge tone="warning">Администратор</StatusBadge> : null}</div><p className="mt-1 text-sm text-[var(--color-foreground-secondary)]">Telegram ID · {user.telegram_id} · ID BotFlow · {user.id}</p></div><button type="button" onClick={onClose} aria-label="Закрыть профиль пользователя" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"><X size={20} aria-hidden="true" /></button></header><main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-7 sm:py-8"><div className="mx-auto max-w-3xl space-y-6">{state === "loading" ? <RowsSkeleton count={5} /> : state === "error" ? <ErrorState message={error ?? "Не удалось открыть профиль."} onRetry={onRetry} /> : <><section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><ProfileMetric label="Роль" value={planLabel} icon={user.is_platform_admin ? <Crown size={17} /> : <ShieldCheck size={17} />} /><ProfileMetric label="Лицензии" value={String(user.lifetime_slots)} note={`Ботов: ${user.bots_count}`} icon={<Bot size={17} />} /><ProfileMetric label="PRO" value={user.subscription_ends_at ? "Подключён" : "Не подключён"} note={user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Оплачиваемый план"} icon={<CalendarClock size={17} />} /><ProfileMetric label="Регистрация" value={formatDate(user.created_at)} note={user.subscription_auto_renew ? "Автопродление включено" : "Автопродление выключено"} icon={<Users size={17} />} /></section><Section title="Доступ и тариф" description={user.is_platform_admin ? "Администратор — серверная роль из ADMIN_TELEGRAM_IDS. Это не коммерческий тариф и её нельзя снять через интерфейс." : "PRO — коммерческий план. Лицензии дают право запускать ботов без подписки."}><div className="flex flex-col gap-3 rounded-xl bg-[var(--color-surface-2)] p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-[var(--color-foreground)]">{user.is_disabled ? "Mini App ограничен" : "Mini App доступен"}</p><p className="mt-1 text-sm leading-6 text-[var(--color-foreground-secondary)]">Изменения доступа, лицензий и PRO фиксируются в журнале действий.</p></div><button type="button" onClick={onManageAccess} className="h-11 shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-background)]">Управлять доступом</button></div></Section><Section title={`Боты пользователя · ${bots.length}`} description="Управление конкретными ботами владельца. Токены и платёжные ключи не раскрываются.">{bots.length ? <div className="space-y-3">{bots.map((bot) => <AdminBotRow key={bot.id} bot={bot} busy={busyBotId === bot.id} showOwner={false} onAction={onAction} onCheckReadiness={onCheckReadiness} onArchiveLeads={onArchiveLeads} />)}</div> : <EmptyState icon={<Bot size={21} />} title="Ботов пока нет" description="Когда пользователь создаст бота, он появится в этом профиле." />}</Section></>}</div></main></div></div>;
+
+  return (
+    <div className="fixed inset-0 z-[140] flex justify-end bg-black/55 backdrop-blur-sm" role="presentation">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-user-profile-title"
+        className="flex h-[100dvh] w-full max-w-4xl flex-col border-l border-[var(--color-border)] bg-[var(--color-background)] shadow-2xl"
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-5 sm:px-7">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="-ml-2 inline-flex h-11 items-center gap-2 rounded-xl px-2 text-sm font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"
+            >
+              <ArrowLeft size={18} aria-hidden="true" />
+              К пользователям
+            </button>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <h2
+                id="admin-user-profile-title"
+                className="truncate text-xl font-bold tracking-[-0.02em] text-[var(--color-foreground)]"
+              >
+                {user.username ? `@${user.username.replace(/^@/, "")}` : `Пользователь ${user.telegram_id}`}
+              </h2>
+              <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
+                {user.is_disabled ? "Доступ ограничен" : "Активен"}
+              </StatusBadge>
+              {user.is_platform_admin ? <StatusBadge tone="warning">Администратор</StatusBadge> : null}
+            </div>
+            <p className="mt-1 text-sm text-[var(--color-foreground-secondary)]">
+              Telegram ID · {user.telegram_id} · ID BotFlow · {user.id}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть профиль пользователя"
+            className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        </header>
+
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 sm:px-7 sm:py-8">
+          <div className="mx-auto max-w-3xl space-y-6">
+            {state === "loading" ? (
+              <RowsSkeleton count={5} />
+            ) : state === "error" ? (
+              <ErrorState message={error ?? "Не удалось открыть профиль."} onRetry={onRetry} />
+            ) : (
+              <>
+                <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <ProfileMetric
+                    label="Роль"
+                    value={planLabel}
+                    icon={user.is_platform_admin ? <Crown size={17} /> : <ShieldCheck size={17} />}
+                  />
+                  <ProfileMetric
+                    label="Лицензии"
+                    value={String(user.lifetime_slots)}
+                    note={`Ботов: ${user.bots_count}`}
+                    icon={<Bot size={17} />}
+                  />
+                  <ProfileMetric
+                    label="PRO"
+                    value={user.subscription_ends_at ? "Подключён" : "Не подключён"}
+                    note={user.subscription_ends_at ? `до ${formatDate(user.subscription_ends_at)}` : "Оплачиваемый план"}
+                    icon={<CalendarClock size={17} />}
+                  />
+                  <ProfileMetric
+                    label="Регистрация"
+                    value={formatDate(user.created_at)}
+                    note={user.subscription_auto_renew ? "Автопродление включено" : "Автопродление выключено"}
+                    icon={<Users size={17} />}
+                  />
+                </section>
+
+                <div className="flex flex-col gap-3 rounded-2xl border border-[var(--color-primary)]/30 bg-[var(--color-primary-soft)]/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--color-primary)] text-white">
+                      <Gift size={20} aria-hidden="true" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-[var(--color-foreground)]">Выдача бесплатного доступа</h3>
+                      <p className="mt-0.5 text-xs text-[var(--color-foreground-secondary)]">
+                        Выдайте 3 месяца бесплатно или бессрочный доступ на любого бота пользователя без привязки карты.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onOpenGrantUser(user, bots)}
+                    className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+                  >
+                    <Gift size={16} aria-hidden="true" />
+                    Выдать доступ на бота
+                  </button>
+                </div>
+
+                <Section
+                  title="Доступ и тариф"
+                  description={
+                    user.is_platform_admin
+                      ? "Администратор — серверная роль из ADMIN_TELEGRAM_IDS. Это не коммерческий тариф и её нельзя снять через интерфейс."
+                      : "PRO — коммерческий план. Лицензии дают право запускать ботов без подписки."
+                  }
+                >
+                  <div className="flex flex-col gap-3 rounded-xl bg-[var(--color-surface-2)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-[var(--color-foreground)]">
+                        {user.is_disabled ? "Mini App ограничен" : "Mini App доступен"}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-[var(--color-foreground-secondary)]">
+                        Изменения доступа, лицензий и PRO фиксируются в журнале действий.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onManageAccess}
+                      className="h-11 shrink-0 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-sm font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-background)]"
+                    >
+                      Управлять доступом
+                    </button>
+                  </div>
+                </Section>
+
+                <Section
+                  title={`Боты пользователя · ${bots.length}`}
+                  description="Управление конкретными ботами владельца. Выдача бесплатных периодов и управление жизненным циклом."
+                >
+                  {bots.length ? (
+                    <div className="space-y-3">
+                      {bots.map((bot) => (
+                        <AdminBotRow
+                          key={bot.id}
+                          bot={bot}
+                          busy={busyBotId === bot.id}
+                          showOwner={false}
+                          onAction={onAction}
+                          onCheckReadiness={onCheckReadiness}
+                          onArchiveLeads={onArchiveLeads}
+                          onOpenGrant={onOpenGrantBot}
+                          onRevokeSubscription={onRevokeSubscription}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState
+                      icon={<Bot size={21} />}
+                      title="Ботов пока нет"
+                      description="Когда пользователь создаст бота, он появится в этом профиле."
+                    />
+                  )}
+                </Section>
+              </>
+            )}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
 }
 
 function ProfileMetric({ label, value, note, icon }: { label: string; value: string; note?: string; icon: ReactNode }) {
@@ -482,14 +993,485 @@ function UserActionDialog({ user, busy, onClose, onApply }: { user: AdminUser; b
   return <div className="fixed inset-0 z-[150] flex items-end bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-5" role="presentation"><div role="dialog" aria-modal="true" aria-labelledby="admin-user-action-title" className="w-full max-w-lg rounded-t-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl sm:rounded-2xl sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold text-[var(--color-foreground-secondary)]">Пользователь {user.telegram_id}</p><h2 id="admin-user-action-title" className="mt-1 text-lg font-bold text-[var(--color-foreground)]">Управление доступом</h2></div><button type="button" onClick={onClose} disabled={busy} aria-label="Закрыть" className="rounded-lg p-2 text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-50"><X size={18} /></button></div><label className="mt-6 block text-xs font-semibold text-[var(--color-foreground-secondary)]" htmlFor="admin-user-action">Действие</label><select id="admin-user-action" value={action} onChange={(event) => setAction(event.target.value as AdminUserAction)} disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="access">{isRestricting ? "Ограничить доступ" : "Восстановить доступ"}</option><option value="pro">Продлить подписку</option><option value="auto-renew">Отключить автосписание</option></select>{action === "access" ? <div className="mt-5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4"><p className="text-sm font-semibold text-[var(--color-foreground)]">{isRestricting ? "Вход в Mini App будет запрещён." : "Пользователь снова сможет войти в Mini App."}</p>{isRestricting ? <label className="mt-4 flex cursor-pointer items-start gap-3 text-sm leading-5 text-[var(--color-foreground-secondary)]"><input type="checkbox" checked={stopActiveBots} onChange={(event) => setStopActiveBots(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-[var(--color-border)] accent-[var(--color-primary)]" /><span><strong className="text-[var(--color-foreground)]">Также остановить все активные боты.</strong><br />Боты станут черновиками и не запустятся автоматически после восстановления доступа.</span></label> : null}</div> : null}{action === "licenses" ? <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_112px]"><select value={licenseDirection} onChange={(event) => setLicenseDirection(event.target.value as "grant" | "revoke")} disabled={busy} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]"><option value="grant">Выдать лицензии</option><option value="revoke">Отозвать свободные лицензии</option></select><label><span className="sr-only">Количество</span><input value={quantity} onChange={(event) => setQuantity(Math.max(1, Math.min(100, Number(event.target.value) || 1)))} type="number" min="1" max="100" disabled={busy} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /></label><p className="sm:col-span-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Отозвать можно только лицензии, не закреплённые за ботами.</p></div> : null}{action === "pro" ? <div className="mt-5"><label htmlFor="admin-pro-days" className="text-sm font-semibold text-[var(--color-foreground)]">Продлить на дней</label><input id="admin-pro-days" value={days} onChange={(event) => setDays(Math.max(1, Math.min(365, Number(event.target.value) || 1)))} type="number" min="1" max="365" disabled={busy} className="mt-2 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)]" /><p className="mt-2 text-xs leading-5 text-[var(--color-foreground-secondary)]">Срок добавится к текущему оплаченному периоду. Автопродление не включится.</p></div> : null}{action === "auto-renew" ? <p className="mt-5 rounded-xl bg-[var(--color-warning-soft)] p-4 text-sm leading-6 text-[var(--color-foreground)]">Будущие автоматические списания будут отменены. Уже оплаченный срок PRO останется без изменений.</p> : null}<div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} disabled={busy} className="h-11 rounded-xl px-4 text-sm font-semibold text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] disabled:opacity-50">Отмена</button><button type="button" onClick={submit} disabled={busy} className={`h-11 rounded-xl px-4 text-sm font-semibold text-white transition-opacity disabled:cursor-wait disabled:opacity-60 ${action === "access" && isRestricting || action === "licenses" && licenseDirection === "revoke" ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>{busy ? "Сохраняем…" : submitLabel}</button></div></div></div>;
 }
 
-function BotsSection({ bots, query, onQueryChange, status, onStatusChange, loading, busyBotId, onAction, onCheckReadiness, onArchiveLeads }: { bots: AdminBot[]; query: string; onQueryChange: (value: string) => void; status: AdminBot["status"] | "all"; onStatusChange: (value: AdminBot["status"] | "all") => void; loading: boolean; busyBotId: number | null; onAction: (bot: AdminBot, action: AdminBotAction) => void; onCheckReadiness: (bot: AdminBot) => void; onArchiveLeads: (bot: AdminBot) => void }) {
-  return <Section title="Все боты" description="Общий операционный поиск. Для работы с ботами конкретного владельца откройте его профиль в разделе «Пользователи»."><div className="flex flex-col gap-3 md:flex-row"><SearchInput value={query} onChange={onQueryChange} placeholder="Название, @username или Telegram ID" /><label className="sr-only" htmlFor="admin-bot-status">Статус бота</label><select id="admin-bot-status" value={status} onChange={(event) => onStatusChange(event.target.value as AdminBot["status"] | "all")} className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"><option value="all">Все статусы</option><option value="active">Активные</option><option value="draft">Черновики</option><option value="archived">Архив</option></select></div>{loading ? <RowsSkeleton count={5} /> : bots.length ? <div className="mt-5 space-y-3">{bots.map((bot) => <AdminBotRow key={bot.id} bot={bot} busy={busyBotId === bot.id} onAction={onAction} onCheckReadiness={onCheckReadiness} onArchiveLeads={onArchiveLeads} />)}</div> : <EmptyState icon={<Bot size={21} />} title="Боты не найдены" description="Измените фильтр или дождитесь создания первого бота." />}</Section>;
+interface GrantSubscriptionDialogProps {
+  target:
+    | { type: "user"; user: AdminUser; bots?: AdminBot[] }
+    | { type: "bot"; bot: AdminBot };
+  busy: boolean;
+  onClose: () => void;
+  onApply: (data: { botId?: number; days?: number; isLifetime?: boolean }) => Promise<void>;
 }
 
-function AdminBotRow({ bot, busy, showOwner = true, onAction, onCheckReadiness, onArchiveLeads }: { bot: AdminBot; busy: boolean; showOwner?: boolean; onAction: (bot: AdminBot, action: AdminBotAction) => void; onCheckReadiness: (bot: AdminBot) => void; onArchiveLeads: (bot: AdminBot) => void }) {
+function GrantSubscriptionDialog({
+  target,
+  busy,
+  onClose,
+  onApply,
+}: GrantSubscriptionDialogProps) {
+  const isBotTarget = target.type === "bot";
+  const user = isBotTarget ? null : target.user;
+  const fixedBot = isBotTarget ? target.bot : null;
+  const userBots = isBotTarget ? [] : target.bots ?? [];
+
+  const [selectedBotId, setSelectedBotId] = useState<number | undefined>(
+    fixedBot ? fixedBot.id : userBots.length > 0 ? userBots[0].id : undefined
+  );
+  const [selectedPreset, setSelectedPreset] = useState<"30" | "90" | "180" | "365" | "lifetime" | "custom">("90");
+  const [customDays, setCustomDays] = useState("90");
+
+  const effectiveDays = useMemo(() => {
+    if (selectedPreset === "lifetime") return undefined;
+    if (selectedPreset === "custom") return Math.max(1, Number(customDays) || 30);
+    return Number(selectedPreset);
+  }, [selectedPreset, customDays]);
+
+  const isLifetime = selectedPreset === "lifetime";
+
+  const targetTitle = isBotTarget
+    ? `Бот «${fixedBot?.display_name}»`
+    : `Пользователь ${user?.username ? `@${user.username.replace(/^@/, "")}` : user?.telegram_id}`;
+
+  const currentSub = isBotTarget
+    ? fixedBot?.subscription
+    : userBots.find((b) => b.id === selectedBotId)?.subscription;
+
+  const currentStatusText = useMemo(() => {
+    if (!currentSub) return "Текущий статус: 🟡 Без подписки";
+    if (currentSub.is_lifetime) return "Текущий статус: ⭐ Бессрочный доступ";
+    if (currentSub.status === "active" && currentSub.ends_at) {
+      return `Текущий статус: 🟢 Активна до ${formatDate(currentSub.ends_at)}`;
+    }
+    if (currentSub.ends_at) {
+      return `Текущий статус: 🔴 Истекла ${formatDate(currentSub.ends_at)}`;
+    }
+    return "Текущий статус: 🟡 Без подписки";
+  }, [currentSub]);
+
+  const submitLabel = useMemo(() => {
+    if (isLifetime) return "Выдать бессрочный доступ";
+    if (selectedPreset === "90") return "Выдать 3 месяца бесплатно";
+    if (selectedPreset === "30") return "Выдать 1 месяц (30 дн.)";
+    if (selectedPreset === "180") return "Выдать 6 месяцев (180 дн.)";
+    if (selectedPreset === "365") return "Выдать 1 год (365 дн.)";
+    return `Выдать ${effectiveDays} дн.`;
+  }, [effectiveDays, isLifetime, selectedPreset]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    void onApply({
+      botId: selectedBotId,
+      days: effectiveDays,
+      isLifetime,
+    });
+  };
+
+  const presets: Array<{ id: "30" | "90" | "180" | "365" | "lifetime"; label: string; badge?: string; hint: string }> = [
+    { id: "30", label: "1 месяц", hint: "30 дней" },
+    { id: "90", label: "3 месяца", badge: "Хит", hint: "90 дней бесплатно" },
+    { id: "180", label: "6 месяцев", hint: "180 дней" },
+    { id: "365", label: "1 год", hint: "365 дней" },
+    { id: "lifetime", label: "Бессрочно", badge: "VIP", hint: "Навсегда без списаний" },
+  ];
+
+  const hasBots = isBotTarget || userBots.length > 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-[150] flex items-end bg-black/50 p-0 backdrop-blur-sm sm:items-center sm:justify-center sm:p-5"
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-grant-sub-title"
+        className="w-full max-w-lg rounded-t-3xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl sm:rounded-2xl sm:p-6"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--color-primary)] text-white">
+                <Gift size={16} aria-hidden="true" />
+              </div>
+              <h2 id="admin-grant-sub-title" className="text-lg font-bold text-[var(--color-foreground)]">
+                Выдать подписку
+              </h2>
+            </div>
+            <p className="mt-1 truncate text-xs text-[var(--color-foreground-secondary)]">
+              {targetTitle}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Закрыть"
+            className="rounded-lg p-2 text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-50"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+          {!isBotTarget && (
+            <div>
+              <label htmlFor="grant-bot-select" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                Выберите бота пользователя
+              </label>
+              {userBots.length > 0 ? (
+                <select
+                  id="grant-bot-select"
+                  value={selectedBotId ?? ""}
+                  onChange={(e) => setSelectedBotId(Number(e.target.value) || undefined)}
+                  disabled={busy}
+                  className="mt-1.5 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                >
+                  {userBots.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.display_name} {b.username ? `(@${b.username})` : ""} [ID: {b.id}]
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="mt-1.5 rounded-xl border border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)]/20 p-3 text-xs leading-5 text-[var(--color-foreground)]">
+                  У этого пользователя ещё нет ботов. Чтобы выдать доступ новому пользователю, отправьте специальную ссылку в разделе «Ссылки доступа».
+                </div>
+              )}
+            </div>
+          )}
+
+          {hasBots && (
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs text-[var(--color-foreground-secondary)]">
+              {currentStatusText}
+            </div>
+          )}
+
+          <div>
+            <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+              Срок бесплатного доступа
+            </span>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {presets.map((preset) => {
+                const active = selectedPreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setSelectedPreset(preset.id)}
+                    className={`relative flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                      active
+                        ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
+                    }`}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <span className="text-sm font-bold text-[var(--color-foreground)]">{preset.label}</span>
+                      {preset.badge && (
+                        <span className="rounded-md bg-[var(--color-primary)] px-1.5 py-0.5 text-[10px] font-extrabold text-white uppercase">
+                          {preset.badge}
+                        </span>
+                      )}
+                    </div>
+                    <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">{preset.hint}</span>
+                  </button>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setSelectedPreset("custom")}
+                className={`flex flex-col items-start rounded-xl border p-2.5 text-left transition-all ${
+                  selectedPreset === "custom"
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] ring-2 ring-[var(--color-primary)]/20"
+                    : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/50"
+                }`}
+              >
+                <span className="text-sm font-bold text-[var(--color-foreground)]">Свой срок</span>
+                <span className="mt-0.5 text-[11px] text-[var(--color-foreground-secondary)]">Указать дни</span>
+              </button>
+            </div>
+          </div>
+
+          {selectedPreset === "custom" && (
+            <div>
+              <label htmlFor="grant-custom-days" className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">
+                Количество дней
+              </label>
+              <input
+                id="grant-custom-days"
+                type="number"
+                min="1"
+                max="3650"
+                value={customDays}
+                onChange={(e) => setCustomDays(e.target.value.replace(/\D/g, ""))}
+                className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                placeholder="Например, 90"
+              />
+            </div>
+          )}
+
+          <p className="text-xs leading-5 text-[var(--color-foreground-tertiary)]">
+            {isLifetime
+              ? "Бессрочная лицензия закрепляется за ботом. Бот сможет работать всегда без списаний."
+              : `Срок будет добавлен к периоду бота. Если подписки не было, активируется на ${effectiveDays} дн. с сегодняшнего дня.`}
+          </p>
+
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={busy}
+              className="h-11 rounded-xl px-4 text-sm font-semibold text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              disabled={busy || (!isBotTarget && userBots.length === 0)}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Gift size={16} aria-hidden="true" />
+              {busy ? "Выдаём доступ…" : submitLabel}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function BotsSection({
+  bots,
+  query,
+  onQueryChange,
+  status,
+  onStatusChange,
+  loading,
+  busyBotId,
+  onAction,
+  onCheckReadiness,
+  onArchiveLeads,
+  onOpenGrant,
+  onRevokeSubscription,
+}: {
+  bots: AdminBot[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  status: AdminBot["status"] | "all";
+  onStatusChange: (value: AdminBot["status"] | "all") => void;
+  loading: boolean;
+  busyBotId: number | null;
+  onAction: (bot: AdminBot, action: AdminBotAction) => void;
+  onCheckReadiness: (bot: AdminBot) => void;
+  onArchiveLeads: (bot: AdminBot) => void;
+  onOpenGrant: (bot: AdminBot) => void;
+  onRevokeSubscription: (bot: AdminBot) => void;
+}) {
+  return (
+    <Section
+      title="Все боты"
+      description="Общий операционный поиск. Для работы с ботами конкретного владельца откройте его профиль в разделе «Пользователи»."
+    >
+      <div className="flex flex-col gap-3 md:flex-row">
+        <SearchInput
+          value={query}
+          onChange={onQueryChange}
+          placeholder="Название, @username или Telegram ID"
+        />
+        <label className="sr-only" htmlFor="admin-bot-status">Статус бота</label>
+        <select
+          id="admin-bot-status"
+          value={status}
+          onChange={(event) => onStatusChange(event.target.value as AdminBot["status"] | "all")}
+          className="h-11 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+        >
+          <option value="all">Все статусы</option>
+          <option value="active">Активные</option>
+          <option value="draft">Черновики</option>
+          <option value="archived">Архив</option>
+        </select>
+      </div>
+      {loading ? (
+        <RowsSkeleton count={5} />
+      ) : bots.length ? (
+        <div className="mt-5 space-y-3">
+          {bots.map((bot) => (
+            <AdminBotRow
+              key={bot.id}
+              bot={bot}
+              busy={busyBotId === bot.id}
+              onAction={onAction}
+              onCheckReadiness={onCheckReadiness}
+              onArchiveLeads={onArchiveLeads}
+              onOpenGrant={onOpenGrant}
+              onRevokeSubscription={onRevokeSubscription}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={<Bot size={21} />}
+          title="Боты не найдены"
+          description="Измените фильтр или дождитесь создания первого бота."
+        />
+      )}
+    </Section>
+  );
+}
+
+function AdminBotRow({
+  bot,
+  busy,
+  showOwner = true,
+  onAction,
+  onCheckReadiness,
+  onArchiveLeads,
+  onOpenGrant,
+  onRevokeSubscription,
+}: {
+  bot: AdminBot;
+  busy: boolean;
+  showOwner?: boolean;
+  onAction: (bot: AdminBot, action: AdminBotAction) => void;
+  onCheckReadiness: (bot: AdminBot) => void;
+  onArchiveLeads: (bot: AdminBot) => void;
+  onOpenGrant?: (bot: AdminBot) => void;
+  onRevokeSubscription?: (bot: AdminBot) => void;
+}) {
   const isActive = bot.status === "active";
   const [menuOpen, setMenuOpen] = useState(false);
-  return <article className="rounded-xl border border-[var(--color-border)] p-4"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div className="min-w-0 xl:pr-4"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate font-semibold text-[var(--color-foreground)]">{bot.display_name}</h2><StatusBadge tone={isActive ? "success" : bot.status === "archived" ? "danger" : "neutral"}>{isActive ? "Работает" : bot.status === "archived" ? "Архив" : "Черновик"}</StatusBadge></div><p className="mt-1 break-words text-xs leading-5 text-[var(--color-foreground-secondary)]">{bot.username ? `@${bot.username.replace(/^@/, "")}` : "Username не задан"}{showOwner ? ` · Владелец: ${bot.owner_telegram_id}` : ""} · Лидов: {bot.users_count}</p><p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">{bot.payment_provider ? `Касса: ${bot.payment_provider}` : "Касса не выбрана"} · Воронка: {bot.funnel_complete ? "готова" : "не готова"}</p></div><div className="flex shrink-0 flex-wrap items-center gap-2"><button type="button" onClick={() => onAction(bot, isActive ? "stop" : "start")} disabled={busy || bot.status === "archived"} className={`inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-xl px-4 text-xs font-bold text-white transition-opacity disabled:opacity-60 ${isActive ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"}`}>{busy ? "Выполняем…" : isActive ? "Остановить" : "Запустить"}</button><button type="button" onClick={() => onCheckReadiness(bot)} disabled={busy} title="Проверить готовность к запуску" aria-label="Проверить готовность" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"><ScanSearch size={17} aria-hidden="true" /></button><button type="button" onClick={() => onAction(bot, "reinstall_webhook")} disabled={busy} title="Переустановить webhook" aria-label="Переустановить webhook" className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"><Link2 size={17} aria-hidden="true" /></button><div className="relative"><button type="button" onClick={() => setMenuOpen((v) => !v)} disabled={busy} aria-label="Дополнительные действия" aria-expanded={menuOpen} className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"><MoreHorizontal size={17} aria-hidden="true" /></button>{menuOpen && (<><div className="fixed inset-0 z-30" role="presentation" onClick={() => setMenuOpen(false)} /><div className="absolute right-0 top-[calc(100%+6px)] z-40 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl"><p className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-foreground-tertiary)]">Опасная зона</p><button type="button" onClick={() => { setMenuOpen(false); onArchiveLeads(bot); }} disabled={busy} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-soft)] disabled:opacity-60"><Trash2Icon /> Очистить список лидов (CRM)</button></div></>)}</div></div></div></article>;
+
+  const sub = bot.subscription;
+  const isSubLifetime = sub?.is_lifetime || bot.has_lifetime_license;
+  const hasActiveSub =
+    isSubLifetime ||
+    (sub?.status === "active" && (!sub?.ends_at || new Date(sub.ends_at) > new Date()));
+
+  return (
+    <article className="rounded-xl border border-[var(--color-border)] p-4">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0 xl:pr-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="truncate font-semibold text-[var(--color-foreground)]">{bot.display_name}</h2>
+            <StatusBadge tone={isActive ? "success" : bot.status === "archived" ? "danger" : "neutral"}>
+              {isActive ? "Работает" : bot.status === "archived" ? "Архив" : "Черновик"}
+            </StatusBadge>
+            {isSubLifetime ? (
+              <StatusBadge tone="success">⭐ Бессрочно</StatusBadge>
+            ) : sub?.status === "active" && sub?.ends_at ? (
+              <StatusBadge tone="success">🟢 Подписка до {formatDate(sub.ends_at)}</StatusBadge>
+            ) : sub?.ends_at ? (
+              <StatusBadge tone="danger">🔴 Истекла {formatDate(sub.ends_at)}</StatusBadge>
+            ) : (
+              <StatusBadge tone="neutral">🟡 Без подписки</StatusBadge>
+            )}
+          </div>
+          <p className="mt-1 break-words text-xs leading-5 text-[var(--color-foreground-secondary)]">
+            {bot.username ? `@${bot.username.replace(/^@/, "")}` : "Username не задан"}
+            {showOwner ? ` · Владелец: ${bot.owner_telegram_id}` : ""} · Лидов: {bot.users_count}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+            {bot.payment_provider ? `Касса: ${bot.payment_provider}` : "Касса не выбрана"} · Воронка: {bot.funnel_complete ? "готова" : "не готова"}
+          </p>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {onOpenGrant ? (
+            <button
+              type="button"
+              onClick={() => onOpenGrant(bot)}
+              disabled={busy}
+              className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary-soft)] px-3 text-xs font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-60"
+              title="Выдать или продлить бесплатный доступ"
+            >
+              <Gift size={15} aria-hidden="true" />
+              {hasActiveSub ? "Продлить (+3 мес)" : "Выдать доступ"}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => onAction(bot, isActive ? "stop" : "start")}
+            disabled={busy || bot.status === "archived"}
+            className={`inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-xl px-4 text-xs font-bold text-white transition-opacity disabled:opacity-60 ${
+              isActive ? "bg-[var(--color-danger)]" : "bg-[var(--color-primary)]"
+            }`}
+          >
+            {busy ? "Выполняем…" : isActive ? "Остановить" : "Запустить"}
+          </button>
+          <button
+            type="button"
+            onClick={() => onCheckReadiness(bot)}
+            disabled={busy}
+            title="Проверить готовность к запуску"
+            aria-label="Проверить готовность"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
+          >
+            <ScanSearch size={17} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onAction(bot, "reinstall_webhook")}
+            disabled={busy}
+            title="Переустановить webhook"
+            aria-label="Переустановить webhook"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
+          >
+            <Link2 size={17} aria-hidden="true" />
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              disabled={busy}
+              aria-label="Дополнительные действия"
+              aria-expanded={menuOpen}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--color-border)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
+            >
+              <MoreHorizontal size={17} aria-hidden="true" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" role="presentation" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-[calc(100%+6px)] z-40 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl">
+                  {hasActiveSub && onRevokeSubscription ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onRevokeSubscription(bot);
+                        }}
+                        disabled={busy}
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-soft)] disabled:opacity-60"
+                      >
+                        <ShieldAlert size={15} /> Отозвать подписку бота
+                      </button>
+                      <div className="my-1 border-t border-[var(--color-border)]" />
+                    </>
+                  ) : null}
+                  <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-foreground-tertiary)]">
+                    Опасная зона
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onArchiveLeads(bot);
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-soft)] disabled:opacity-60"
+                  >
+                    <Trash2Icon /> Очистить список лидов (CRM)
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 function Trash2Icon() {
@@ -505,6 +1487,7 @@ function OperationsSection({ operations, loading, onRetryOperation, retryingOper
 }
 
 function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]; loading: boolean; onChanged: () => void }) {
+  const safeLinks = Array.isArray(links) ? links : [];
   const { setToastMessage, setToastType } = useAppState();
   const { showConfirm } = useAlert();
   const [kind, setKind] = useState<"one_bot" | "period" | "permanent">("one_bot");
@@ -672,9 +1655,9 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
       </Section>
 
       <Section title="Созданные ссылки" description="Счётчик показывает, сколько людей уже активировали ссылку. Выданный доступ не отзывается закрытием ссылки.">
-        {loading ? <RowsSkeleton count={4} /> : links.length ? (
+        {loading ? <RowsSkeleton count={4} /> : safeLinks.length ? (
           <div className="divide-y divide-[var(--color-border)]">
-            {links.map((link) => {
+            {safeLinks.map((link) => {
               const exhausted = link.activationsCount >= link.maxActivations;
               const expired = Boolean(link.validUntil && new Date(link.validUntil) <= new Date());
               return (

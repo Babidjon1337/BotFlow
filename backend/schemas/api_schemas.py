@@ -78,6 +78,21 @@ class AdminProExtensionRequest(BaseModel):
     days: int = Field(..., ge=1, le=365)
 
 
+class AdminBotSubscriptionRequest(BaseModel):
+    days: Optional[int] = Field(None, ge=1, le=3650)
+    is_lifetime: bool = Field(default=False, alias="isLifetime")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AdminUserGrantBotRequest(BaseModel):
+    bot_id: Optional[int] = Field(None, alias="botId")
+    days: Optional[int] = Field(90, ge=1, le=3650)
+    is_lifetime: bool = Field(default=False, alias="isLifetime")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AdminBotActionRequest(BaseModel):
     action: Literal["start", "stop", "reinstall_webhook"]
 

@@ -58,3 +58,7 @@ opencode.json
 .superdesign/tmp/
 shots
 frontend/vite-dev.log
+.playwright-mcp
+/*-view.png
+/*-sheet.png
+/*-sub.png

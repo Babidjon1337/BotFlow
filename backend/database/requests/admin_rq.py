@@ -10,6 +10,7 @@ from sqlalchemy import String, cast, func, or_, select
 from database.models import (
     AdminAuditLog,
     BotConfig,
+    BotSubscription,
     ClientPayment,
     SaasPayment,
     User,
@@ -41,8 +42,30 @@ def _admin_user_payload(user: User, bots_count: int, *, is_platform_admin: bool 
     }
 
 
-def _admin_bot_payload(bot: BotConfig, owner_telegram_id: int) -> dict[str, Any]:
+def _admin_bot_payload(
+    bot: BotConfig,
+    owner_telegram_id: int,
+    subscription: BotSubscription | None = None,
+) -> dict[str, Any]:
     """Serialize operational bot state and intentionally omit encrypted secrets."""
+    sub_payload = None
+    if subscription:
+        sub_payload = {
+            "status": subscription.status,
+            "ends_at": _iso(subscription.ends_at),
+            "auto_renew": subscription.auto_renew,
+            "amount_rub": subscription.amount_rub,
+            "is_lifetime": bot.has_lifetime_license or subscription.ends_at is None,
+        }
+    elif bot.has_lifetime_license:
+        sub_payload = {
+            "status": "active",
+            "ends_at": None,
+            "auto_renew": False,
+            "amount_rub": 0,
+            "is_lifetime": True,
+        }
+
     return {
         "id": bot.id,
         "owner_id": bot.owner_id,
@@ -59,6 +82,7 @@ def _admin_bot_payload(bot: BotConfig, owner_telegram_id: int) -> dict[str, Any]
         "payment_provider": bot.payment_provider,
         "has_payment_credentials": bool(bot.payment_creds_enc),
         "created_at": _iso(bot.created_at),
+        "subscription": sub_payload,
     }
 
 
@@ -168,15 +192,16 @@ async def list_admin_bots(*, query: str | None, status: str | None, page: int, l
         base = select(BotConfig).where(*filters)
         total = await session.scalar(select(func.count()).select_from(base.subquery()))
         rows = await session.execute(
-            select(BotConfig, User.telegram_id.label("owner_telegram_id"))
+            select(BotConfig, User.telegram_id.label("owner_telegram_id"), BotSubscription)
             .join(User, User.id == BotConfig.owner_id)
+            .outerjoin(BotSubscription, BotSubscription.bot_id == BotConfig.id)
             .where(*filters)
             .order_by(BotConfig.created_at.desc(), BotConfig.id.desc())
             .offset((page - 1) * limit)
             .limit(limit)
         )
 
-    bots = [_admin_bot_payload(bot, owner_telegram_id) for bot, owner_telegram_id in rows]
+    bots = [_admin_bot_payload(bot, owner_telegram_id, sub) for bot, owner_telegram_id, sub in rows]
     return bots, int(total or 0)
 
 
@@ -189,11 +214,12 @@ async def get_admin_user_detail(
         if not user:
             return None
         rows = await session.execute(
-            select(BotConfig)
+            select(BotConfig, BotSubscription)
+            .outerjoin(BotSubscription, BotSubscription.bot_id == BotConfig.id)
             .where(BotConfig.owner_id == user.id)
             .order_by(BotConfig.created_at.desc(), BotConfig.id.desc())
         )
-        owner_bots = list(rows.scalars())
+        owner_bots = list(rows.all())
 
     return {
         "user": _admin_user_payload(
@@ -201,7 +227,7 @@ async def get_admin_user_detail(
             len(owner_bots),
             is_platform_admin=user.telegram_id in protected_admin_telegram_ids,
         ),
-        "bots": [_admin_bot_payload(bot, user.telegram_id) for bot in owner_bots],
+        "bots": [_admin_bot_payload(bot, user.telegram_id, sub) for bot, sub in owner_bots],
     }
 
 
@@ -514,6 +540,171 @@ async def disable_admin_user_auto_renew(
                     details={"telegram_id": user.telegram_id},
                 )
         return {"user_id": user.id, "subscription_auto_renew": False, "changed": changed}
+
+
+async def grant_admin_bot_subscription(
+    *,
+    bot_id: int,
+    duration_days: int | None = None,
+    is_lifetime: bool = False,
+    actor_telegram_id: int,
+) -> dict[str, Any]:
+    """Grant or extend a BotSubscription for a specific bot."""
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        async with session.begin():
+            bot = await session.scalar(
+                select(BotConfig).where(BotConfig.id == bot_id).with_for_update()
+            )
+            if not bot:
+                raise AdminMutationError("Бот не найден.")
+
+            subscription = await session.scalar(
+                select(BotSubscription)
+                .where(BotSubscription.bot_id == bot_id)
+                .with_for_update()
+            )
+
+            if is_lifetime:
+                bot.has_lifetime_license = True
+                if subscription is None:
+                    subscription = BotSubscription(
+                        bot_id=bot.id,
+                        status="active",
+                        starts_at=now,
+                        ends_at=None,
+                        product_code="lifetime_grant",
+                        amount_rub=0,
+                        auto_renew=False,
+                    )
+                    session.add(subscription)
+                else:
+                    subscription.status = "active"
+                    subscription.ends_at = None
+                    subscription.auto_renew = False
+                ends_at_iso = None
+            else:
+                days = duration_days or 90
+                period_start = max(subscription.ends_at if subscription and subscription.ends_at else now, now)
+                next_ends_at = period_start + timedelta(days=days)
+                if subscription is None:
+                    subscription = BotSubscription(
+                        bot_id=bot.id,
+                        status="active",
+                        starts_at=now,
+                        ends_at=next_ends_at,
+                        product_code=f"grant_{days}d",
+                        amount_rub=0,
+                        auto_renew=False,
+                    )
+                    session.add(subscription)
+                else:
+                    subscription.status = "active"
+                    subscription.ends_at = next_ends_at
+                    subscription.auto_renew = False
+                    subscription.retry_count = 0
+                    subscription.next_retry_at = None
+                    subscription.grace_until = None
+                ends_at_iso = _iso(subscription.ends_at)
+
+            _append_audit_entry(
+                session,
+                actor_telegram_id=actor_telegram_id,
+                action="bot_subscription_granted",
+                target_type="bot",
+                target_id=bot.id,
+                details={
+                    "bot_id": bot.id,
+                    "owner_id": bot.owner_id,
+                    "duration_days": duration_days,
+                    "is_lifetime": is_lifetime,
+                    "ends_at": ends_at_iso,
+                },
+            )
+
+        return {
+            "status": "ok",
+            "message": "Бессрочный доступ выдан" if is_lifetime else f"Подписка выдана на {duration_days or 90} дн.",
+            "subscription": {
+                "status": "active",
+                "ends_at": ends_at_iso,
+                "auto_renew": False,
+                "amount_rub": 0,
+                "is_lifetime": is_lifetime,
+            },
+        }
+
+
+async def revoke_admin_bot_subscription(
+    *,
+    bot_id: int,
+    actor_telegram_id: int,
+) -> dict[str, Any]:
+    """Revoke a bot's subscription or lifetime access."""
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        async with session.begin():
+            bot = await session.scalar(
+                select(BotConfig).where(BotConfig.id == bot_id).with_for_update()
+            )
+            if not bot:
+                raise AdminMutationError("Бот не найден.")
+
+            bot.has_lifetime_license = False
+            subscription = await session.scalar(
+                select(BotSubscription)
+                .where(BotSubscription.bot_id == bot_id)
+                .with_for_update()
+            )
+            if subscription:
+                subscription.status = "inactive"
+                subscription.ends_at = now
+                subscription.auto_renew = False
+
+            _append_audit_entry(
+                session,
+                actor_telegram_id=actor_telegram_id,
+                action="bot_subscription_revoked",
+                target_type="bot",
+                target_id=bot.id,
+                details={"bot_id": bot.id, "owner_id": bot.owner_id},
+            )
+
+        return {"status": "ok", "message": "Подписка бота отозвана."}
+
+
+async def grant_admin_user_bot_subscription(
+    *,
+    user_id: int,
+    bot_id: int | None = None,
+    duration_days: int | None = None,
+    is_lifetime: bool = False,
+    actor_telegram_id: int,
+) -> dict[str, Any]:
+    """Grant free bot subscription directly from user profile."""
+    async with async_session() as session:
+        user = await session.get(User, user_id)
+        if not user:
+            raise AdminMutationError("Пользователь не найден.")
+
+        target_bot_id = bot_id
+        if target_bot_id is None:
+            bots = list((await session.scalars(
+                select(BotConfig).where(BotConfig.owner_id == user_id).order_by(BotConfig.id)
+            )).all())
+            if not bots:
+                raise AdminMutationError("У пользователя пока нет ботов. Создайте подарочную ссылку.")
+            if len(bots) == 1:
+                target_bot_id = bots[0].id
+            else:
+                raise AdminMutationError("У пользователя несколько ботов. Выберите конкретного бота.")
+
+    return await grant_admin_bot_subscription(
+        bot_id=target_bot_id,
+        duration_days=duration_days,
+        is_lifetime=is_lifetime,
+        actor_telegram_id=actor_telegram_id,
+    )
 
 
 def _iso(value: datetime | None) -> str | None:
