@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Bot, CheckCircle2, ChevronDown, CreditCard, Crown, RefreshCcw, ShieldCheck, XCircle } from "lucide-react";
+import { Bot, CheckCircle2, ChevronDown, CreditCard, RefreshCcw, ShieldCheck, XCircle } from "lucide-react";
 
 import { useAppState } from "../../providers/AppStateProvider";
 import { PageHeader } from "../common/PageHeader";
@@ -39,7 +39,6 @@ export const Subscription = () => {
 
   const bots = appState.bots;
   const published = bots.filter((bot) => bot.status === "active");
-  const freeBots = published.filter((bot) => bot.hasLifetimeLicense);
   const paidBots = published.filter((bot) => !bot.hasLifetimeLicense);
   const monthlyTotal = isAdmin
     ? 0
@@ -162,7 +161,7 @@ export const Subscription = () => {
         kicker="Подписка"
         tone="violet"
         title="Управление подписками"
-        hint="Каждый опубликованный бот оплачивается отдельно — от 990 ₽/мес. Черновики и спец-доступ бесплатны."
+        hint="Оплата за каждого опубликованного бота — 990 ₽/мес. Черновики бесплатны."
       />
 
       {/* Сводка: итог по активным подпискам + один CTA */}
@@ -220,7 +219,7 @@ export const Subscription = () => {
             </Button>
           ) : (
             <p className="mt-4 rounded-[14px] border border-dashed border-border-strong px-4 py-3 text-center text-body-sm text-fg-tertiary">
-              Приложение на тесте — оплата откроется позже. Доступ уже выдан вручную.
+              Приложение на тесте — оплата откроется позже.
             </p>
           )
         )}
@@ -258,13 +257,11 @@ export const Subscription = () => {
                     {bot.name}
                   </span>
                   {cov.kind === "free" ? (
-                    <StatusBadge tone="success" label="Бесплатно навсегда" />
+                    <StatusBadge tone="success" label="Опубликован" />
                   ) : cov.kind === "draft" ? (
                     <StatusBadge tone="neutral" label="Черновик" />
-                  ) : cov.kind === "sub" ? (
+                  ) : cov.kind === "sub" || cov.kind === "legacy" ? (
                     <StatusBadge tone="success" label={`До ${formatDate(cov.endsAt)}`} />
-                  ) : cov.kind === "legacy" ? (
-                    <StatusBadge tone="success" label={`Доступ до ${formatDate(cov.endsAt)}`} />
                   ) : (
                     <StatusBadge tone="warning" label="Нужна оплата" />
                   )}
@@ -345,22 +342,6 @@ export const Subscription = () => {
             <p className="text-body font-bold text-fg-primary">Администратор платформы</p>
             <p className="mt-0.5 text-body-sm text-fg-secondary">
               Боты создаются и публикуются бесплатно, без лимитов и списаний.
-            </p>
-          </div>
-        </section>
-      )}
-
-      {freeBots.length > 0 && !isAdmin && (
-        <section className="flex items-start gap-3 rounded-[20px] border border-primary/30 bg-accent/40 p-5">
-          <Crown className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
-          <div>
-            <p className="text-body font-bold text-fg-primary">
-              {freeBots.length === 1
-                ? "Один бот работает бесплатно"
-                : `${freeBots.length} ${plural(freeBots.length, "бот", "бота", "ботов")} работают бесплатно`}
-            </p>
-            <p className="mt-0.5 text-body-sm text-fg-secondary">
-              Спец-доступ по ссылке: {freeBots.map((bot) => bot.name).join(", ")}. Подписка на них не нужна.
             </p>
           </div>
         </section>
