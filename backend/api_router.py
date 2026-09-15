@@ -378,13 +378,13 @@ async def get_current_admin(request: Request) -> TelegramUser:
 
 
 async def get_owned_bot(bot_id: int, request: Request):
-    """Load a bot only when it belongs to the authenticated dashboard user."""
+    """Load a bot only when it belongs to the authenticated dashboard user, or caller is admin."""
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     bot = await get_bot_by_id(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
-    if bot.owner_id != user.id:
+    if bot.owner_id != user.id and current_user.telegram_id not in ADMIN_TELEGRAM_IDS:
         raise HTTPException(status_code=404, detail="Бот не найден")
     return bot
 

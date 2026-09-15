@@ -4,6 +4,7 @@ import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -377,4 +378,20 @@ def test_admin_user_grant_bot_subscription_rejects_unowned_bot(monkeypatch):
                 actor_telegram_id=202,
             )
         )
+
+
+def test_admin_can_access_other_user_bot(monkeypatch):
+    """Admin in ADMIN_TELEGRAM_IDS can load any bot in get_owned_bot."""
+    bot = SimpleNamespace(id=42, owner_id=999)
+    admin_user = SimpleNamespace(telegram_id=101)  # 101 is in ADMIN_TELEGRAM_IDS in test setup
+
+    monkeypatch.setattr(api_router, "ADMIN_TELEGRAM_IDS", {101})
+    monkeypatch.setattr(api_router, "get_current_user", AsyncMock(return_value=admin_user))
+    monkeypatch.setattr(api_router, "create_user_if_not_exists", AsyncMock(return_value=SimpleNamespace(id=11, telegram_id=101)))
+    monkeypatch.setattr(api_router, "get_bot_by_id", AsyncMock(return_value=bot))
+
+    result = asyncio.run(api_router.get_owned_bot(42, object()))
+    assert result.id == 42
+    assert result.owner_id == 999
+
 
