@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import {
   Bot,
   Check,
+  CheckCheck,
   CreditCard,
   Link2,
   MessageCircleMore,
@@ -276,7 +277,10 @@ export function WelcomeScreen({ onCreateBot }: WelcomeScreenProps) {
                 </p>
                 <p className="max-w-[84%] self-start rounded-2xl rounded-bl-sm bg-white px-3 py-2 text-[12.3px] leading-snug text-[#10141c] shadow-[0_1px_2px_rgb(16_24_40/0.08)] dark:bg-[#1c232f] dark:text-[#e8ecf4]">
                   Да, давайте!
-                  <span className="float-right ml-2 mt-1.5 text-[9px] text-[#98a2b3]">09:41 ✓✓</span>
+                  <span className="float-right ml-2 mt-1.5 inline-flex items-center gap-0.5 text-[9px] text-[#98a2b3]">
+                    09:41
+                    <CheckCheck className="size-3 text-[#98a2b3]" aria-hidden="true" />
+                  </span>
                 </p>
                 <div className="flex items-center gap-2.5 self-stretch rounded-2xl border border-[#c4ead2] bg-[#e9f9ee] px-3 py-2.5 dark:border-[rgb(60_203_127/0.3)] dark:bg-[rgb(60_203_127/0.12)]">
                   <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#22a05c] text-white">

@@ -289,7 +289,7 @@ export function BroadcastComposerForm({
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                 className="group relative flex size-16 items-center justify-center rounded-xl border border-border bg-muted"
               >
-                <span className="text-fg-tertiary">✓</span>
+                <Check className="size-5 text-fg-tertiary" aria-hidden />
                 <button
                   type="button"
                   onClick={() => removeAsset(id)}

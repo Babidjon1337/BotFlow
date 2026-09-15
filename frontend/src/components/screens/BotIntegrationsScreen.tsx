@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, Play, Settings2 } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
@@ -6,6 +6,9 @@ import { Button } from '../ui/button';
 import { PageHeader } from '../common/PageHeader';
 import { StatusBadge } from '../common/StatusBadge';
 import { PlatformGlyph } from '../common/platform';
+
+import type { IntegrationTarget } from '../../lib/integrationNav';
+import { INTEGRATION_TARGET_KEY } from '../../lib/integrationNav';
 
 const PROVIDERS: {
   id: PaymentProvider;
@@ -73,6 +76,10 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     ? PROVIDERS.find((p) => p.id === bot.paymentProvider)?.name ?? bot.paymentProvider
     : '';
 
+  const platformSectionRef = useRef<HTMLElement | null>(null);
+  const cashierSectionRef = useRef<HTMLElement | null>(null);
+  const [highlightedBlock, setHighlightedBlock] = useState<IntegrationTarget | null>(null);
+
   const [tokenFormOpen, setTokenFormOpen] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
 
@@ -106,6 +113,84 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
 
   const activeProvider = PROVIDERS.find((p) => p.id === selectedProvider);
   const allFilled = activeProvider ? activeProvider.fields.every((f) => (keys[f.key] || '').trim()) : false;
+
+  useEffect(() => {
+    const handleTarget = (target: IntegrationTarget) => {
+      setHighlightedBlock(target);
+
+      if (target === 'platform') {
+        if (!hasToken) {
+          setTokenFormOpen(true);
+        }
+        const scrollTimer = window.setTimeout(() => {
+          platformSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (!hasToken) {
+            const input = document.getElementById('tg-token');
+            input?.focus();
+          }
+        }, 120);
+        const highlightTimer = window.setTimeout(() => {
+          setHighlightedBlock(null);
+        }, 2800);
+        return () => {
+          window.clearTimeout(scrollTimer);
+          window.clearTimeout(highlightTimer);
+        };
+      }
+
+      if (target === 'cashier') {
+        if (!hasCashier && !selectedProvider) {
+          setSelectedProvider('yookassa');
+        }
+        const scrollTimer = window.setTimeout(() => {
+          cashierSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const input = document.querySelector<HTMLInputElement>('#cashier-shopId, input[id^="cashier-"]');
+          input?.focus();
+        }, 120);
+        const highlightTimer = window.setTimeout(() => {
+          setHighlightedBlock(null);
+        }, 2800);
+        return () => {
+          window.clearTimeout(scrollTimer);
+          window.clearTimeout(highlightTimer);
+        };
+      }
+    };
+
+    let initialTarget: IntegrationTarget | null = null;
+    try {
+      const stored = sessionStorage.getItem(INTEGRATION_TARGET_KEY);
+      if (stored === 'platform' || stored === 'cashier') {
+        initialTarget = stored;
+        sessionStorage.removeItem(INTEGRATION_TARGET_KEY);
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!initialTarget && typeof window !== 'undefined' && window.location.hash) {
+      const h = window.location.hash.replace(/^#/, '');
+      if (h === 'platform' || h === 'cashier') {
+        initialTarget = h;
+      }
+    }
+
+    if (initialTarget) {
+      handleTarget(initialTarget);
+    }
+
+    const onCustomEvent = (event: Event) => {
+      const detail = (event as CustomEvent<IntegrationTarget>).detail;
+      if (detail === 'platform' || detail === 'cashier') {
+        handleTarget(detail);
+      }
+    };
+
+    window.addEventListener('botflow_integration_focus', onCustomEvent);
+    return () => {
+      window.removeEventListener('botflow_integration_focus', onCustomEvent);
+    };
+  }, [hasToken, hasCashier, selectedProvider]);
 
   const saveToken = async () => {
     if (!token.trim() || isSavingToken) return;
@@ -183,8 +268,24 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
       />
 
       {/* ── 1. Платформы: три карточки в одну строку (на мобилке пропорционально меньше) ── */}
-      <section className="grid grid-cols-3 gap-2 sm:gap-3" aria-label="Платформы">
-        <article className={`flex flex-col items-center rounded-[16px] border p-2.5 text-center sm:p-4 ${hasToken ? 'border-primary/30 bg-accent' : 'border-border bg-card'}`}>
+      <section
+        ref={platformSectionRef}
+        className={`grid grid-cols-3 gap-2 rounded-[20px] p-2 -m-2 transition-all duration-500 sm:gap-3 ${
+          highlightedBlock === 'platform'
+            ? 'ring-2 ring-primary ring-offset-4 ring-offset-background shadow-[0_0_24px_rgba(37,99,235,0.25)]'
+            : ''
+        }`}
+        aria-label="Платформы"
+      >
+        <article
+          className={`flex flex-col items-center rounded-[16px] border p-2.5 text-center transition-all duration-500 sm:p-4 ${
+            highlightedBlock === 'platform'
+              ? 'border-primary ring-2 ring-primary/40 bg-accent/40 shadow-sm'
+              : hasToken
+                ? 'border-primary/30 bg-accent'
+                : 'border-border bg-card'
+          }`}
+        >
           <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] [&_svg]:size-10 sm:size-[84px] sm:rounded-[18px] sm:[&_svg]:size-[56px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
             <TelegramGlyph active={hasToken} />
           </span>
@@ -303,7 +404,15 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
       )}
 
       {/* ── 2. Касса: всегда раскрыта, лого платёжек видны сразу ── */}
-      <section className="flex flex-col gap-3" aria-label="Касса">
+      <section
+        ref={cashierSectionRef}
+        className={`flex flex-col gap-3 rounded-[20px] p-2 -m-2 transition-all duration-500 ${
+          highlightedBlock === 'cashier'
+            ? 'ring-2 ring-primary ring-offset-4 ring-offset-background shadow-[0_0_24px_rgba(37,99,235,0.25)]'
+            : ''
+        }`}
+        aria-label="Касса"
+      >
         {hasCashier && (
           <div className="flex flex-col gap-3 rounded-[16px] border border-success/40 bg-success-soft/60 px-4 py-3.5 dark:bg-success-soft/40">
             <div className="flex flex-wrap items-center justify-between gap-4">

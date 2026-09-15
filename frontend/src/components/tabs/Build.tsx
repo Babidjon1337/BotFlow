@@ -32,7 +32,6 @@ import { TimerPresets } from "../TimerPresets";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
-import { PageHeader } from "../common/PageHeader";
 import type { Tariff } from "../../types";
 
 const keepMobileFieldVisible = (element: HTMLElement) => {
@@ -815,6 +814,7 @@ export const Build = () => {
     );
   }
 
+
   return (
     <div className="relative flex min-h-0 flex-col overflow-x-hidden pb-[calc(72px+env(safe-area-inset-bottom,0px))] lg:pb-0">
       <style>{`
@@ -824,113 +824,84 @@ export const Build = () => {
         @media (min-width: 1024px) {
           .action-bar-fixed { bottom: 24px; }
         }
-      `}      </style>
+      `}</style>
 
-      <PageHeader
-        kicker="Сценарий"
-        tone="cyan"
-        title="Воронка продаж"
-        hint="Последовательность, которую проходит клиент: старт → дожимы → продажа"
-      />
-
-      {/* Bot Header (Settings Access) */}
-      <div
-        className="flex items-center justify-between gap-3 p-4 md:px-5 md:py-4 mb-6 md:mb-8 border rounded-[20px] md:rounded-[24px] shadow-sm relative overflow-hidden"
-        style={{
-          background: "var(--color-surface)",
-          borderColor: "var(--color-border)",
-        }}
-      >
-        <div className="flex items-center gap-3 md:gap-[14px] flex-1 min-w-0">
-          <div
-            className="w-10 h-10 md:w-[44px] md:h-[44px] rounded-[14px] md:rounded-[16px] shrink-0"
-            style={{
-              background: "var(--color-primary-soft)",
-              color: "var(--color-primary)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontWeight: 700,
-              fontSize: "18px",
-            }}
-          >
-            {appState.activeBot.name.charAt(0).toUpperCase()}
-          </div>
-          <div className="min-w-0 flex-1">
+      {/* Compact Scenario Header */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="kicker text-cyan">Сценарий</span>
+            <span className="text-fg-tertiary">·</span>
+            <h1 className="text-body-lg font-bold text-foreground sm:text-title">Воронка продаж</h1>
+            {/* Progress indicator (2/4) - always visible */}
             <div
-              className="truncate"
-              style={{
-                fontWeight: 700,
-                color: "var(--color-foreground)",
-                fontSize: "15px",
-                letterSpacing: "-0.01em",
-              }}
+              aria-live="polite"
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border transition-colors ${
+                isAllBlocksComplete
+                  ? "border-[var(--color-success-soft)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                  : "border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
+              }`}
             >
-              {appState.activeBot.name}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 md:gap-3 mt-0.5">
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: "var(--color-foreground-secondary)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: "8px",
-                    height: "8px",
-                    borderRadius: "50%",
-                    background:
-                      appState.activeBot.status === "active"
-                        ? "var(--color-success)"
-                        : "var(--color-warning)",
-                    boxShadow:
-                      appState.activeBot.status === "active"
-                        ? "0 0 8px var(--color-success-soft)"
-                        : "0 0 8px var(--color-warning-soft)",
-                  }}
-                />
-                {appState.activeBot.status === "active"
-                  ? "Бот работает"
-                  : "Черновик"}
-              </div>
-              {!appState.activeBot.paymentProvider && (
-                <div
-                  className="px-2 py-0.5 rounded-full text-[10px] md:text-[11px] font-bold bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                  title="Платежная система не подключена"
-                >
-                  Нет кассы
-                </div>
-              )}
+              <span className="size-1.5 rounded-full bg-current shrink-0" aria-hidden="true" />
+              <span>
+                {isAllBlocksComplete
+                  ? `${completedStepsCount}/${funnelSteps.length} готово`
+                  : `${completedStepsCount}/${funnelSteps.length} заполнено`}
+              </span>
             </div>
           </div>
+          <p className="mt-0.5 hidden text-meta text-fg-secondary sm:block">
+            Последовательность: старт → дожимы → продажа
+          </p>
         </div>
 
-        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+        {/* Header Actions: Save Status + Bot Controls */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Always visible Save Indicator (Saved / Saving / Unsaved) */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--color-surface-2)] border border-border text-[12px] font-medium text-[var(--color-foreground)]">
+            {isSaving ? (
+              <>
+                <RotateCcw size={13} className="animate-spin text-[var(--color-primary)]" aria-hidden="true" />
+                <span className="text-[var(--color-primary)] font-semibold">Сохранение…</span>
+              </>
+            ) : appState.isDirty ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const tg = (window as Window & { Telegram?: { WebApp?: { HapticFeedback?: { impactOccurred: (style: string) => void } } } }).Telegram?.WebApp;
+                  tg?.HapticFeedback?.impactOccurred("medium");
+                  handleSave();
+                }}
+                className="flex items-center gap-1.5 text-[var(--color-warning)] font-semibold hover:underline"
+                title="Нажмите, чтобы сохранить изменения"
+              >
+                <span className="size-2 rounded-full bg-[var(--color-warning)] animate-pulse" aria-hidden="true" />
+                <span>Не сохранено</span>
+                <span className="rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-warning)] ml-0.5">Сохранить</span>
+              </button>
+            ) : (
+              <>
+                <CheckCircle2 size={13} className="text-[var(--color-success)]" aria-hidden="true" />
+                <span className="text-[var(--color-foreground-secondary)]">Сохранено</span>
+              </>
+            )}
+          </div>
+
           <button
-            className="w-10 h-10 md:w-11 md:h-11 rounded-[10px] md:rounded-[12px] flex items-center justify-center border transition-colors hover:bg-[var(--color-surface-2)]"
+            type="button"
+            className="size-9 rounded-lg flex items-center justify-center border border-border text-fg-secondary hover:bg-[var(--color-surface-2)] transition-colors"
             onClick={onOpenSettings}
-            style={{
-              borderColor: "var(--color-border)",
-              color: "var(--color-foreground-secondary)",
-            }}
             title="Настройки бота"
             aria-label="Открыть настройки бота"
           >
-            <Settings
-              size={18}
-              className="w-[16px] h-[16px] md:w-[18px] md:h-[18px]"
-            />
+            <Settings size={16} />
           </button>
 
           <button
+            type="button"
             onClick={() => toggleBot(appState.activeBot!)}
             disabled={isToggling[appState.activeBot.id]}
-            className="w-10 h-10 md:w-11 md:h-11 rounded-[10px] md:rounded-[12px] flex items-center justify-center border transition-colors"
+            className="size-9 rounded-lg flex items-center justify-center border transition-colors"
             style={{
               borderColor:
                 appState.activeBot.status === "active"
@@ -946,25 +917,14 @@ export const Build = () => {
                   : "transparent",
               opacity: isToggling[appState.activeBot.id] ? 0.5 : 1,
             }}
-            title={
-              appState.activeBot.status === "active"
-                ? "Остановить"
-                : "Запустить"
-            }
-            aria-label={
-              appState.activeBot.status === "active"
-                ? "Остановить бота"
-                : "Запустить бота"
-            }
+            title={appState.activeBot.status === "active" ? "Остановить бота" : "Запустить бота"}
+            aria-label={appState.activeBot.status === "active" ? "Остановить бота" : "Запустить бота"}
             aria-busy={isToggling[appState.activeBot.id] || undefined}
           >
             {isToggling[appState.activeBot.id] ? (
-              <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
+              <div className="animate-spin size-3.5 border-2 border-current border-t-transparent rounded-full" />
             ) : (
-              <Power
-                size={18}
-                className="w-[16px] h-[16px] md:w-[18px] md:h-[18px]"
-              />
+              <Power size={16} />
             )}
           </button>
         </div>
@@ -993,24 +953,6 @@ export const Build = () => {
             data-tour="tour-funnel-steps"
             style={{ display: "flex", flexDirection: "column", gap: "8px" }}
           >
-            <div
-              aria-live="polite"
-              className={`inline-flex items-center gap-2 self-start px-3 py-1.5 rounded-full text-[12px] font-semibold border transition-colors ${
-                isAllBlocksComplete
-                  ? "border-[var(--color-success-soft)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
-                  : "border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-current shrink-0" aria-hidden="true" />
-              <span>
-                {isAllBlocksComplete
-                  ? `${completedStepsCount} / ${funnelSteps.length} — готово к запуску`
-                  : `${completedStepsCount} / ${funnelSteps.length} · Не заполнено: ${incompleteSteps.map((s) => s.label).join(", ")}`}
-              </span>
-            </div>
-
-
-
             <FunnelCard
               stepId="start"
               title="Старт"
@@ -1050,14 +992,14 @@ export const Build = () => {
                     label={paymentMode === "hybrid" ? "Кнопка 1 (Покупка)" : "Текст кнопки"}
                     value={getBlock("start")?.buttonText || ""}
                     onChange={(v) => updateBlock("start", "buttonText", v)}
-                    placeholder={paymentMode === "hybrid" ? "💰 Купить сейчас" : "🚀 Начать"}
+                    placeholder={paymentMode === "hybrid" ? "Купить сейчас" : "Начать"}
                   />
                   {paymentMode === "hybrid" && (
                     <ButtonInput
                       label="Кнопка 2 (Консультация)"
                       value={getBlock("start")?.buttonText2 || ""}
                       onChange={(v) => updateBlock("start", "buttonText2", v)}
-                      placeholder="📞 Записаться"
+                      placeholder="Записаться"
                     />
                   )}
                 </div>

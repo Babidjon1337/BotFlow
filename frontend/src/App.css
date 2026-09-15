@@ -54,6 +54,21 @@
   background-color: #3b82f6 !important;
 }
 
+/* Hide scrollbar while preserving scroll functionality */
+.scrollbar-none,
+.no-scrollbar,
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+  width: 0;
+  height: 0;
+}
+
 
 /* Glassmorphism utility */
 .glass {

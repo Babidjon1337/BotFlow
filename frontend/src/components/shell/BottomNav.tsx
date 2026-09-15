@@ -8,6 +8,7 @@ interface BottomNavProps {
   activeTab: AccountTab;
   onAccountTab: (tab: AccountTab) => void;
   hidden?: boolean;
+  isAdmin?: boolean;
 }
 
 /** Локальные тона разделов (DS v2 §5) — совпадают с Sidebar. Профиль выделен розовым. */
@@ -15,9 +16,12 @@ const ACCOUNT_TAB_TONES: Record<string, string> = {
   bots: 'nav-tone-blue',
   billing: 'nav-tone-violet',
   profile: 'nav-tone-rose',
+  admin: 'nav-tone',
 };
 
-export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
+export function BottomNav({ activeTab, onAccountTab, hidden, isAdmin }: BottomNavProps) {
+  const visibleTabs = ACCOUNT_TABS.filter(tab => tab.id !== 'admin' || isAdmin);
+
   return (
     <nav
       aria-label="Основная навигация"
@@ -26,8 +30,8 @@ export function BottomNav({ activeTab, onAccountTab, hidden }: BottomNavProps) {
         hidden ? 'translate-y-full' : 'translate-y-0',
       )}
     >
-      <div className="grid h-14 grid-cols-3">
-        {ACCOUNT_TABS.filter(tab => tab.id !== 'admin').map(tab => {
+      <div className={cn('grid h-14', visibleTabs.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
+        {visibleTabs.map(tab => {
           const Icon = ACCOUNT_TAB_ICONS[tab.id];
           const active = activeTab === tab.id;
           return (

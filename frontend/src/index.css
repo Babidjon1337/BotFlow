@@ -357,6 +357,20 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
+/* ── Cross-browser scrollbar hiding (WebKit, Firefox, IE/Edge) ── */
+.scrollbar-none,
+.no-scrollbar,
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* WebKit: Chrome, Safari, Edge, Opera */
+}
+
+
 /* ============================================================
    LEGACY COMPONENT CLASSES — поддерживаются для старых экранов.
    Декоративные градиенты/glow регулируются docs/DESIGN_SYSTEM.md.

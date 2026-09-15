@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { KeyRound } from 'lucide-react';
+import { KeyRound, Lock } from 'lucide-react';
 import { PAYMENT_PROVIDERS } from '../constants';
 import type { PaymentProvider, AppState } from '../types';
 import { FunnelCard } from './FunnelCard';
@@ -76,7 +76,7 @@ export const BotSetupCard = ({ appState, onConnect }: BotSetupCardProps) => {
         </div>
         {isTokenLocked && (
           <p style={{ marginTop: '8px', fontSize: '12px', color: 'var(--color-warning)', display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-            <span style={{ fontSize: '14px' }}>🔒</span>
+            <Lock size={14} className="mt-0.5 shrink-0" aria-hidden />
             <span>
               У вас более 10 пользователей. Токен заблокирован. (Для смены нужна <span onClick={() => { setSheet(null); setActiveTab('subscription'); }} style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}>подписка бота</span> или новый слот).
             </span>

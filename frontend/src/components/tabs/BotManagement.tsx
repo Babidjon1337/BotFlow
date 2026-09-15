@@ -137,7 +137,7 @@ export const BotManagement = () => {
         {/* Greeting + hero-выручка: страница отвечает на главный вопрос сразу */}
         <div className="mb-6 md:mb-8">
           <p className="text-body-sm font-medium text-fg-secondary">
-            Добрый день{userName ? `, ${userName}` : ''} 👋
+            Добрый день{userName ? `, ${userName}` : ''}
           </p>
           <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
             <div className="min-w-0">

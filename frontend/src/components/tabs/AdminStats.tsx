@@ -67,18 +67,18 @@ const formatDate = (value: string | null) =>
     : "—";
 
 const productName: Record<AdminSaasPayment["product"], string> = {
-  license: "Лицензия",
-  pro_initial: "PRO",
-  pro_renewal: "Продление PRO",
+  license: "Подписка на бота",
+  pro_initial: "Подписка на бота",
+  pro_renewal: "Продление подписки",
 };
 
 const auditActionLabel: Record<string, string> = {
   user_access_disabled: "Доступ пользователя ограничен",
   user_access_restored: "Доступ пользователя восстановлен",
-  lifetime_licenses_granted: "Выданы лицензии",
-  lifetime_licenses_revoked: "Отозваны свободные лицензии",
-  pro_extended: "PRO продлён",
-  pro_auto_renew_disabled: "Автопродление PRO отключено",
+  lifetime_licenses_granted: "Выдан бессрочный доступ",
+  lifetime_licenses_revoked: "Отозван бессрочный доступ",
+  pro_extended: "Подписка продлена",
+  pro_auto_renew_disabled: "Автопродление подписки отключено",
   bot_start: "Бот запущен",
   bot_stop: "Бот остановлен",
   bot_reinstall_webhook: "Webhook бота переустановлен",
@@ -89,7 +89,7 @@ const auditActionLabel: Record<string, string> = {
 function auditSummary(entry: AdminAuditEntry): string | null {
   const details = entry.details;
   if (entry.action === "lifetime_licenses_granted" || entry.action === "lifetime_licenses_revoked") {
-    return typeof details.quantity === "number" ? `Лицензий: ${details.quantity}` : null;
+    return typeof details.quantity === "number" ? `Бессрочных доступов: ${details.quantity}` : null;
   }
   if (entry.action === "pro_extended") {
     return typeof details.days === "number" ? `Добавлено дней: ${details.days}` : null;
@@ -479,7 +479,7 @@ export function AdminStats() {
           </button>
         </div>
 
-        <nav className="mt-6 flex gap-1 overflow-x-auto border-b border-[var(--color-border)]" aria-label="Разделы администрирования">
+        <nav className="mt-6 flex gap-1 overflow-x-auto scrollbar-none border-b border-[var(--color-border)]" aria-label="Разделы администрирования">
           {sections.map((item) => {
             const active = section === item.id;
             return (
@@ -1691,7 +1691,7 @@ function Trash2Icon() {
 }
 
 function PaymentsSection({ payments, loading }: { payments: AdminSaasPayment[]; loading: boolean }) {
-  return <Section title="Платежи BotFlow" description="История оплаты лицензий и PRO. Статус нельзя изменить вручную — источником истины остаётся провайдер.">{loading ? <RowsSkeleton count={5} /> : payments.length ? <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Продукт</th><th className="pb-3">Сумма</th><th className="pb-3">Статус</th><th className="pb-3">Дата</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{payment.user_telegram_id}</td><td className="py-4 text-[var(--color-foreground)]">{productName[payment.product]}</td><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{formatAmount(payment.amount, payment.currency)}</td><td className="py-4"><StatusBadge tone={payment.status === "succeeded" ? "success" : payment.status === "failed" ? "danger" : "warning"}>{payment.status === "succeeded" ? "Оплачен" : payment.status === "failed" ? "Ошибка" : "Ожидает"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(payment.paid_at ?? payment.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<CreditCard size={21} />} title="Платежей пока нет" description="После создания первого счёта здесь появится реальная история SaaS-платежей." />}</Section>;
+  return <Section title="Платежи BotFlow" description="История оплаты подписок на ботов. Статус нельзя изменить вручную — источником истины остаётся провайдер.">{loading ? <RowsSkeleton count={5} /> : payments.length ? <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Продукт</th><th className="pb-3">Сумма</th><th className="pb-3">Статус</th><th className="pb-3">Дата</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{payment.user_telegram_id}</td><td className="py-4 text-[var(--color-foreground)]">{productName[payment.product]}</td><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{formatAmount(payment.amount, payment.currency)}</td><td className="py-4"><StatusBadge tone={payment.status === "succeeded" ? "success" : payment.status === "failed" ? "danger" : "warning"}>{payment.status === "succeeded" ? "Оплачен" : payment.status === "failed" ? "Ошибка" : "Ожидает"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(payment.paid_at ?? payment.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<CreditCard size={21} />} title="Платежей пока нет" description="После создания первого счёта здесь появится реальная история SaaS-платежей." />}</Section>;
 }
 
 function OperationsSection({ operations, loading, onRetryOperation, retryingOperationId }: { operations: AdminOperation[]; loading: boolean; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
@@ -1927,7 +1927,7 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
 }
 
 function SystemSection({ entries, systemStatus, loading }: { entries: AdminAuditEntry[]; systemStatus: AdminSystemStatus | null; loading: boolean }) {
-  const jobLabel: Record<string, string> = { "bot-reminders": "Дожимы", "pro-renewals": "Продление PRO", "client-payment-fulfillment": "Выдача после оплаты" };
+  const jobLabel: Record<string, string> = { "bot-reminders": "Дожимы", "pro-renewals": "Продление подписок", "client-payment-fulfillment": "Выдача после оплаты" };
   return <div className="grid gap-6 2xl:grid-cols-[minmax(360px,0.8fr)_minmax(0,1.4fr)]"><Section title="Состояние системы" description="Состояние планировщика относится к текущему процессу приложения и не заменяет внешний мониторинг.">{loading ? <RowsSkeleton count={3} /> : systemStatus ? <div className="space-y-3"><SystemRow label="Планировщик" value={systemStatus.running ? "Запущен" : "Не запущен"} tone={systemStatus.running ? "success" : "danger"} />{systemStatus.jobs.map((job) => <SystemRow key={job.id} label={jobLabel[job.id] ?? job.id} value={job.last_error ? `Ошибка: ${job.last_error}` : job.last_finished_at ? `Последний запуск: ${formatDate(job.last_finished_at)}` : job.next_run_at ? `Первый запуск: ${formatDate(job.next_run_at)}` : "Нет данных о запуске"} tone={job.last_error ? "danger" : "neutral"} />)}</div> : <EmptyState icon={<AlertTriangle size={21} />} title="Статус процесса недоступен" description="Нажмите «Обновить», чтобы повторить запрос." />}</Section><Section title="Журнал действий" description="Изменения доступа, статусов и повторные операции записываются здесь.">{loading ? <RowsSkeleton count={4} /> : entries.length ? <ol className="max-h-[420px] divide-y divide-[var(--color-border)] overflow-y-auto pr-2 md:max-h-[560px]">{entries.map((entry) => <li key={entry.id} className="py-4 first:pt-0"><p className="font-semibold text-[var(--color-foreground)]">{auditActionLabel[entry.action] ?? entry.action}</p>{auditSummary(entry) ? <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">{auditSummary(entry)}</p> : null}<p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">Администратор {entry.actor_telegram_id} · {entry.target_type}{entry.target_id ? ` №${entry.target_id}` : ""} · {formatDate(entry.created_at)}</p></li>)}</ol> : <EmptyState icon={<ClipboardList size={21} />} title="Журнал пока пуст" description="Он начнёт заполняться, когда будут добавлены административные действия." />}</Section></div>;
 }
 

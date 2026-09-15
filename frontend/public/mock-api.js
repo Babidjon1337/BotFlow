@@ -26,7 +26,7 @@
     paymentWebhookUrl: 'https://api.botflow.app/api/payments/yookassa/14',
     offerUrl: '',
     offerInstallments: false,
-    usersCount: 0,
+    usersCount: 48,
     sales: 12,
     revenue: 18000,
   };
@@ -47,7 +47,7 @@
     botStatus: 'inactive',
     readinessReasons: [],
     nodes: [
-      { id: 'start', type: 'message', content: '<b>Здравствуйте!</b> Я помогу подобрать удобное время 👋', buttonText: 'Записаться', media: false, mediaFileId: null, mediaAssetId: null, mediaType: null, push_delay: '1h' },
+      { id: 'start', type: 'message', content: '<b>Здравствуйте!</b> Я помогу подобрать удобное время.', buttonText: 'Записаться', media: false, mediaFileId: null, mediaAssetId: null, mediaType: null, push_delay: '1h' },
       { id: 'push1', type: 'message', content: 'Ещё актуально? Осталось 2 места на этой неделе.', buttonText: 'Купить', media: false, mediaFileId: null, mediaAssetId: null, mediaType: null, push_delay: '24h' },
       { id: 'push2', type: 'message', content: '', buttonText: '', media: false, mediaFileId: null, mediaAssetId: null, mediaType: null, push_delay: '48h' },
       { id: 'payment', type: 'payment', paymentMode: 'auto', managerUrl: '', managerText: '', tariffSelectionText: '', tariffs: [ { id: 't1', name: 'Консультация 60 мин', price: '1500', description: '', actionType: 'link', actionData: 'https://zoom.us/j/4821', media: false, mediaFileId: null, mediaAssetId: null, mediaType: null } ] },
@@ -61,7 +61,7 @@
   };
   const adminBot = {
     id: 14, owner_id: 777, owner_telegram_id: 777, display_name: 'Продажа', username: 'unknown',
-    tg_bot_id: 9001, status: 'draft', users_count: 0, is_token_locked: false, has_lifetime_license: false,
+    tg_bot_id: 9001, status: 'draft', users_count: 48, is_token_locked: false, has_lifetime_license: false,
     funnel_complete: false, media_sync_done: true, payment_provider: 'yookassa',
     has_payment_credentials: true, created_at: '2026-08-20T10:00:00Z',
     subscription: { status: 'inactive', ends_at: null, auto_renew: false, amount_rub: 0, is_lifetime: false },
@@ -118,7 +118,13 @@
     }
     if (path.startsWith('/api/bots/14/stats/chart')) return ok({ points: [ { date: '2026-08-25', sales: 2 }, { date: '2026-08-26', sales: 1 }, { date: '2026-08-27', sales: 3 } ] });
     if (path.startsWith('/api/bots/14/stats')) return ok({ views: 1200, clicks: 340, sales: 12, revenue: 18000 });
-    if (path.startsWith('/api/bots/14/leads')) return ok({ leads: [], total: 0 });
+    if (path.startsWith('/api/bots/14/leads')) return ok({
+      leads: [
+        { telegram_id: 101, username: 'ivan_petrov', firstName: 'Иван', hasPaid: false, createdAt: '2026-08-28T10:00:00Z' },
+        { telegram_id: 102, username: 'maria_k', firstName: 'Мария', hasPaid: true, createdAt: '2026-08-29T14:30:00Z' },
+      ],
+      total: 48,
+    });
     if (path === '/api/bots/14' && method === 'PATCH') return ok(botPayload);
     if (path === '/api/profile/notification-settings') return ok({ user });
     if (path === '/api/admin/overview') return ok({ users_total: 1, bots_total: 1, bots_active: 0, saas_payments_succeeded: 1, saas_revenue: 990, operations_requiring_attention: 0 });
