@@ -1529,19 +1529,40 @@ async def create_large_media_session(bot_id: int, request: Request):
     if not node_id:
         raise HTTPException(status_code=422, detail="node_id обязателен")
 
+    bot_username = (bot.username or "").lstrip("@")
+    if not bot_username and bot.bot_token_enc:
+        try:
+            from aiogram import Bot
+            token = crypto.decrypt(bot.bot_token_enc)
+            temp_bot = Bot(token=token, session=request.app.state.session)
+            me = await temp_bot.get_me()
+            if me and me.username:
+                bot_username = me.username.lstrip("@")
+                from database.requests.bot_rq import update_bot_config
+                await update_bot_config(bot.id, username=bot_username)
+        except Exception as exc:
+            logger.warning("Не удалось определить username бота %s через Telegram API: %s", bot.id, exc)
+
+    if not bot_username:
+        raise HTTPException(
+            status_code=400,
+            detail="Не удалось определить username бота. Убедитесь, что токен бота указан и валиден.",
+        )
+
     from services.media_upload_session import create_upload_session, get_node_human_title
     node_title = get_node_human_title(node_id, bot.funnel_schema)
+    owner_tg_id = bot.owner.telegram_id if getattr(bot, "owner", None) else bot.owner_id
     session = create_upload_session(
         bot_id=bot.id,
-        tg_bot_id=bot.tg_bot_id,
-        owner_tg_id=bot.owner.telegram_id,
+        tg_bot_id=bot.tg_bot_id or 0,
+        owner_tg_id=owner_tg_id,
         node_id=node_id,
         node_title=node_title,
     )
     return {
         "sessionId": session.id,
-        "botUsername": bot.bot_username,
-        "deepLink": f"https://t.me/{bot.bot_username}?start=up_{session.id}",
+        "botUsername": bot_username,
+        "deepLink": f"https://t.me/{bot_username}?start=up_{session.id}",
         "nodeTitle": session.node_title,
     }
 
