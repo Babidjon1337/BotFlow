@@ -136,8 +136,13 @@ export const SyncedMediaPreview = ({
       );
     }
     return (
-      <div className="relative w-full h-full select-none overflow-hidden">
-        <img src={previewUrl} alt="Медиа" className="w-full h-full object-cover" />
+      <div className="relative w-full h-full select-none overflow-hidden pointer-events-none">
+        <img
+          src={previewUrl}
+          alt="Медиа"
+          draggable={false}
+          className="w-full h-full object-cover select-none pointer-events-none"
+        />
         {mediaType === "video" && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25">
             <Play size={13} className="fill-white text-white drop-shadow-sm translate-x-0.5" />
@@ -815,19 +820,28 @@ export const TelegramTextEditor = ({
                   <Reorder.Item
                     key={asset.mediaAssetId || `asset-${idx}`}
                     value={asset}
+                    drag="x"
                     dragListener={allAssets.length > 1 && !!onReorderMedia}
+                    dragConstraints={{ top: 0, bottom: 0 }}
+                    dragElastic={0.05}
+                    whileDrag={{
+                      scale: 1.05,
+                      zIndex: 40,
+                      boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.4)",
+                      cursor: "grabbing",
+                    }}
                     title={
                       allAssets.length > 1
-                        ? "Перетащите, чтобы изменить очередность отправки"
+                        ? "Перетащите блок вправо или влево для смены порядка"
                         : undefined
                     }
-                    className={`relative size-16 shrink-0 select-none ${
+                    className={`relative size-16 shrink-0 select-none touch-none ${
                       allAssets.length > 1 && onReorderMedia
                         ? "cursor-grab active:cursor-grabbing"
                         : ""
                     }`}
                   >
-                    <div className="relative flex size-full items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                    <div className="relative flex size-full items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] pointer-events-none select-none">
                       {botId && asset.mediaAssetId ? (
                         <SyncedMediaPreview
                           botId={botId}
@@ -839,13 +853,6 @@ export const TelegramTextEditor = ({
                         <FileText size={20} className="text-[var(--color-primary)]" />
                       ) : (
                         <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
-                      )}
-
-                      {/* Порядковый номер отправки (1, 2, 3...) */}
-                      {allAssets.length > 1 && (
-                        <span className="absolute bottom-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/75 text-[9px] font-bold text-white shadow-xs pointer-events-none backdrop-blur-xs ring-1 ring-white/40">
-                          {idx + 1}
-                        </span>
                       )}
                     </div>
 
@@ -898,7 +905,7 @@ export const TelegramTextEditor = ({
           <p className="mt-1.5 text-[11px] text-[var(--color-foreground-tertiary)]">
             {mediaHint ||
               (allAssets.length > 1
-                ? "Порядок отправки: 1 → 2… Перетаскивайте файлы для смены очередности"
+                ? "Перетаскивайте блоки вправо или влево для смены порядка"
                 : allAssets.length === 1
                 ? "Медиа над текстом · до 10 файлов (фото и видео)"
                 : "Фото или видео над текстом · до 10 файлов")}
