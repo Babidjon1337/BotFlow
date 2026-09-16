@@ -803,13 +803,13 @@ export const TelegramTextEditor = ({
       {attachment}
       {!attachment && (onUploadMedia || onUploadLargeMedia) && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2.5 overflow-x-auto pt-2 px-1 pb-1">
             {allAssets.length > 0 && (
               <Reorder.Group
                 axis="x"
                 values={allAssets}
                 onReorder={(newOrder) => onReorderMedia?.(newOrder)}
-                className="flex items-center gap-2 shrink-0"
+                className="flex items-center gap-2.5 shrink-0"
               >
                 {allAssets.map((asset, idx) => (
                   <Reorder.Item
@@ -821,31 +821,33 @@ export const TelegramTextEditor = ({
                         ? "Перетащите, чтобы изменить очередность отправки"
                         : undefined
                     }
-                    className={`relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shrink-0 select-none ${
+                    className={`relative size-16 shrink-0 select-none ${
                       allAssets.length > 1 && onReorderMedia
-                        ? "cursor-grab active:cursor-grabbing hover:border-[var(--color-primary)]/60"
+                        ? "cursor-grab active:cursor-grabbing"
                         : ""
                     }`}
                   >
-                    {botId && asset.mediaAssetId ? (
-                      <SyncedMediaPreview
-                        botId={botId}
-                        assetId={asset.mediaAssetId}
-                        mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType}
-                        compact
-                      />
-                    ) : asset.mediaType === "document" ? (
-                      <FileText size={20} className="text-[var(--color-primary)]" />
-                    ) : (
-                      <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
-                    )}
+                    <div className="relative flex size-full items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+                      {botId && asset.mediaAssetId ? (
+                        <SyncedMediaPreview
+                          botId={botId}
+                          assetId={asset.mediaAssetId}
+                          mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType}
+                          compact
+                        />
+                      ) : asset.mediaType === "document" ? (
+                        <FileText size={20} className="text-[var(--color-primary)]" />
+                      ) : (
+                        <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
+                      )}
 
-                    {/* Порядковый номер отправки (1, 2, 3...) */}
-                    {allAssets.length > 1 && (
-                      <span className="absolute bottom-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/75 text-[9px] font-bold text-white shadow-xs pointer-events-none backdrop-blur-xs ring-1 ring-white/40">
-                        {idx + 1}
-                      </span>
-                    )}
+                      {/* Порядковый номер отправки (1, 2, 3...) */}
+                      {allAssets.length > 1 && (
+                        <span className="absolute bottom-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/75 text-[9px] font-bold text-white shadow-xs pointer-events-none backdrop-blur-xs ring-1 ring-white/40">
+                          {idx + 1}
+                        </span>
+                      )}
+                    </div>
 
                     {onRemoveMedia && (
                       <button
@@ -861,9 +863,9 @@ export const TelegramTextEditor = ({
                         }}
                         aria-label="Убрать медиа"
                         title="Удалить этот файл"
-                        className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-red-600 text-white shadow-md transition-all hover:scale-110 hover:bg-red-700 active:scale-90 cursor-pointer z-10 ring-1 ring-white/50"
+                        className="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-black/75 text-red-500 backdrop-blur-xs transition-all hover:bg-black/90 hover:scale-110 active:scale-90 shadow-md cursor-pointer z-20 ring-1 ring-white/30 hover:text-red-400"
                       >
-                        <X className="size-3 stroke-[2.5]" aria-hidden />
+                        <X className="size-3.5 stroke-[2.5]" aria-hidden />
                       </button>
                     )}
                   </Reorder.Item>
