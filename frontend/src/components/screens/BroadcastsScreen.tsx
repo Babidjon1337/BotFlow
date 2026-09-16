@@ -30,6 +30,7 @@ import { BroadcastComposerForm } from '../common/BroadcastComposerForm';
 import { useAlert } from '../AlertProvider';
 import { useAppState } from '../../providers/AppStateProvider';
 import { BroadcastComposerSheet } from '../sheets/BroadcastComposerSheet';
+import { useServerEvent } from '../../hooks/useServerEvents';
 
 type BroadcastsTab = 'audience' | 'broadcasts';
 
@@ -631,20 +632,32 @@ function BroadcastsTabContent({
     void load();
   }, [load, reloadKey]);
 
-  const hasActive = (broadcasts ?? []).some(
-    (item) =>
-      item.status === 'queued' ||
-      item.status === 'sending' ||
-      item.status === 'scheduled'
+  // Real-time broadcast status updates via SSE
+  useServerEvent<{ botId: number; broadcastId: string; status: BroadcastStatus }>(
+    'broadcast:status_changed',
+    (event) => {
+      if (!event || String(event.botId) !== String(botId)) return;
+      void load();
+    }
   );
 
+  // Gentle fallback ONLY while a broadcast is actively sending (never when merely scheduled)
+  const hasSending = (broadcasts ?? []).some((item) => item.status === 'sending');
+
   useEffect(() => {
-    if (!hasActive) return;
+    if (!hasSending) return;
+    let attempts = 0;
+    const maxAttempts = 12; // max 60s safety window
     const timer = setInterval(() => {
+      attempts++;
+      if (attempts >= maxAttempts) {
+        clearInterval(timer);
+        return;
+      }
       void load();
-    }, 2500);
+    }, 5000);
     return () => clearInterval(timer);
-  }, [hasActive, load]);
+  }, [hasSending, load]);
 
   const handleRetry = async (broadcast: Broadcast) => {
     setRetryingId(broadcast.id);

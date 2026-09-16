@@ -12,6 +12,7 @@ import { useAppState } from './providers/AppStateProvider';
 import { mapApiBot } from './services/botMapper';
 import { useBotToggle } from './hooks/useBotToggle';
 import { useBotSelectionGuard } from './hooks/useBotSelectionGuard';
+import { useServerEvent } from './hooks/useServerEvents';
 
 import {
   loadStoredRoute,
@@ -244,35 +245,73 @@ export default function App() {
     backButton.hide();
   }, [appState.activeSheet, appState.activeBot, setSheet, resolvedRoute, switchingBotId, isBotCreating]);
 
+  // Listen for real-time bot media sync completion via SSE
+  useServerEvent<{ botId: number; mediaSyncDone: boolean }>(
+    'bot:media_sync_done',
+    (data) => {
+      if (!data) return;
+      setAppState((prev) => {
+        const mappedBots = prev.bots.map((b) =>
+          String(b.id) === String(data.botId) ? { ...b, mediaSyncDone: data.mediaSyncDone } : b
+        );
+        const updatedActive =
+          prev.activeBot && String(prev.activeBot.id) === String(data.botId)
+            ? { ...prev.activeBot, mediaSyncDone: data.mediaSyncDone }
+            : prev.activeBot;
+        return {
+          ...prev,
+          bots: mappedBots,
+          activeBot: updatedActive,
+        };
+      });
+    }
+  );
+
+  // Single debounced fallback on tab focus/visibility change (no continuous setInterval)
   useEffect(() => {
     const activeBotId = appState.activeBot?.id;
     const needsMediaSync = appState.activeBot?.mediaSyncDone === false;
-    let interval: ReturnType<typeof setInterval> | undefined;
-    if (activeBotId && needsMediaSync) {
-      interval = setInterval(async () => {
-        try {
-          const { apiService } = await import('./services/api');
-          const data = await apiService.getBots();
-          if (data && data.bots) {
-            setAppState(prev => {
-              const mappedBots = data.bots.map(mapApiBot);
-              const updatedBot = mappedBots.find((bot) => String(bot.id) === String(prev.activeBot?.id));
-              if (updatedBot && updatedBot.mediaSyncDone) {
-                return {
-                  ...prev,
-                  bots: mappedBots,
-                  activeBot: updatedBot
-                };
-              }
-              return prev;
-            });
-          }
-        } catch (error) {
-          console.error("Polling sync status failed", error);
+    if (!activeBotId || !needsMediaSync) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const checkOnce = async () => {
+      if (document.hidden) return;
+      try {
+        const { apiService } = await import('./services/api');
+        const data = await apiService.getBots();
+        if (data && data.bots) {
+          setAppState((prev) => {
+            const mappedBots = data.bots.map(mapApiBot);
+            const updatedBot = mappedBots.find(
+              (bot) => String(bot.id) === String(prev.activeBot?.id)
+            );
+            if (updatedBot && updatedBot.mediaSyncDone) {
+              return {
+                ...prev,
+                bots: mappedBots,
+                activeBot: updatedBot,
+              };
+            }
+            return prev;
+          });
         }
-      }, 3000);
-    }
-    return () => clearInterval(interval);
+      } catch (error) {
+        console.error('Visibility fallback sync check failed', error);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(checkOnce, 600);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [appState.activeBot?.id, appState.activeBot?.mediaSyncDone, setAppState]);
 
   const funnelWorkspaceReady = !appState.activeBot || (

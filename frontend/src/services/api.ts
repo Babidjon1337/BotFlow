@@ -210,9 +210,9 @@ export interface AccessLink {
   createdAt: string;
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || "";
+export const BASE_URL = import.meta.env.VITE_API_URL || "";
 
-function getInitData(): string {
+export function getInitData(): string {
   // @ts-expect-error Telegram injects WebApp into the browser window.
   return window.Telegram?.WebApp?.initData || "";
 }

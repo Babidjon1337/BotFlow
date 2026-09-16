@@ -25,6 +25,7 @@ import { TimerPresets } from "../TimerPresets";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
+import { eventStream } from "../../services/eventStream";
 import type { Tariff } from "../../types";
 
 const keepMobileFieldVisible = (element: HTMLElement) => {
@@ -392,10 +393,31 @@ export const Build = () => {
 
       let isCancelled = false;
       let nextTimeoutId: ReturnType<typeof setTimeout> | null = null;
-      let checkAttempts = 0;
-      const MAX_VISIBLE_CHECKS = 8;
-      // Progressive intervals for visible tab checks: 2.5s, 4s, 7s, 10s, 15s, 20s
-      const BACKOFF_INTERVALS = [2500, 4000, 7000, 10000, 15000, 20000];
+      let unsubCompleted: (() => void) | null = null;
+      let unsubCancelled: (() => void) | null = null;
+
+      const applyAssets = (assets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: any }>) => {
+        const node = getBlock(nodeId);
+        const currentAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
+          ? [...node.mediaAssets]
+          : (node?.mediaAssetId && node?.mediaFileId)
+          ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+          : [];
+        const existingIds = new Set(currentAssets.map((a) => a.mediaAssetId));
+        const newItems = assets.filter((a) => !existingIds.has(a.mediaAssetId));
+        if (newItems.length > 0) {
+          const merged = [...currentAssets, ...newItems].slice(-10);
+          updateBlockFields(nodeId, {
+            media: true,
+            mediaFileId: merged[0].mediaFileId,
+            mediaAssetId: merged[0].mediaAssetId,
+            mediaType: merged[0].mediaType,
+            mediaAssets: merged,
+          });
+          setToastType("success");
+          setToastMessage("Медиа получено из Telegram!");
+        }
+      };
 
       const cleanup = () => {
         isCancelled = true;
@@ -403,40 +425,56 @@ export const Build = () => {
           clearTimeout(nextTimeoutId);
           nextTimeoutId = null;
         }
-        document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
-        window.removeEventListener("focus", handleVisibilityOrFocus);
+        if (unsubCompleted) {
+          unsubCompleted();
+          unsubCompleted = null;
+        }
+        if (unsubCancelled) {
+          unsubCancelled();
+          unsubCancelled = null;
+        }
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
       };
       activeUploadSessionCleanupRef.current = cleanup;
 
-      const checkSession = async (): Promise<boolean> => {
+      // 1. Subscribe to SSE events for real-time delivery
+      unsubCompleted = eventStream.subscribe<{
+        botId: number;
+        sessionId: string;
+        nodeId: string;
+        mediaAssets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: any }>;
+      }>("media:upload_completed", (data) => {
+        if (isCancelled || !data) return;
+        if (data.sessionId === session.sessionId || data.nodeId === nodeId) {
+          if (data.mediaAssets && data.mediaAssets.length > 0) {
+            applyAssets(data.mediaAssets);
+          }
+          cleanup();
+        }
+      });
+
+      unsubCancelled = eventStream.subscribe<{
+        botId: number;
+        sessionId: string;
+        nodeId: string;
+      }>("media:upload_cancelled", (data) => {
+        if (isCancelled || !data) return;
+        if (data.sessionId === session.sessionId || data.nodeId === nodeId) {
+          cleanup();
+        }
+      });
+
+      // 2. Single fallback check function
+      const checkSessionOnce = async (): Promise<boolean> => {
         if (isCancelled || !appState.activeBot) return true;
         try {
           const res = await apiService.getMediaUploadSession(appState.activeBot.id, session.sessionId);
           if (isCancelled) return true;
 
           if (res.mediaAssets && res.mediaAssets.length > 0) {
-            const node = getBlock(nodeId);
-            const currentAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
-              ? [...node.mediaAssets]
-              : (node?.mediaAssetId && node?.mediaFileId)
-              ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
-              : [];
-            const existingIds = new Set(currentAssets.map((a) => a.mediaAssetId));
-            const newItems = res.mediaAssets.filter((a) => !existingIds.has(a.mediaAssetId));
-            if (newItems.length > 0) {
-              const merged = [...currentAssets, ...newItems].slice(-10);
-              updateBlockFields(nodeId, {
-                media: true,
-                mediaFileId: merged[0].mediaFileId,
-                mediaAssetId: merged[0].mediaAssetId,
-                mediaType: merged[0].mediaType,
-                mediaAssets: merged,
-              });
-              setToastType("success");
-              setToastMessage("Медиа получено из Telegram!");
-              cleanup();
-              return true;
-            }
+            applyAssets(res.mediaAssets);
+            cleanup();
+            return true;
           }
 
           if (res.isCompleted || res.isCancelled) {
@@ -450,47 +488,20 @@ export const Build = () => {
         return false;
       };
 
-      const scheduleNextCheck = () => {
+      // 3. Fallback on visibility change: when user returns to Mini App, check once after debounce
+      const handleVisibilityChange = () => {
         if (isCancelled) return;
-        // Do not query when document is hidden (user is in Telegram app).
-        // It will immediately check when user returns to the Mini App.
-        if (document.hidden) {
-          return;
-        }
-        if (checkAttempts >= MAX_VISIBLE_CHECKS) {
-          return;
-        }
-        const delay = BACKOFF_INTERVALS[Math.min(checkAttempts, BACKOFF_INTERVALS.length - 1)];
-        checkAttempts++;
-        nextTimeoutId = setTimeout(async () => {
-          const done = await checkSession();
-          if (!done && !document.hidden) {
-            scheduleNextCheck();
-          }
-        }, delay);
-      };
-
-      const handleVisibilityOrFocus = async () => {
-        if (isCancelled) return;
-        // User returned to Mini App!
         if (!document.hidden) {
           if (nextTimeoutId) {
             clearTimeout(nextTimeoutId);
-            nextTimeoutId = null;
           }
-          const done = await checkSession();
-          if (!done) {
-            checkAttempts = 0;
-            scheduleNextCheck();
-          }
+          nextTimeoutId = setTimeout(() => {
+            void checkSessionOnce();
+          }, 500);
         }
       };
 
-      document.addEventListener("visibilitychange", handleVisibilityOrFocus);
-      window.addEventListener("focus", handleVisibilityOrFocus);
-
-      // Start initial scheduling (if user stays visible e.g. split screen)
-      scheduleNextCheck();
+      document.addEventListener("visibilitychange", handleVisibilityChange);
     } catch (err) {
       showAlert({
         title: "Не удалось открыть Telegram",
