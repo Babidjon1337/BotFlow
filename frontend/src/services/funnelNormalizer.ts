@@ -17,7 +17,7 @@ export function normalizeFunnelNodes(nodes: FunnelNode[]): FunnelNode[] {
       return [{
         mediaAssetId: node.mediaAssetId,
         mediaFileId: node.mediaFileId,
-        mediaType: (node.mediaType as any) || "photo",
+        mediaType: node.mediaType === "video" || node.mediaType === "document" ? node.mediaType : "photo",
       }];
     }
     return [];

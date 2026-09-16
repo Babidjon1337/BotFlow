@@ -309,7 +309,7 @@ export const Build = () => {
       const existingAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
         ? [...node.mediaAssets]
         : (node?.mediaAssetId && node?.mediaFileId)
-        ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+        ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: node.mediaType === 'video' || node.mediaType === 'document' ? node.mediaType : 'photo' }]
         : [];
 
       const newAssets = media.mediaAssets && media.mediaAssets.length > 0
@@ -343,7 +343,7 @@ export const Build = () => {
     const existingAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
       ? [...node.mediaAssets]
       : (node?.mediaAssetId && node?.mediaFileId)
-      ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+      ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: node.mediaType === 'video' || node.mediaType === 'document' ? node.mediaType : 'photo' }]
       : [];
 
     if (assetIdToRemove && existingAssets.length > 0) {
@@ -396,12 +396,12 @@ export const Build = () => {
       let unsubCompleted: (() => void) | null = null;
       let unsubCancelled: (() => void) | null = null;
 
-      const applyAssets = (assets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: any }>) => {
+      const applyAssets = (assets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: 'photo' | 'video' | 'document' }>) => {
         const node = getBlock(nodeId);
         const currentAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
           ? [...node.mediaAssets]
           : (node?.mediaAssetId && node?.mediaFileId)
-          ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+          ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: node.mediaType === 'video' || node.mediaType === 'document' ? node.mediaType : 'photo' }]
           : [];
         const existingIds = new Set(currentAssets.map((a) => a.mediaAssetId));
         const newItems = assets.filter((a) => !existingIds.has(a.mediaAssetId));
@@ -437,12 +437,12 @@ export const Build = () => {
       };
       activeUploadSessionCleanupRef.current = cleanup;
 
-      // 1. Subscribe to SSE events for real-time delivery
+      // 1. Primary: Subscribe to SSE events for real-time delivery
       unsubCompleted = eventStream.subscribe<{
         botId: number;
         sessionId: string;
         nodeId: string;
-        mediaAssets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: any }>;
+        mediaAssets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: 'photo' | 'video' | 'document' }>;
       }>("media:upload_completed", (data) => {
         if (isCancelled || !data) return;
         if (data.sessionId === session.sessionId || data.nodeId === nodeId) {
@@ -464,7 +464,7 @@ export const Build = () => {
         }
       });
 
-      // 2. Single fallback check function
+      // 2. Check session status once
       const checkSessionOnce = async (): Promise<boolean> => {
         if (isCancelled || !appState.activeBot) return true;
         try {
@@ -472,7 +472,7 @@ export const Build = () => {
           if (isCancelled) return true;
 
           if (res.mediaAssets && res.mediaAssets.length > 0) {
-            applyAssets(res.mediaAssets);
+            applyAssets(res.mediaAssets as Array<{ mediaAssetId: string; mediaFileId: string; mediaType: 'photo' | 'video' | 'document' }>);
             cleanup();
             return true;
           }
@@ -488,7 +488,26 @@ export const Build = () => {
         return false;
       };
 
-      // 3. Fallback on visibility change: when user returns to Mini App, check once after debounce
+      // 3. Fallback: progressive polling backoff [2500, 4000, 7000, 10000, 15000, 20000]
+      // Only acts as a safety fallback if SSE is delayed or reconnecting.
+      const fallbackDelays = [2500, 4000, 7000, 10000, 15000, 20000];
+      let fallbackIndex = 0;
+
+      const scheduleNextFallbackPoll = () => {
+        if (isCancelled || fallbackIndex >= fallbackDelays.length) return;
+        const delay = fallbackDelays[fallbackIndex++];
+        nextTimeoutId = setTimeout(async () => {
+          if (isCancelled) return;
+          const finished = await checkSessionOnce();
+          if (!finished && !isCancelled) {
+            scheduleNextFallbackPoll();
+          }
+        }, delay);
+      };
+
+      scheduleNextFallbackPoll();
+
+      // 4. Fallback on visibility change: when user returns to Mini App, check immediately
       const handleVisibilityChange = () => {
         if (isCancelled) return;
         if (!document.hidden) {

@@ -4,7 +4,7 @@ export type EventCallback<T = unknown> = (data: T) => void;
 
 class ServerEventStream {
   private eventSource: EventSource | null = null;
-  private listeners: Map<string, Set<EventCallback<any>>> = new Map();
+  private listeners: Map<string, Set<EventCallback<unknown>>> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
@@ -50,18 +50,18 @@ class ServerEventStream {
       }
     }
 
-    this.listeners.get(eventType)!.add(callback as EventCallback<any>);
+    this.listeners.get(eventType)!.add(callback as EventCallback<unknown>);
 
     if (!this.eventSource && !document.hidden) {
       this.connect();
     }
 
     return () => {
-      this.unsubscribe(eventType, callback as EventCallback<any>);
+      this.unsubscribe(eventType, callback as EventCallback<unknown>);
     };
   }
 
-  private unsubscribe(eventType: string, callback: EventCallback<any>) {
+  private unsubscribe(eventType: string, callback: EventCallback<unknown>) {
     const callbacks = this.listeners.get(eventType);
     if (callbacks) {
       callbacks.delete(callback);
