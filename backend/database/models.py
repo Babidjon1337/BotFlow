@@ -72,6 +72,11 @@ class User(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    @property
+    def is_platform_admin(self) -> bool:
+        from config import ADMIN_TELEGRAM_IDS
+        return self.telegram_id in ADMIN_TELEGRAM_IDS
+
     # Связи (Один-ко-Многим)
     bots: Mapped[list["BotConfig"]] = relationship(
         back_populates="owner", cascade="all, delete-orphan"

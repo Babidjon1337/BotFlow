@@ -5,6 +5,7 @@ from sqlalchemy import or_, select, delete, update
 from sqlalchemy.orm import joinedload, selectinload
 from database.models import BotConfig, BotSubscription, User, async_session
 from services.bot_lifecycle import LEGACY_STATUS_BY_LIFECYCLE
+from config import ADMIN_TELEGRAM_IDS
 
 
 async def get_bot_by_id(id: int) -> BotConfig | None:
@@ -353,17 +354,21 @@ async def get_expired_account_subscription_bots(
     Бесплатные (lifetime) боты и админы не трогаются: их подписка не нужна.
     """
     effective_now = now or datetime.now(timezone.utc)
+    conditions = [
+        BotConfig.status == "active",
+        BotConfig.has_lifetime_license.is_(False),
+        User.subscription_ends_at.is_not(None),
+        User.subscription_ends_at <= effective_now,
+    ]
+    if ADMIN_TELEGRAM_IDS:
+        conditions.append(~User.telegram_id.in_(ADMIN_TELEGRAM_IDS))
+
     async with async_session() as session:
         result = await session.scalars(
             select(BotConfig)
             .join(User, User.id == BotConfig.owner_id)
-            .where(
-                BotConfig.status == "active",
-                BotConfig.has_lifetime_license.is_(False),
-                User.is_platform_admin.is_(False),
-                User.subscription_ends_at.is_not(None),
-                User.subscription_ends_at <= effective_now,
-            )
+            .options(joinedload(BotConfig.owner))
+            .where(*conditions)
         )
         return list(result.all())
 
@@ -374,17 +379,19 @@ async def get_subscription_paused_bots_to_resume(
     """Боты, остановленные из-за подписки (pause_reason='subscription'), у которых
     подписка владельца снова активна — после оплаты публикация возвращается."""
     effective_now = now or datetime.now(timezone.utc)
+    resume_conditions = [User.subscription_ends_at > effective_now]
+    if ADMIN_TELEGRAM_IDS:
+        resume_conditions.append(User.telegram_id.in_(ADMIN_TELEGRAM_IDS))
+
     async with async_session() as session:
         result = await session.scalars(
             select(BotConfig)
             .join(User, User.id == BotConfig.owner_id)
+            .options(joinedload(BotConfig.owner))
             .where(
                 BotConfig.lifecycle_status == "paused",
                 BotConfig.pause_reason == "subscription",
-                or_(
-                    User.is_platform_admin.is_(True),
-                    User.subscription_ends_at > effective_now,
-                ),
+                or_(*resume_conditions),
             )
         )
         return list(result.all())

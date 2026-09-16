@@ -209,7 +209,7 @@ async def resume_subscription_bots_job():
             token = crypto.decrypt(bot_config.bot_token_enc)
             bot = Bot(token=token, session=shared_scheduler_session)
             await bot.set_webhook(url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot_config.id}")
-            await bot_lifecycle_service.transition(bot_config, "active")
+            await bot_lifecycle_service.transition(bot_config, "published")
             await set_bot_lifecycle_state(
                 bot_config.id,
                 bot_config.lifecycle_status,
