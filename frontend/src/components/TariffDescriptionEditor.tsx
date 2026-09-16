@@ -1,13 +1,7 @@
-import { useEffect, useRef, type ReactNode } from "react";
-import { Bold, Italic, Strikethrough } from "lucide-react";
-import {
-  getPlainTextLength,
-  insertHtmlAtSelection,
-  normalizePasteInput,
-  toTelegramHtml,
-} from "../lib/telegramHtml";
+import type { ReactNode } from "react";
+import { TelegramTextEditor } from "./TelegramTextEditor";
 
-interface TariffDescriptionEditorProps {
+export interface TariffDescriptionEditorProps {
   value: string;
   onChange: (value: string) => void;
   maxCharacters?: number;
@@ -15,123 +9,53 @@ interface TariffDescriptionEditorProps {
   helperText?: string;
   toolbarAccessory?: ReactNode;
   attachment?: ReactNode;
+  botId?: string;
+  mediaFileId?: string | null;
+  mediaAssetId?: string | null;
+  mediaType?: "photo" | "video" | "document" | null;
+  onUploadMedia?: (file: File) => Promise<void>;
+  onRemoveMedia?: () => void;
+  mediaHint?: string;
 }
 
 const DEFAULT_MAX_CHARACTERS = 3000;
 
-/** Compact rich-text field for the description shown in the Telegram invoice. */
+/**
+ * Unified rich-text field for the tariff description and payment blocks.
+ * Unified with step messages: media row at top, formatting toolbar at bottom.
+ */
 export function TariffDescriptionEditor({
   value,
   onChange,
   maxCharacters = DEFAULT_MAX_CHARACTERS,
   placeholder = "Опишите, что входит в тариф...",
-  helperText = "Описание для счёта",
   toolbarAccessory,
   attachment,
+  botId,
+  mediaFileId,
+  mediaAssetId,
+  mediaType,
+  onUploadMedia,
+  onRemoveMedia,
+  mediaHint = "Клиент увидит фото или видео над описанием тарифа · до 20 МБ",
 }: TariffDescriptionEditorProps) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const textLength = getPlainTextLength(value);
-  const isOverLimit = textLength > maxCharacters;
-
-  useEffect(() => {
-    if (editorRef.current && document.activeElement !== editorRef.current) {
-      const cleanValue = toTelegramHtml(value || "");
-      if (toTelegramHtml(editorRef.current.innerHTML) !== cleanValue) {
-        editorRef.current.innerHTML = cleanValue;
-      }
-    }
-  }, [value]);
-
-  const emitValue = () => {
-    if (editorRef.current) {
-      const clean = toTelegramHtml(editorRef.current.innerHTML);
-      onChange(clean);
-    }
-  };
-
-  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const htmlData = event.clipboardData.getData("text/html");
-    const plainText = event.clipboardData.getData("text/plain");
-    const cleanHtml = normalizePasteInput(htmlData, plainText);
-    if (cleanHtml) {
-      insertHtmlAtSelection(cleanHtml);
-      emitValue();
-    }
-  };
-
-  const format = (command: "bold" | "italic" | "strikeThrough") => {
-    document.execCommand(command, false);
-    emitValue();
-    editorRef.current?.focus();
-  };
-
   return (
-    <div className={`overflow-hidden rounded-xl border bg-[var(--color-surface)] focus-within:border-[var(--color-primary)] ${isOverLimit ? "border-[var(--color-danger)]" : "border-[var(--color-border)]"}`}>
-      {attachment}
-      <div className="flex items-center gap-1 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5">
-        <button
-          type="button"
-          aria-label="Сделать текст жирным"
-          title="Жирный"
-          onMouseDown={(event) => {
-            event.preventDefault();
-            format("bold");
-          }}
-          className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
-        >
-          <Bold size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Сделать текст курсивом"
-          title="Курсив"
-          onMouseDown={(event) => {
-            event.preventDefault();
-            format("italic");
-          }}
-          className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
-        >
-          <Italic size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Зачеркнуть текст"
-          title="Зачёркнутый"
-          onMouseDown={(event) => {
-            event.preventDefault();
-            format("strikeThrough");
-          }}
-          className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
-        >
-          <Strikethrough size={14} />
-        </button>
-        <span className="ml-2 text-[11px] text-[var(--color-foreground-tertiary)]">
-          Форматирование увидит клиент в счёте
-        </span>
-        {toolbarAccessory && <div className="ml-auto shrink-0">{toolbarAccessory}</div>}
-      </div>
-      <div
-        ref={editorRef}
-        contentEditable
-        role="textbox"
-        aria-multiline="true"
-        data-placeholder={placeholder}
-        onInput={emitValue}
-        onBlur={emitValue}
-        onPaste={handlePaste}
-        className="rich-text-editor min-h-[88px] p-3 text-[14px] outline-none"
-        style={{
-          color: "var(--color-foreground)",
-          overflowWrap: "anywhere",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      />
-      <div className={`flex justify-end border-t border-[var(--color-border)] px-3 py-1.5 text-[11px] ${isOverLimit ? "bg-[var(--color-danger-soft)] font-semibold text-[var(--color-danger)]" : "bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)]"}`}>
-        {isOverLimit ? "Сократите текст: " : `${helperText}: `}
-        {textLength} / {maxCharacters}
-      </div>
-    </div>
+    <TelegramTextEditor
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      maxCharacters={maxCharacters}
+      toolbarAccessory={toolbarAccessory}
+      attachment={attachment}
+      botId={botId}
+      mediaFileId={mediaFileId}
+      mediaAssetId={mediaAssetId}
+      mediaType={mediaType}
+      onUploadMedia={onUploadMedia}
+      onRemoveMedia={onRemoveMedia}
+      mediaHint={mediaHint}
+      minHeight="min-h-[88px]"
+      maxHeight="max-h-[300px]"
+    />
   );
 }

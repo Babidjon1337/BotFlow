@@ -5,7 +5,6 @@ import { DeliverySelector } from './DeliverySelector';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
 import { TariffDescriptionEditor } from './TariffDescriptionEditor';
-import { MediaAttachmentPicker } from './MediaAttachmentPicker';
 import type { FunnelNode, Tariff } from '../types';
 
 interface PaymentBlockEditorProps {
@@ -218,21 +217,13 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             helperText="Сообщение для клиента"
             maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
             onChange={(value) => onChange('tariffSelectionText', value)}
-            toolbarAccessory={!node?.mediaFileId ? <MediaAttachmentPicker
-              botId={botId} onUpload={onUploadPaymentMedia} onRemove={onRemovePaymentMedia}
-              label="Добавить фото или видео" hint="Фото или видео над текстом выбора тарифа. До 20 МБ." triggerOnly
-            /> : undefined}
-            attachment={node?.mediaFileId ? <MediaAttachmentPicker
-              botId={botId}
-              assetId={node?.mediaAssetId}
-              fileId={node?.mediaFileId}
-              mediaType={node?.mediaType === 'photo' || node?.mediaType === 'video' ? node.mediaType : null}
-              onUpload={onUploadPaymentMedia}
-              onRemove={onRemovePaymentMedia}
-              label="Добавить фото или видео"
-              hint="Будет показано над текстом выбора тарифа. До 20 МБ."
-              embedded
-            /> : undefined}
+            botId={botId}
+            mediaFileId={node?.mediaFileId}
+            mediaAssetId={node?.mediaAssetId}
+            mediaType={node?.mediaType === 'photo' || node?.mediaType === 'video' ? node.mediaType : null}
+            onUploadMedia={onUploadPaymentMedia}
+            onRemoveMedia={onRemovePaymentMedia}
+            mediaHint="Фото или видео над текстом выбора тарифа · до 20 МБ"
           />
         </motion.div>
       )}
@@ -372,21 +363,13 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                           <TariffDescriptionEditor
                             value={tariff.description}
                             onChange={(value) => updateTariff(tariff.id, 'description', value)}
-                            toolbarAccessory={!tariff.mediaFileId ? <MediaAttachmentPicker
-                              botId={botId} onUpload={(file) => onUploadTariffMedia(tariff.id, file)} onRemove={() => onRemoveTariffMedia(tariff.id)}
-                              label="Добавить фото или видео к счёту" hint="Фото или видео над описанием счёта. До 20 МБ." triggerOnly
-                            /> : undefined}
-                            attachment={tariff.mediaFileId ? <MediaAttachmentPicker
-                              botId={botId}
-                              assetId={tariff.mediaAssetId}
-                              fileId={tariff.mediaFileId}
-                              mediaType={tariff.mediaType}
-                              onUpload={(file) => onUploadTariffMedia(tariff.id, file)}
-                              onRemove={() => onRemoveTariffMedia(tariff.id)}
-                              label="Добавить фото или видео к счёту"
-                              hint="Клиент увидит его над описанием выбранного тарифа. До 20 МБ."
-                              embedded
-                            /> : undefined}
+                            botId={botId}
+                            mediaFileId={tariff.mediaFileId}
+                            mediaAssetId={tariff.mediaAssetId}
+                            mediaType={tariff.mediaType}
+                            onUploadMedia={(file) => onUploadTariffMedia(tariff.id, file)}
+                            onRemoveMedia={() => onRemoveTariffMedia(tariff.id)}
+                            mediaHint="Клиент увидит фото или видео над описанием выбранного тарифа · до 20 МБ"
                           />
                         </div>
 
