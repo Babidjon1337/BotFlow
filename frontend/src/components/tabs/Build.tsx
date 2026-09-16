@@ -272,7 +272,7 @@ export const Build = () => {
         activeUploadSessionCleanupRef.current = null;
       }
     };
-  }, []);
+  }, [appState.activeBot?.id]);
 
   // Auto-sync emulator: when selectedBlockId changes, switch preview screen
   useEffect(() => {
