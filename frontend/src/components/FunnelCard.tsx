@@ -25,8 +25,8 @@ export const FunnelCard = ({ stepId, title, isComplete, defaultExpanded = false,
           ? '1.5px solid var(--color-border-strong)'
           : '1px solid var(--color-border)',
         boxShadow: isExpanded
-          ? '0 10px 25px -5px rgba(13, 20, 30, 0.08), 0 8px 10px -6px rgba(13, 20, 30, 0.04)'
-          : '0 1px 3px 0 rgba(13, 20, 30, 0.06), 0 1px 2px -1px rgba(13, 20, 30, 0.04)',
+          ? 'var(--shadow-float)'
+          : 'var(--shadow-card)',
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
       }}
     >

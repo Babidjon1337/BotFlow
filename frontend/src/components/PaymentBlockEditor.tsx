@@ -254,11 +254,11 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.97 }}
                 transition={{ duration: 0.15 }}
-                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xs overflow-hidden"
+                className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden"
               >
                 {/* ── Tariff header (click to collapse) ── */}
                 <div
-                  className={`flex items-center justify-between px-4 py-3.5 cursor-pointer select-none transition-colors hover:bg-[var(--color-surface-2)] ${!isCollapsed ? 'border-b border-[var(--color-border)]' : ''}`}
+                  className={`flex items-center justify-between px-4 py-3.5 cursor-pointer select-none transition-colors bg-[var(--color-surface-2)]/70 hover:bg-[var(--color-surface-2)] ${!isCollapsed ? 'border-b border-[var(--color-border)]' : ''}`}
                   onClick={() => toggleCollapse(tariff.id)}
                 >
                   <div className="flex items-center gap-3 min-w-0">

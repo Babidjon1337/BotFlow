@@ -574,7 +574,7 @@ function Overview({ overview, operations, loading, onNavigate, onRetryOperation,
     <div className="space-y-8">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(({ label, value, icon: Icon, note }) => (
-          <article key={label} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
+          <article key={label} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-card)]">
             <Icon size={18} className="mb-5 text-[var(--color-primary)]" aria-hidden="true" />
             <p className="font-accent text-[22px] font-semibold leading-none tracking-[-0.01em] tabular-nums text-[var(--color-foreground)]">{loading || value === null ? "—" : value}</p>
             <h2 className="mt-2 text-sm font-semibold text-[var(--color-foreground)]">{label}</h2>
@@ -1938,11 +1938,31 @@ function OperationRow({ operation, expanded = false, onRetry, busy = false }: { 
 }
 
 function SearchInput({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
-  return <label className="relative block flex-1"><span className="sr-only">Поиск</span><Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" aria-hidden="true" /><input value={value} onChange={(event) => onChange(event.target.value)} type="search" placeholder={placeholder} className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] py-0 pl-10 pr-3 text-sm text-[var(--color-foreground)] outline-none transition-colors placeholder:text-[var(--color-foreground-tertiary)] focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary-soft)]" /></label>;
+  return (
+    <label className="relative block flex-1">
+      <span className="sr-only">Поиск</span>
+      <Search size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        type="search"
+        placeholder={placeholder}
+        className="h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] py-0 pl-10 pr-3 text-sm text-[var(--color-foreground)] outline-none transition-all placeholder:text-[var(--color-foreground-tertiary)] focus:border-[var(--color-primary)] focus:bg-[var(--color-surface)] focus:ring-2 focus:ring-[var(--color-primary-soft)]"
+      />
+    </label>
+  );
 }
 
 function Section({ title, description, children }: { title: string; description: string; children: ReactNode }) {
-  return <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6"><header className="mb-5"><h2 className="text-base font-bold tracking-[-0.01em] text-[var(--color-foreground)]">{title}</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-foreground-secondary)]">{description}</p></header>{children}</section>;
+  return (
+    <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6 shadow-[var(--shadow-card)]">
+      <header className="mb-5">
+        <h2 className="text-base font-bold tracking-[-0.01em] text-[var(--color-foreground)]">{title}</h2>
+        <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--color-foreground-secondary)]">{description}</p>
+      </header>
+      {children}
+    </section>
+  );
 }
 
 function StatusBadge({ tone, children }: { tone: "success" | "warning" | "danger" | "neutral"; children: ReactNode }) {
@@ -1950,7 +1970,17 @@ function StatusBadge({ tone, children }: { tone: "success" | "warning" | "danger
   return <span className={`inline-flex w-fit whitespace-nowrap items-center rounded-lg px-2.5 py-1 text-xs font-semibold ${styles[tone]}`}>{children}</span>;
 }
 
-function SystemRow({ label, value, tone }: { label: string; value: string; tone: "success" | "neutral" | "danger" }) { return <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-xl bg-[var(--color-surface-2)] p-4"><div className="min-w-0"><p className="text-sm font-semibold text-[var(--color-foreground)]">{label}</p><p className="mt-1 break-words text-xs leading-5 text-[var(--color-foreground-secondary)]">{value}</p></div><StatusBadge tone={tone}>{tone === "success" ? "Работает" : tone === "danger" ? "Ошибка" : "Ожидает"}</StatusBadge></div>; }
+function SystemRow({ label, value, tone }: { label: string; value: string; tone: "success" | "neutral" | "danger" }) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/60 p-4">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-[var(--color-foreground)]">{label}</p>
+        <p className="mt-1 break-words text-xs leading-5 text-[var(--color-foreground-secondary)]">{value}</p>
+      </div>
+      <StatusBadge tone={tone}>{tone === "success" ? "Работает" : tone === "danger" ? "Ошибка" : "Ожидает"}</StatusBadge>
+    </div>
+  );
+}
 
 function EmptyState({ icon, title, description }: { icon: ReactNode; title: string; description: string }) { return <div className="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center"><div className="mb-3 text-[var(--color-foreground-tertiary)]">{icon}</div><h3 className="text-sm font-bold text-[var(--color-foreground)]">{title}</h3><p className="mt-1 max-w-sm text-xs leading-5 text-[var(--color-foreground-secondary)]">{description}</p></div>; }
 

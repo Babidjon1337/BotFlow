@@ -11,17 +11,17 @@
 :root {
   /* ── Primitive: нейтральная шкала ── */
   --n-0: #ffffff;
-  --n-25: #f8fafc;
-  --n-50: #f0f3f8;
-  --n-100: #e4e9f2;
-  --n-200: #d5dce6;
-  --n-300: #bac4d4;
-  --n-400: #8895a7;
-  --n-500: #5d6b7e;
-  --n-600: #424e61;
-  --n-700: #2c3646;
-  --n-800: #192231;
-  --n-900: #0d141e;
+  --n-25: #f6f8fb;
+  --n-50: #eaedf3;
+  --n-100: #e2e7ef;
+  --n-200: #cbd5e1;
+  --n-300: #94a3b8;
+  --n-400: #64748b;
+  --n-500: #475569;
+  --n-600: #334155;
+  --n-700: #1e293b;
+  --n-800: #0f172a;
+  --n-900: #020617;
 
   /* ── Primitive: акцент Blue ── */
   --p-100: #eff6ff;
@@ -47,9 +47,9 @@
   --card-foreground: var(--foreground);
   --surface-raised: #ffffff;
 
-  --muted: var(--n-100);
+  --muted: #f1f4f9;
   --muted-foreground: var(--n-500);
-  --secondary: var(--n-100);
+  --secondary: #edf1f7;
   --secondary-foreground: var(--n-700);
 
   --primary: var(--p-500);
@@ -93,27 +93,27 @@
   --ink-foreground: var(--n-0);
 
   /* ── Semantic: тени ── */
-  --shadow-xs: 0 1px 2px rgb(13 20 30 / 0.05);
-  --shadow-card: 0 1px 3px rgb(13 20 30 / 0.08), 0 1px 2px rgb(13 20 30 / 0.04);
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-card: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 4px 12px -2px rgb(15 23 42 / 0.05);
   --shadow-chip:
-    0 12px 28px -8px rgb(13 20 30 / 0.16), 0 2px 8px rgb(13 20 30 / 0.05);
+    0 12px 28px -8px rgb(15 23 42 / 0.14), 0 2px 8px rgb(15 23 42 / 0.04);
   --shadow-float:
-    0 12px 32px -8px rgb(13 20 30 / 0.16), 0 2px 6px rgb(13 20 30 / 0.06);
+    0 4px 6px -1px rgb(15 23 42 / 0.08), 0 16px 32px -4px rgb(15 23 42 / 0.09);
 }
 
 .dark {
-  --n-0: #0b0c0f;
-  --n-25: #101216;
-  --n-50: #15181d;
-  --n-100: #1c2026;
-  --n-200: #292e37;
-  --n-300: #343845;
-  --n-400: #9299a6;
-  --n-500: #9299a6;
-  --n-600: #9299a6;
-  --n-700: #cdd2de;
-  --n-800: #e4e7ec;
-  --n-900: #eceff4;
+  --n-0: #090a0f;
+  --n-25: #0f1118;
+  --n-50: #151822;
+  --n-100: #1e2332;
+  --n-200: #282e3e;
+  --n-300: #3b445c;
+  --n-400: #8892a4;
+  --n-500: #9aa4b6;
+  --n-600: #b0bac9;
+  --n-700: #cbd3e0;
+  --n-800: #e2e7ef;
+  --n-900: #f1f4f9;
 
   --p-100: #172554;
   --p-200: #1e3a8a;
@@ -134,7 +134,7 @@
 
   --card: var(--n-50);
   --card-foreground: var(--foreground);
-  --surface-raised: #16171c;
+  --surface-raised: #1c202d;
 
   --muted: var(--n-100);
   --muted-foreground: var(--n-500);
@@ -171,12 +171,12 @@
   --ink: #f8fafc;
   --ink-foreground: #0b0c0f;
 
-  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.24);
-  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.28);
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-card: 0 4px 20px -2px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
   --shadow-chip:
-    0 12px 28px -8px rgb(0 0 0 / 0.5), 0 2px 8px rgb(0 0 0 / 0.3);
+    0 12px 28px -8px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
   --shadow-float:
-    0 12px 32px -8px rgb(0 0 0 / 0.56), 0 2px 6px rgb(0 0 0 / 0.32);
+    0 12px 32px -4px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.09);
 }
 
 /* ── Legacy aliases: старые экраны ссылаются на --color-* ── */
@@ -211,8 +211,8 @@
   --radius-xl: var(--radius-sheet);
 }
 .dark {
-  --color-surface-rgb: 21 22 28;
-  --shadow-sheet: 0 -8px 32px rgb(0 0 0 / 0.44);
+  --color-surface-rgb: 21 24 34;
+  --shadow-sheet: 0 -8px 32px rgb(0 0 0 / 0.5);
 }
 
 /* ── Tailwind v4 theme mapping ── */
@@ -381,14 +381,18 @@ body {
   background-color: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 .card-saas:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-float);
 }
 .dark .card-saas {
   box-shadow: var(--shadow-card);
+}
+.dark .card-saas:hover {
+  box-shadow: var(--shadow-float);
 }
 
 .btn-primary-saas {
