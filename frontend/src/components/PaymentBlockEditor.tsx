@@ -20,6 +20,7 @@ interface PaymentBlockEditorProps {
   onUploadPaymentMedia: (file: File) => Promise<void>;
   onRemovePaymentMedia: () => void;
   onUploadTariffMedia: (tariffId: string, file: File) => Promise<void>;
+  onUploadLargeTariffMedia?: (tariffId: string, file?: File) => void;
   onRemoveTariffMedia: (tariffId: string) => void;
 }
 
@@ -42,7 +43,7 @@ const Toggle = ({ checked, onToggle }: { checked: boolean; onToggle: () => void 
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({ 
   node, botId, onChange, paymentMode, onPaymentModeChange, managerUrl, managerText, onManagerUrlChange, onManagerTextChange,
-  onUploadPaymentMedia, onRemovePaymentMedia, onUploadTariffMedia, onRemoveTariffMedia,
+  onUploadPaymentMedia, onRemovePaymentMedia, onUploadTariffMedia, onUploadLargeTariffMedia, onRemoveTariffMedia,
 }) => {
   const { showConfirm } = useAlert();
   const tariffs: Tariff[] = node?.tariffs || [];
@@ -368,6 +369,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                             mediaAssetId={tariff.mediaAssetId}
                             mediaType={tariff.mediaType}
                             onUploadMedia={(file) => onUploadTariffMedia(tariff.id, file)}
+                            onUploadLargeMedia={onUploadLargeTariffMedia ? (file) => onUploadLargeTariffMedia(tariff.id, file) : undefined}
                             onRemoveMedia={() => onRemoveTariffMedia(tariff.id)}
                             mediaHint="Клиент увидит фото или видео над описанием выбранного тарифа · до 20 МБ"
                           />

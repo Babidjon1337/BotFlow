@@ -75,8 +75,7 @@ export function MediaAttachmentPicker({
   const attachmentContent = hasMedia ? (
     <div className="flex items-center gap-3">
       <div className="size-[72px] shrink-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-        {previewUrl && mediaType === "photo" ? <img src={previewUrl} alt="Предпросмотр вложения" className="size-full object-cover" />
-          : previewUrl && mediaType === "video" ? <video src={previewUrl} muted className="size-full object-cover" />
+        {previewUrl ? <img src={previewUrl} alt="Предпросмотр вложения" className="size-full object-cover" />
           : mediaType === "video" ? <Video className="m-5 text-[var(--color-primary)]" size={28} />
           : <FileImage className="m-5 text-[var(--color-primary)]" size={28} />}
       </div>

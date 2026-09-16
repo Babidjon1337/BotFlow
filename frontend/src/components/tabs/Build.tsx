@@ -261,7 +261,7 @@ export const Build = () => {
   >("start");
   const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const { showAlert } = useAlert();
+  const { showAlert, showConfirm } = useAlert();
 
   // Auto-sync emulator: when selectedBlockId changes, switch preview screen
   useEffect(() => {
@@ -420,6 +420,32 @@ export const Build = () => {
         cancelText: "",
       });
     }
+  };
+
+  const handleLargeFileDetected = (nodeId: string, file?: File) => {
+    if (file) {
+      const sizeMb = Math.round(file.size / (1024 * 1024));
+      showConfirm({
+        title: "Видео весит слишком много",
+        message: `Файл (${sizeMb} МБ) превышает лимит браузера (20 МБ).\nОтправьте его напрямую в Telegram-бота — он примет большое видео до 2 ГБ и сохранит для этого блока.`,
+        confirmText: "Открыть бота",
+        cancelText: "Отмена",
+        onConfirm: () => handleOpenLargeMediaUpload(nodeId),
+      });
+    } else {
+      handleOpenLargeMediaUpload(nodeId);
+    }
+  };
+
+  const handleReorderMedia = (nodeId: string, newAssets: NodeMediaAsset[]) => {
+    if (newAssets.length === 0) return;
+    updateBlockFields(nodeId, {
+      media: true,
+      mediaFileId: newAssets[0].mediaFileId,
+      mediaAssetId: newAssets[0].mediaAssetId,
+      mediaType: newAssets[0].mediaType,
+      mediaAssets: newAssets,
+    });
   };
 
   const handleTariffMediaUpload = async (tariffId: string, file: File) => {
@@ -751,8 +777,9 @@ export const Build = () => {
                     mediaType={getBlock("start")?.mediaType}
                     mediaAssets={getBlock("start")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("start", file)}
-                    onUploadLargeMedia={() => handleOpenLargeMediaUpload("start")}
+                    onUploadLargeMedia={(file) => handleLargeFileDetected("start", file)}
                     onRemoveMedia={(assetId) => removeMedia("start", assetId)}
+                    onReorderMedia={(newAssets) => handleReorderMedia("start", newAssets)}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -803,8 +830,9 @@ export const Build = () => {
                     mediaType={getBlock("push1")?.mediaType}
                     mediaAssets={getBlock("push1")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("push1", file)}
-                    onUploadLargeMedia={() => handleOpenLargeMediaUpload("push1")}
+                    onUploadLargeMedia={(file) => handleLargeFileDetected("push1", file)}
                     onRemoveMedia={(assetId) => removeMedia("push1", assetId)}
+                    onReorderMedia={(newAssets) => handleReorderMedia("push1", newAssets)}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -863,8 +891,9 @@ export const Build = () => {
                     mediaType={getBlock("push2")?.mediaType}
                     mediaAssets={getBlock("push2")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("push2", file)}
-                    onUploadLargeMedia={() => handleOpenLargeMediaUpload("push2")}
+                    onUploadLargeMedia={(file) => handleLargeFileDetected("push2", file)}
                     onRemoveMedia={(assetId) => removeMedia("push2", assetId)}
+                    onReorderMedia={(newAssets) => handleReorderMedia("push2", newAssets)}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -921,6 +950,7 @@ export const Build = () => {
                   onUploadPaymentMedia={(file) => handleMediaUpload("payment", file)}
                   onRemovePaymentMedia={() => removeMedia("payment")}
                   onUploadTariffMedia={handleTariffMediaUpload}
+                  onUploadLargeTariffMedia={(tariffId, file) => handleLargeFileDetected(`payment:tariff:${tariffId}`, file)}
                   onRemoveTariffMedia={removeTariffMedia}
                 />
               </div>

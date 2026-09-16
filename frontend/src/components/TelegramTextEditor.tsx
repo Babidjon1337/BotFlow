@@ -7,7 +7,7 @@ import React, {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { Reorder } from "framer-motion";
 import {
   Bold,
   Italic,
@@ -22,7 +22,7 @@ import {
   ImagePlus,
   FileText,
   X,
-  Send,
+  Play,
 } from "lucide-react";
 import {
   escapeHtml,
@@ -33,6 +33,36 @@ import {
 } from "../lib/telegramHtml";
 import { apiService } from "../services/api";
 import type { NodeMediaAsset } from "../types";
+
+function captureFirstFrame(videoUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = videoUrl;
+    video.onloadeddata = () => {
+      video.currentTime = 0.1;
+    };
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 360;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+          return;
+        }
+      } catch {
+        // ignore
+      }
+      resolve(videoUrl);
+    };
+    video.onerror = () => resolve(videoUrl);
+  });
+}
 
 export const SyncedMediaPreview = ({
   botId,
@@ -61,8 +91,23 @@ export const SyncedMediaPreview = ({
 
     apiService
       .getBotMediaPreview(botId, assetId)
-      .then((blob) => {
-        if (!cancelled) {
+      .then(async (blob) => {
+        if (cancelled) return;
+        if (blob.type.startsWith("video/")) {
+          const tempUrl = URL.createObjectURL(blob);
+          try {
+            const frameUrl = await captureFirstFrame(tempUrl);
+            URL.revokeObjectURL(tempUrl);
+            if (!cancelled) {
+              setMediaState({ assetId, url: frameUrl, error: false });
+            }
+          } catch {
+            URL.revokeObjectURL(tempUrl);
+            if (!cancelled) {
+              setMediaState({ assetId, url: null, error: true });
+            }
+          }
+        } else {
           objectUrl = URL.createObjectURL(blob);
           setMediaState({ assetId, url: objectUrl, error: false });
         }
@@ -90,10 +135,15 @@ export const SyncedMediaPreview = ({
         </div>
       );
     }
-    return mediaType === "video" ? (
-      <video src={previewUrl} className="w-full h-full object-cover" muted />
-    ) : (
-      <img src={previewUrl} alt="Медиа" className="w-full h-full object-cover" />
+    return (
+      <div className="relative w-full h-full select-none overflow-hidden">
+        <img src={previewUrl} alt="Медиа" className="w-full h-full object-cover" />
+        {mediaType === "video" && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25">
+            <Play size={13} className="fill-white text-white drop-shadow-sm translate-x-0.5" />
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -107,10 +157,22 @@ export const SyncedMediaPreview = ({
   if (!previewUrl) {
     return <p className="text-[11px] text-[var(--color-foreground-tertiary)]">Загружаем предпросмотр…</p>;
   }
-  return mediaType === "video" ? (
-    <video src={previewUrl} controls className="max-h-44 w-full rounded-lg object-contain bg-black" />
-  ) : (
-    <img src={previewUrl} alt="Предпросмотр прикреплённого файла" className="max-h-44 w-full rounded-lg object-contain bg-[var(--color-surface-2)]" />
+
+  return (
+    <div className="relative overflow-hidden rounded-lg bg-black/90 flex items-center justify-center select-none">
+      <img
+        src={previewUrl}
+        alt="Кадр видео"
+        className="max-h-44 w-full rounded-lg object-contain bg-black/50"
+      />
+      {mediaType === "video" && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20">
+          <div className="flex size-10 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-xs shadow-md">
+            <Play size={18} className="fill-white translate-x-0.5" />
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -139,8 +201,9 @@ export interface TelegramTextEditorProps {
   mediaType?: "photo" | "video" | "document" | null;
   mediaAssets?: NodeMediaAsset[];
   onUploadMedia?: (file: File) => Promise<void>;
-  onUploadLargeMedia?: () => void;
+  onUploadLargeMedia?: (file?: File) => void;
   onRemoveMedia?: (assetId?: string) => void;
+  onReorderMedia?: (newAssets: NodeMediaAsset[]) => void;
   attachment?: ReactNode;
   toolbarAccessory?: ReactNode;
   mediaHint?: string;
@@ -163,6 +226,7 @@ export const TelegramTextEditor = ({
   onUploadMedia,
   onUploadLargeMedia,
   onRemoveMedia,
+  onReorderMedia,
   attachment,
   toolbarAccessory,
   mediaHint,
@@ -310,7 +374,7 @@ export const TelegramTextEditor = ({
           for (const mediaFile of mediaFiles) {
             if (mediaFile.size > 20 * 1024 * 1024) {
               if (onUploadLargeMedia) {
-                onUploadLargeMedia();
+                onUploadLargeMedia(mediaFile);
               } else {
                 alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
               }
@@ -361,7 +425,7 @@ export const TelegramTextEditor = ({
         for (const mediaFile of files) {
           if (mediaFile.size > 20 * 1024 * 1024) {
             if (onUploadLargeMedia) {
-              onUploadLargeMedia();
+              onUploadLargeMedia(mediaFile);
             } else {
               alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
             }
@@ -678,6 +742,14 @@ export const TelegramTextEditor = ({
     setIsUploading(true);
     try {
       for (const selectedFile of selectedFiles) {
+        if (selectedFile.size > 20 * 1024 * 1024) {
+          if (onUploadLargeMedia) {
+            onUploadLargeMedia(selectedFile);
+          } else {
+            alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+          }
+          break;
+        }
         await onUploadMedia(selectedFile);
       }
     } finally {
@@ -731,94 +803,103 @@ export const TelegramTextEditor = ({
       {attachment}
       {!attachment && (onUploadMedia || onUploadLargeMedia) && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
-          <ul className="flex flex-wrap items-center gap-2">
-            <AnimatePresence mode="popLayout">
-              {allAssets.map((asset, idx) => (
-                <motion.li
-                  key={asset.mediaAssetId || `asset-${idx}`}
-                  layout
-                  initial={{ opacity: 0, scale: 0.6 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.6 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shrink-0"
-                >
-                  {botId && asset.mediaAssetId ? (
-                    <SyncedMediaPreview
-                      botId={botId}
-                      assetId={asset.mediaAssetId}
-                      mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType}
-                      compact
-                    />
-                  ) : asset.mediaType === "document" ? (
-                    <FileText size={20} className="text-[var(--color-primary)]" />
-                  ) : (
-                    <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
-                  )}
-                  {onRemoveMedia && (
-                    <button
-                      type="button"
-                      onMouseDown={keepEditorSelection}
-                      onClick={() => onRemoveMedia(asset.mediaAssetId)}
-                      aria-label="Убрать медиа"
-                      title="Удалить этот файл"
-                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 shadow-xs cursor-pointer z-10"
-                    >
-                      <X className="size-3" aria-hidden />
-                    </button>
-                  )}
-                </motion.li>
-              ))}
-            </AnimatePresence>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {allAssets.length > 0 && (
+              <Reorder.Group
+                axis="x"
+                values={allAssets}
+                onReorder={(newOrder) => onReorderMedia?.(newOrder)}
+                className="flex items-center gap-2 shrink-0"
+              >
+                {allAssets.map((asset, idx) => (
+                  <Reorder.Item
+                    key={asset.mediaAssetId || `asset-${idx}`}
+                    value={asset}
+                    dragListener={allAssets.length > 1 && !!onReorderMedia}
+                    title={
+                      allAssets.length > 1
+                        ? "Перетащите, чтобы изменить очередность отправки"
+                        : undefined
+                    }
+                    className={`relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shrink-0 select-none ${
+                      allAssets.length > 1 && onReorderMedia
+                        ? "cursor-grab active:cursor-grabbing hover:border-[var(--color-primary)]/60"
+                        : ""
+                    }`}
+                  >
+                    {botId && asset.mediaAssetId ? (
+                      <SyncedMediaPreview
+                        botId={botId}
+                        assetId={asset.mediaAssetId}
+                        mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType}
+                        compact
+                      />
+                    ) : asset.mediaType === "document" ? (
+                      <FileText size={20} className="text-[var(--color-primary)]" />
+                    ) : (
+                      <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
+                    )}
 
-            {allAssets.length < 10 && onUploadMedia && (
-              <li>
-                <button
-                  type="button"
-                  onMouseDown={keepEditorSelection}
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploading}
-                  title="Добавить фото или видео (до 20 МБ)"
-                  aria-label="Добавить медиафайл"
-                  className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-border-strong)] text-[var(--color-foreground-tertiary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"
-                >
-                  {isUploading ? (
-                    <span
-                      className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent"
-                      aria-hidden
-                    />
-                  ) : (
-                    <ImagePlus className="size-5" aria-hidden />
-                  )}
-                  <span className="text-[10px] font-semibold">{isUploading ? "…" : "+ фото"}</span>
-                </button>
-              </li>
+                    {/* Порядковый номер отправки (1, 2, 3...) */}
+                    {allAssets.length > 1 && (
+                      <span className="absolute bottom-1 left-1 flex size-4 items-center justify-center rounded-full bg-black/75 text-[9px] font-bold text-white shadow-xs pointer-events-none backdrop-blur-xs ring-1 ring-white/40">
+                        {idx + 1}
+                      </span>
+                    )}
+
+                    {onRemoveMedia && (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          keepEditorSelection(e);
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveMedia(asset.mediaAssetId);
+                        }}
+                        aria-label="Убрать медиа"
+                        title="Удалить этот файл"
+                        className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-red-600 text-white shadow-md transition-all hover:scale-110 hover:bg-red-700 active:scale-90 cursor-pointer z-10 ring-1 ring-white/50"
+                      >
+                        <X className="size-3 stroke-[2.5]" aria-hidden />
+                      </button>
+                    )}
+                  </Reorder.Item>
+                ))}
+              </Reorder.Group>
             )}
 
-            {allAssets.length < 10 && onUploadLargeMedia && (
-              <li>
-                <button
-                  type="button"
-                  onMouseDown={keepEditorSelection}
-                  onClick={onUploadLargeMedia}
-                  title="Загрузить большое видео или медиа через Telegram-бота (до 2 ГБ)"
-                  aria-label="Загрузить большое видео через бота"
-                  className="flex h-16 px-2.5 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-primary)]/40 bg-[var(--color-primary-soft)]/20 text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary-soft)]/40 hover:border-[var(--color-primary)]"
-                >
-                  <div className="flex items-center gap-1">
-                    <Send size={13} className="rotate-45" />
-                    <span className="text-[10px] font-bold tracking-tight">Большое видео</span>
-                  </div>
-                  <span className="text-[9px] opacity-75 font-medium">в боте до 2 ГБ</span>
-                </button>
-              </li>
+            {allAssets.length < 10 && (onUploadMedia || onUploadLargeMedia) && (
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                title="Добавить фото или видео"
+                aria-label="Добавить медиафайл"
+                className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-border-strong)] text-[var(--color-foreground-tertiary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50 shrink-0"
+              >
+                {isUploading ? (
+                  <span
+                    className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent"
+                    aria-hidden
+                  />
+                ) : (
+                  <ImagePlus className="size-5" aria-hidden />
+                )}
+                <span className="text-[10px] font-semibold">{isUploading ? "…" : "+ медиа"}</span>
+              </button>
             )}
-          </ul>
+          </div>
           <p className="mt-1.5 text-[11px] text-[var(--color-foreground-tertiary)]">
             {mediaHint ||
-              (allAssets.length > 0
-                ? "Медиа над текстом · до 10 файлов · обычные до 20 МБ, большие через Telegram"
-                : "Фото или видео над текстом · обычные до 20 МБ, большие через Telegram")}
+              (allAssets.length > 1
+                ? "Порядок отправки: 1 → 2… Перетаскивайте файлы для смены очередности"
+                : allAssets.length === 1
+                ? "Медиа над текстом · до 10 файлов (фото и видео)"
+                : "Фото или видео над текстом · до 10 файлов")}
           </p>
         </div>
       )}

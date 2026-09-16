@@ -1430,6 +1430,7 @@ async def upload_bot_media(
 
     telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
     sent_message = None
+    thumbnail_file_id = None
     try:
         upload = BufferedInputFile(payload, filename=file.filename or f"{node_id}.{media_type}")
         if media_type == "photo":
@@ -1438,6 +1439,8 @@ async def upload_bot_media(
         elif media_type == "video":
             sent_message = await telegram_bot.send_video(bot.owner.telegram_id, upload, disable_notification=True)
             telegram_file_id = sent_message.video.file_id
+            if sent_message.video and sent_message.video.thumbnail:
+                thumbnail_file_id = sent_message.video.thumbnail.file_id
         else:
             sent_message = await telegram_bot.send_document(bot.owner.telegram_id, upload, disable_notification=True)
             telegram_file_id = sent_message.document.file_id
@@ -1493,6 +1496,20 @@ async def upload_bot_media(
         mime_type=content_type,
         file_name=file.filename,
     )
+
+    if thumbnail_file_id:
+        try:
+            await create_media_asset(
+                current_bot.id,
+                f"thumb:{asset.id}",
+                "photo",
+                thumbnail_file_id,
+                mime_type="image/jpeg",
+                file_name=f"thumb_{asset.id}.jpg",
+            )
+        except Exception as err:
+            logger.warning("Не удалось сохранить thumbnail для %s: %s", asset.id, err)
+
     # Медиа рассылки не пишется в воронку: рассылка ссылается на ассет по id.
     if is_broadcast_media:
         return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
