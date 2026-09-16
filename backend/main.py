@@ -232,6 +232,7 @@ async def client_bots_webhook(bot_db_id: int, request: Request):
 @app.post("/webhook/payments/{provider}")
 @app.post("/webhook/payments/{provider}/")
 @app.post("/webhook/payments/{provider}/{tg_bot_id}")
+@app.post("/webhook/payments/{provider}/{tg_bot_id}/")
 @limiter.exempt
 async def universal_payment_webhook(
     provider: str,
@@ -251,14 +252,17 @@ async def universal_payment_webhook(
                 try:
                     raw_data = await request.json()
                 except Exception:
-                    raw_data = json.loads(raw_body.decode("utf-8", errors="replace"))
+                    try:
+                        raw_data = json.loads(raw_body.decode("utf-8", errors="replace"))
+                    except Exception:
+                        raw_data = None
             else:
                 try:
                     form = await request.form()
                     raw_data = dict(form)
                 except Exception:
-                    raw_data = raw_body.decode("utf-8", errors="replace")
-            data = parse_prodamus_notification(raw_data)
+                    raw_data = None
+            data = parse_prodamus_notification(raw_data if raw_data is not None else raw_body)
         elif normalized_provider == "robokassa":
             data = await request.form()
         else:
@@ -302,7 +306,9 @@ async def universal_payment_webhook(
             data,
             request.headers,
             query_params=dict(request.query_params),
-            raw_payload=raw_data or raw_body,
+            raw_payload=raw_data,
+            raw_body=raw_body,
+            raw_data=raw_data,
         )
         logger.info(
             "💰 Подтверждена оплата [%s] для бота %s, пользователь %s, платеж %s",

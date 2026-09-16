@@ -183,16 +183,18 @@ def parse_prodamus_notification(
     return {}
 
 
-def _canonicalize_for_prodamus(data: Any) -> Any:
-    """Canonicalize data for Prodamus signature: convert leaves to strings, sort keys recursively."""
+def _canonicalize_for_prodamus(data: Any, stringify_leaves: bool = True) -> Any:
+    """Canonicalize data for Prodamus signature: optionally convert leaves to strings, sort keys recursively."""
     if isinstance(data, Mapping):
         return {
-            str(k): _canonicalize_for_prodamus(v)
+            str(k): _canonicalize_for_prodamus(v, stringify_leaves=stringify_leaves)
             for k, v in sorted(data.items(), key=lambda item: str(item[0]))
-            if str(k).casefold() not in {"signature", "sign"}
+            if str(k).casefold() not in {"signature", "sign", "x-signature", "x_signature"}
         }
     if isinstance(data, (list, tuple)):
-        return [_canonicalize_for_prodamus(item) for item in data]
+        return [_canonicalize_for_prodamus(item, stringify_leaves=stringify_leaves) for item in data]
+    if not stringify_leaves:
+        return data
     if isinstance(data, bool):
         return "1" if data else ""
     if data is None:
@@ -224,10 +226,10 @@ def _extract_prodamus_signature(
         if not source:
             continue
         normalized = {str(k).casefold(): str(v) for k, v in source.items()}
-        for key in ("sign", "signature", "x-signature"):
+        for key in ("sign", "signature", "x-signature", "x_signature"):
             val = normalized.get(key)
             if val:
-                return val
+                return str(val).strip().strip('"').strip("'")
     return None
 
 
@@ -238,69 +240,113 @@ def verify_prodamus_signature(
     headers: Mapping[str, str] | None = None,
     query_params: Mapping[str, str] | None = None,
     raw_body: str | bytes | None = None,
+    raw_data: Mapping[str, Any] | None = None,
 ) -> bool:
     """Verify Prodamus HMAC-SHA256 signature across all canonical serialization variants."""
-    if not secret:
+    secret_str = str(secret).strip()
+    if not secret_str:
         raise PaymentWebhookError("Prodamus signature is missing")
 
     if not received_signature:
         received_signature = _extract_prodamus_signature(
             headers,
             query_params,
-            payload if isinstance(payload, Mapping) else None,
+            raw_data if isinstance(raw_data, Mapping) else (payload if isinstance(payload, Mapping) else None),
         )
 
     if not received_signature:
         raise PaymentWebhookError("Prodamus signature is missing")
 
+    clean_signature = str(received_signature).strip().strip('"').strip("'")
+
     parsed = parse_prodamus_notification(payload)
-    canonical_nested = _canonicalize_for_prodamus(parsed)
+    canonical_nested_str = _canonicalize_for_prodamus(parsed, stringify_leaves=True)
+    canonical_nested_raw = _canonicalize_for_prodamus(parsed, stringify_leaves=False)
 
     candidate_strings: dict[str, str] = {}
 
-    # Variant 1 & 2: Canonical JSON on nested data (with and without escaped slashes)
-    nested_json = json.dumps(canonical_nested, ensure_ascii=False, separators=(",", ":"))
-    candidate_strings["json_nested_escaped_slashes"] = nested_json.replace("/", "\\/")
-    candidate_strings["json_nested_unescaped_slashes"] = nested_json
+    # Variant 1: Nested JSON with stringified leaves (PHP SDK default with/without escaped slashes)
+    nested_str_json = json.dumps(canonical_nested_str, ensure_ascii=False, separators=(",", ":"))
+    candidate_strings["json_nested_str_escaped"] = nested_str_json.replace("/", "\\/")
+    candidate_strings["json_nested_str_unescaped"] = nested_str_json
 
-    # Variant 3: 'submit' field if present
-    submit_obj = parsed.get("submit")
-    if isinstance(submit_obj, Mapping):
-        canonical_submit = _canonicalize_for_prodamus(submit_obj)
-        submit_json = json.dumps(canonical_submit, ensure_ascii=False, separators=(",", ":"))
-        candidate_strings["json_submit_escaped"] = submit_json.replace("/", "\\/")
-        candidate_strings["json_submit_unescaped"] = submit_json
-    if isinstance(payload, Mapping) and isinstance(payload.get("submit"), str):
-        candidate_strings["raw_submit_str"] = str(payload["submit"])
+    # Variant 2: Nested JSON with native types (prodamuspy / raw JSON default)
+    nested_raw_json = json.dumps(canonical_nested_raw, ensure_ascii=False, separators=(",", ":"))
+    candidate_strings["json_nested_raw_escaped"] = nested_raw_json.replace("/", "\\/")
+    candidate_strings["json_nested_raw_unescaped"] = nested_raw_json
 
-    # Variant 4: Flat dictionary serialization (if payload arrived flat)
-    if isinstance(payload, Mapping):
-        canonical_flat = _canonicalize_for_prodamus(dict(payload))
-        flat_json = json.dumps(canonical_flat, ensure_ascii=False, separators=(",", ":"))
-        candidate_strings["json_flat_escaped"] = flat_json.replace("/", "\\/")
-        candidate_strings["json_flat_unescaped"] = flat_json
+    # Variant 3: Flat dictionary (from raw_data or if payload arrived flat)
+    flat_source = raw_data if isinstance(raw_data, Mapping) else (payload if isinstance(payload, Mapping) else None)
+    if flat_source:
+        canonical_flat_str = _canonicalize_for_prodamus(dict(flat_source), stringify_leaves=True)
+        canonical_flat_raw = _canonicalize_for_prodamus(dict(flat_source), stringify_leaves=False)
+        flat_str_json = json.dumps(canonical_flat_str, ensure_ascii=False, separators=(",", ":"))
+        flat_raw_json = json.dumps(canonical_flat_raw, ensure_ascii=False, separators=(",", ":"))
+        candidate_strings["json_flat_str_escaped"] = flat_str_json.replace("/", "\\/")
+        candidate_strings["json_flat_str_unescaped"] = flat_str_json
+        candidate_strings["json_flat_raw_escaped"] = flat_raw_json.replace("/", "\\/")
+        candidate_strings["json_flat_raw_unescaped"] = flat_raw_json
+
+    # Variant 4: 'submit' field if present in parsed or flat_source
+    for sub_candidate in (parsed.get("submit"), (flat_source.get("submit") if flat_source else None)):
+        if isinstance(sub_candidate, Mapping):
+            sub_str = _canonicalize_for_prodamus(sub_candidate, stringify_leaves=True)
+            sub_raw = _canonicalize_for_prodamus(sub_candidate, stringify_leaves=False)
+            j_sub_str = json.dumps(sub_str, ensure_ascii=False, separators=(",", ":"))
+            j_sub_raw = json.dumps(sub_raw, ensure_ascii=False, separators=(",", ":"))
+            candidate_strings["json_submit_str_escaped"] = j_sub_str.replace("/", "\\/")
+            candidate_strings["json_submit_str_unescaped"] = j_sub_str
+            candidate_strings["json_submit_raw_escaped"] = j_sub_raw.replace("/", "\\/")
+            candidate_strings["json_submit_raw_unescaped"] = j_sub_raw
+        elif isinstance(sub_candidate, str) and sub_candidate.strip():
+            candidate_strings["raw_submit_str"] = sub_candidate.strip()
 
     # Variant 5: Concatenation / query-string formats
-    flat_pairs = _flatten_for_query("", canonical_nested)
+    flat_pairs = _flatten_for_query("", canonical_nested_str)
     if flat_pairs:
         candidate_strings["query_urlencode"] = urllib.parse.urlencode(flat_pairs)
+        candidate_strings["query_urlencode_brackets"] = urllib.parse.urlencode(flat_pairs, safe="[]")
         candidate_strings["query_unquoted"] = "&".join(f"{k}={v}" for k, v in flat_pairs)
         candidate_strings["concat_colon"] = ":".join(f"{k}={v}" for k, v in flat_pairs)
         candidate_strings["concat_values"] = "".join(v for k, v in flat_pairs)
         candidate_strings["concat_values_colon"] = ":".join(v for k, v in flat_pairs)
 
+    if flat_source:
+        flat_pairs_raw = sorted(
+            [
+                (str(k), str(v))
+                for k, v in flat_source.items()
+                if str(k).casefold() not in {"signature", "sign", "x-signature", "x_signature"}
+            ],
+            key=lambda x: x[0],
+        )
+        if flat_pairs_raw:
+            candidate_strings["query_flat_urlencode"] = urllib.parse.urlencode(flat_pairs_raw)
+            candidate_strings["query_flat_urlencode_brackets"] = urllib.parse.urlencode(flat_pairs_raw, safe="[]")
+            candidate_strings["query_flat_unquoted"] = "&".join(f"{k}={v}" for k, v in flat_pairs_raw)
+            candidate_strings["concat_flat_colon"] = ":".join(f"{k}={v}" for k, v in flat_pairs_raw)
+
     # Variant 6: Raw body if provided
     if raw_body is not None:
-        raw_str = raw_body.decode("utf-8", errors="replace") if isinstance(raw_body, bytes) else str(raw_body)
+        raw_str = (
+            raw_body.decode("utf-8", errors="replace")
+            if isinstance(raw_body, (bytes, bytearray))
+            else str(raw_body)
+        )
         candidate_strings["raw_body"] = raw_str
+        candidate_strings["raw_body_stripped"] = raw_str.strip()
+        candidate_strings["raw_body_unquoted"] = urllib.parse.unquote_plus(raw_str)
+        if "sign=" in raw_str.casefold():
+            body_without_sign = re.sub(r"&?sign=[^&]*", "", raw_str, flags=re.IGNORECASE).strip("&")
+            candidate_strings["raw_body_without_sign"] = body_without_sign
 
     candidate_hashes: dict[str, str] = {}
     matched_candidate: str | None = None
 
     for name, s in candidate_strings.items():
-        computed = hmac.new(str(secret).encode("utf-8"), s.encode("utf-8"), hashlib.sha256).hexdigest()
+        computed = hmac.new(secret_str.encode("utf-8"), s.encode("utf-8"), hashlib.sha256).hexdigest()
         candidate_hashes[name] = computed
-        if hmac.compare_digest(computed.casefold(), received_signature.casefold()):
+        if hmac.compare_digest(computed.casefold(), clean_signature.casefold()):
             matched_candidate = name
             break
 
@@ -315,7 +361,7 @@ def verify_prodamus_signature(
         "Заголовки: %s. "
         "Query-параметры: %s. "
         "Ключи payload: %s",
-        received_signature,
+        clean_signature,
         candidate_hashes,
         _safe_headers_for_logging(headers),
         _safe_dict_for_logging(query_params),
@@ -326,7 +372,7 @@ def verify_prodamus_signature(
 
 def _prodamus_signature_payload(payload: Mapping[str, Any]) -> str:
     """Match Prodamus Hmac canonical JSON: sorted keys and escaped slashes."""
-    normalized = _canonicalize_for_prodamus(dict(payload))
+    normalized = _canonicalize_for_prodamus(dict(payload), stringify_leaves=True)
     return json.dumps(
         normalized,
         ensure_ascii=False,
@@ -341,6 +387,8 @@ async def verify_payment_notification(
     headers: Mapping[str, str],
     query_params: Mapping[str, str] | None = None,
     raw_payload: Any | None = None,
+    raw_body: str | bytes | None = None,
+    raw_data: Mapping[str, Any] | None = None,
 ) -> VerifiedPayment:
     """Verify a successful notification and return its trusted payment data."""
     normalized_provider = provider.casefold()
@@ -358,6 +406,8 @@ async def verify_payment_notification(
             bot_config,
             query_params=query_params,
             raw_payload=raw_payload,
+            raw_body=raw_body,
+            raw_data=raw_data,
         )
     raise PaymentWebhookError("Unsupported payment provider")
 
@@ -472,32 +522,44 @@ def _verify_prodamus(
     bot_config: Any | None = None,
     query_params: Mapping[str, str] | None = None,
     raw_payload: Any | None = None,
+    raw_body: str | bytes | None = None,
+    raw_data: Mapping[str, Any] | None = None,
 ) -> VerifiedPayment:
+    if raw_body is None and isinstance(raw_payload, (str, bytes, bytearray)):
+        raw_body = raw_payload
+    if raw_data is None and isinstance(raw_payload, Mapping):
+        raw_data = raw_payload
+
     parsed_payload = parse_prodamus_notification(payload)
 
     status = (
-        _value(parsed_payload, "payment_status", "status")
-        or _value(payload if isinstance(payload, Mapping) else {}, "payment_status", "status")
+        _value(parsed_payload, "payment_status", "status", "order_status")
+        or _value(payload if isinstance(payload, Mapping) else {}, "payment_status", "status", "order_status")
+        or (_value(raw_data, "payment_status", "status", "order_status") if raw_data else None)
         or ""
     )
-    if status.casefold() != "success":
+    if status.casefold() not in {"success", "successful", "paid", "succeeded"}:
         raise PaymentWebhookError("Prodamus payment is not successful")
 
     secret = (
         credentials.get("webhook_secret")
         or credentials.get("secret_key")
+        or credentials.get("secretKey")
         or credentials.get("api_key")
+        or credentials.get("apiKey")
         or credentials.get("secret")
+        or credentials.get("token")
     )
     if not secret:
         raise PaymentWebhookError("Prodamus signature is missing")
 
     is_valid = verify_prodamus_signature(
-        secret=str(secret),
+        secret=str(secret).strip(),
         payload=payload,
         headers=headers or {},
         query_params=query_params or {},
-        raw_body=raw_payload if isinstance(raw_payload, (str, bytes)) else None,
+        raw_body=raw_body,
+        raw_data=raw_data,
     )
     if not is_valid:
         raise PaymentWebhookError("Prodamus signature is invalid")
@@ -507,8 +569,13 @@ def _verify_prodamus(
     for candidate in (
         _value(parsed_payload, "order_num"),
         _value(parsed_payload, "order_id"),
+        _value(parsed_payload, "shp_client_payment_id"),
+        _value(parsed_payload, "client_payment_id"),
         _value(payload if isinstance(payload, Mapping) else {}, "order_num"),
         _value(payload if isinstance(payload, Mapping) else {}, "order_id"),
+        _value(payload if isinstance(payload, Mapping) else {}, "shp_client_payment_id"),
+        _value(payload if isinstance(payload, Mapping) else {}, "client_payment_id"),
+        (_value(raw_data, "order_num", "order_id", "shp_client_payment_id") if raw_data else None),
     ):
         if candidate and _is_valid_uuid(candidate):
             client_payment_uuid = uuid.UUID(str(candidate))
@@ -517,6 +584,7 @@ def _verify_prodamus(
     order_id = (
         _value(parsed_payload, "order_id", "order_num")
         or _value(payload if isinstance(payload, Mapping) else {}, "order_id", "order_num")
+        or (_value(raw_data, "order_id", "order_num") if raw_data else None)
     )
     if not order_id:
         raise PaymentWebhookError("Prodamus order ID is missing")
@@ -524,6 +592,7 @@ def _verify_prodamus(
     tg_user_id_val = (
         _value(parsed_payload, "tg_user_id", "telegram_id", "customer_extra")
         or _value(payload if isinstance(payload, Mapping) else {}, "tg_user_id", "telegram_id", "customer_extra")
+        or (_value(raw_data, "tg_user_id", "telegram_id", "customer_extra") if raw_data else None)
     )
     telegram_id = 0
     if tg_user_id_val:
@@ -544,8 +613,9 @@ def _verify_prodamus(
     if bot_config is not None:
         try:
             sum_val = (
-                _value(parsed_payload, "sum")
-                or _value(payload if isinstance(payload, Mapping) else {}, "sum")
+                _value(parsed_payload, "sum", "amount")
+                or _value(payload if isinstance(payload, Mapping) else {}, "sum", "amount")
+                or (_value(raw_data, "sum", "amount") if raw_data else None)
                 or "0"
             )
             amount = Decimal(str(sum_val))
