@@ -303,7 +303,7 @@ async def create_reminder(
         await session.commit()
 
 
-async def get_reminder_tasks():
+async def get_reminder_tasks(limit: int = 100):
     async with async_session() as session:
         result = await session.scalars(
             select(ScheduledTask)
@@ -313,9 +313,11 @@ async def get_reminder_tasks():
                 ScheduledTask.execute_at <= datetime.now(timezone.utc),
                 Lead.is_archived.is_(False),
             )
+            .order_by(ScheduledTask.execute_at.asc())
+            .limit(limit)
         )
 
-        return result.all()
+        return list(result.all())
 
 
 async def delete_list_tasks(task_ids: list):

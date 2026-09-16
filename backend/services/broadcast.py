@@ -27,6 +27,8 @@ from database.requests.broadcast_rq import (
     get_pending_recipients,
     mark_recipient_failed,
     mark_recipient_sent,
+    mark_recipients_batch_failed,
+    mark_recipients_batch_sent,
 )
 from loggers import logger
 from services.funnel_message import to_telegram_html
@@ -194,6 +196,18 @@ async def _send_pending_chunk(
     keyboard: InlineKeyboardMarkup | None = None,
 ) -> None:
     media_assets = media_assets or []
+    sent_batch: list[int] = []
+    failed_batch: list[tuple[int, str]] = []
+
+    async def _flush_batches():
+        nonlocal sent_batch, failed_batch
+        if sent_batch:
+            await mark_recipients_batch_sent(sent_batch, broadcast_id)
+            sent_batch = []
+        if failed_batch:
+            await mark_recipients_batch_failed(failed_batch, broadcast_id)
+            failed_batch = []
+
     for recipient in chunk:
         try:
             if media_assets:
@@ -202,18 +216,22 @@ async def _send_pending_chunk(
                 )
             else:
                 await _deliver_one(bot, recipient.telegram_id, text, keyboard=keyboard)
-            await mark_recipient_sent(recipient.id, broadcast_id)
+            sent_batch.append(recipient.id)
         except Exception as exc:  # один получатель не должен остановить рассылку
-            await mark_recipient_failed(
-                recipient.id, broadcast_id, _friendly_error(exc)
-            )
+            failed_batch.append((recipient.id, _friendly_error(exc)))
             logger.info(
                 "Рассылка %s: получатель %s не доставлен: %s",
                 broadcast_id,
                 recipient.telegram_id,
                 exc,
             )
+
+        if len(sent_batch) + len(failed_batch) >= 20:
+            await _flush_batches()
+
         await asyncio.sleep(SEND_GAP_SECONDS)
+
+    await _flush_batches()
 
 
 async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession | None = None) -> str:

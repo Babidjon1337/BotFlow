@@ -95,6 +95,7 @@ async def get_user_bot_subscriptions(owner_id: int) -> dict[int, BotSubscription
 
 async def get_bot_subscriptions_due_for_renewal(
     now: datetime | None = None,
+    limit: int = 50,
 ) -> list[tuple[BotSubscription, BotConfig, User]]:
     """Подписки ботов, которым пора автосписание (метод оплаты есть у владельца)."""
     effective_now = now or datetime.now(timezone.utc)
@@ -113,6 +114,8 @@ async def get_bot_subscriptions_due_for_renewal(
                 BotSubscription.next_retry_at <= effective_now,
                 User.subscription_payment_method_enc.is_not(None),
             )
+            .order_by(BotSubscription.next_retry_at.asc())
+            .limit(limit)
         )
         return [(row[0], row[1], row[2]) for row in result.all()]
 

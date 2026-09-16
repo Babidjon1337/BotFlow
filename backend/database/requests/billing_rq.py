@@ -301,7 +301,7 @@ async def mark_saas_payment_failed_by_id(payment_id: uuid.UUID) -> User | None:
         return user
 
 
-async def get_users_due_for_subscription_renewal() -> list[User]:
+async def get_users_due_for_subscription_renewal(limit: int = 50) -> list[User]:
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         result = await session.scalars(
@@ -312,6 +312,8 @@ async def get_users_due_for_subscription_renewal() -> list[User]:
                 User.subscription_next_retry_at <= now,
                 User.subscription_retry_count < 3,
             )
+            .order_by(User.subscription_next_retry_at.asc())
+            .limit(limit)
         )
         return list(result.all())
 

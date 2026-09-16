@@ -372,6 +372,53 @@ async def mark_recipient_failed(
         await session.commit()
 
 
+async def mark_recipients_batch_sent(
+    recipient_ids: list[int], broadcast_id: UUID
+) -> None:
+    """Пакетное обновление успешно отправленных получателей (сокращает транзакции в БД)."""
+    if not recipient_ids:
+        return
+    async with async_session() as session:
+        await session.execute(
+            update(BroadcastRecipient)
+            .where(
+                BroadcastRecipient.id.in_(recipient_ids),
+                BroadcastRecipient.status == "pending",
+            )
+            .values(status="sent", sent_at=func.now())
+        )
+        await session.execute(
+            update(Broadcast)
+            .where(Broadcast.id == broadcast_id)
+            .values(sent_count=Broadcast.sent_count + len(recipient_ids))
+        )
+        await session.commit()
+
+
+async def mark_recipients_batch_failed(
+    failed_items: list[tuple[int, str]], broadcast_id: UUID
+) -> None:
+    """Пакетное обновление неотправленных получателей."""
+    if not failed_items:
+        return
+    async with async_session() as session:
+        for recipient_id, error in failed_items:
+            await session.execute(
+                update(BroadcastRecipient)
+                .where(
+                    BroadcastRecipient.id == recipient_id,
+                    BroadcastRecipient.status == "pending",
+                )
+                .values(status="failed", error=(error or "Ошибка отправки")[:500])
+            )
+        await session.execute(
+            update(Broadcast)
+            .where(Broadcast.id == broadcast_id)
+            .values(failed_count=Broadcast.failed_count + len(failed_items))
+        )
+        await session.commit()
+
+
 async def finalize_broadcast(broadcast_id: UUID) -> str:
     """Завершает рассылку: sent, если доставлено хотя бы одно сообщение."""
     async with async_session() as session:

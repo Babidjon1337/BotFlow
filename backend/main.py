@@ -95,6 +95,11 @@ async def lifespan(app: FastAPI):
     yield
 
     await stop_scheduler()
+    from services.broadcast import close_broadcast_session
+    from services.billing_notifications import close_billing_notification_session
+
+    await close_broadcast_session()
+    await close_billing_notification_session()
     if app.state.session:
         await app.state.session.close()
     logger.info("Все соединения успешно закрыты.")

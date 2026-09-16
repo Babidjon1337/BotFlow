@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import joinedload
 
 from database.models import ClientPayment, Lead, ScheduledTask, async_session
@@ -29,6 +29,27 @@ async def get_client_payment_stats(bot_id: int) -> tuple[int, Decimal]:
         )
         count, revenue = result.one()
         return int(count or 0), Decimal(revenue or 0)
+
+
+async def get_bulk_client_payment_stats(bot_ids: list[int]) -> dict[int, tuple[int, Decimal]]:
+    """Return payment stats for multiple bots in a single query (prevents N+1 in getBots)."""
+    if not bot_ids:
+        return {}
+    async with async_session() as session:
+        result = await session.execute(
+            select(
+                ClientPayment.bot_id,
+                func.count(ClientPayment.id),
+                func.coalesce(func.sum(ClientPayment.amount), Decimal("0.00")),
+            )
+            .where(ClientPayment.bot_id.in_(bot_ids), ClientPayment.status == "succeeded")
+            .group_by(ClientPayment.bot_id)
+        )
+        stats = {row[0]: (int(row[1] or 0), Decimal(row[2] or 0)) for row in result.all()}
+        for b_id in bot_ids:
+            if b_id not in stats:
+                stats[b_id] = (0, Decimal("0.00"))
+        return stats
 
 
 async def get_chart_data(
@@ -396,10 +417,20 @@ async def get_due_client_payment_delivery_ids(limit: int = 50) -> list[uuid.UUID
             .where(
                 ClientPayment.status == "succeeded",
                 or_(
-                    ClientPayment.fulfillment_status.in_(("pending", "retry")),
-                    ClientPayment.fulfillment_next_retry_at <= now,
-                    ClientPayment.owner_notification_status.in_(("pending", "retry")),
-                    ClientPayment.owner_notification_next_retry_at <= now,
+                    and_(
+                        ClientPayment.fulfillment_status.in_(("pending", "retry")),
+                        or_(
+                            ClientPayment.fulfillment_next_retry_at.is_(None),
+                            ClientPayment.fulfillment_next_retry_at <= now,
+                        ),
+                    ),
+                    and_(
+                        ClientPayment.owner_notification_status.in_(("pending", "retry")),
+                        or_(
+                            ClientPayment.owner_notification_next_retry_at.is_(None),
+                            ClientPayment.owner_notification_next_retry_at <= now,
+                        ),
+                    ),
                 ),
             )
             .order_by(ClientPayment.paid_at)

@@ -50,6 +50,7 @@ from database.requests.client_payment_rq import (
     ClientPaymentDeliveryRetryError,
     get_chart_data,
     get_client_payment_stats,
+    get_bulk_client_payment_stats,
     requeue_client_payment_delivery,
 )
 from database.requests.billing_rq import cancel_subscription_auto_renew
@@ -279,6 +280,22 @@ async def _toggle_client_bot(
     )
     if not updated_bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
+    try:
+        from services.event_bus import event_bus
+        owner_tg = getattr(getattr(bot, "owner", None), "telegram_id", None)
+        if owner_tg:
+            event_bus.publish_user(
+                owner_tg,
+                "bot:status_changed",
+                {
+                    "botId": bot.id,
+                    "status": updated_bot.status,
+                    "lifecycleStatus": updated_bot.lifecycle_status,
+                    "pauseReason": updated_bot.pause_reason,
+                },
+            )
+    except Exception as exc:
+        logger.warning("SSE: ошибка отправки статуса бота: %s", exc)
     bot_url = f"https://t.me/{updated_bot.username}" if updated_bot.username else None
     webhook_url = f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{updated_bot.id}"
     return {
@@ -346,7 +363,13 @@ def _get_development_user(request: Request) -> TelegramUser | None:
 
 
 async def get_current_user(request: Request) -> TelegramUser:
-    """Resolve an authenticated Telegram user for dashboard API requests."""
+    """Resolve an authenticated Telegram user for dashboard API requests with request-scoped caching."""
+    state = getattr(request, "state", None)
+    if state is not None:
+        cached = getattr(state, "current_user", None)
+        if cached is not None:
+            return cached
+
     init_data = (
         request.headers.get("X-Telegram-Init-Data")
         or request.query_params.get("init_data")
@@ -357,18 +380,22 @@ async def get_current_user(request: Request) -> TelegramUser:
             telegram_user = validate_init_data(init_data)
         except TelegramAuthError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
-        await _ensure_account_is_active(telegram_user.telegram_id)
+        await _ensure_account_is_active(telegram_user.telegram_id, request=request)
+        if state is not None:
+            state.current_user = telegram_user
         return telegram_user
 
     development_user = _get_development_user(request)
     if development_user:
-        await _ensure_account_is_active(development_user.telegram_id)
+        await _ensure_account_is_active(development_user.telegram_id, request=request)
+        if state is not None:
+            state.current_user = development_user
         return development_user
 
     raise HTTPException(status_code=401, detail="Telegram authorization is required")
 
 
-async def _ensure_account_is_active(telegram_id: int) -> None:
+async def _ensure_account_is_active(telegram_id: int, request: Request | None = None) -> None:
     """Reject a paused SaaS account across all authenticated Mini App routes."""
     account = await get_user_by_tg_id(telegram_id)
     if account and account.is_disabled:
@@ -376,6 +403,10 @@ async def _ensure_account_is_active(telegram_id: int) -> None:
             status_code=403,
             detail="Доступ к BotFlow временно ограничен. Свяжитесь с поддержкой.",
         )
+    if request is not None and account is not None:
+        state = getattr(request, "state", None)
+        if state is not None:
+            state.db_user = account
 
 
 async def get_current_admin(request: Request) -> TelegramUser:
@@ -389,7 +420,12 @@ async def get_current_admin(request: Request) -> TelegramUser:
 async def get_owned_bot(bot_id: int, request: Request):
     """Load a bot only when it belongs to the authenticated dashboard user, or caller is admin."""
     current_user = await get_current_user(request)
-    user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    state = getattr(request, "state", None)
+    user = getattr(state, "db_user", None) if state is not None else None
+    if user is None:
+        user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+        if state is not None:
+            state.db_user = user
     bot = await get_bot_by_id(bot_id)
     if not bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
@@ -416,18 +452,25 @@ async def auth_user(request: Request, body: dict = None):
             )
         telegram_user = development_user
 
-    await _ensure_account_is_active(telegram_user.telegram_id)
+    await _ensure_account_is_active(telegram_user.telegram_id, request=request)
     user = await create_user_if_not_exists(
         telegram_id=telegram_user.telegram_id,
         username=telegram_user.username,
         refresh_username=True,
     )
+    state = getattr(request, "state", None)
+    if state is not None:
+        state.db_user = user
+        state.current_user = telegram_user
+
     bots = await get_user_bots(owner_id=user.id)
+    bot_ids = [b.id for b in bots]
+    payment_stats = await get_bulk_client_payment_stats(bot_ids)
 
     bots_resp = []
     for b in bots:
         resp = BotApiResponse.from_orm_bot(b, TG_WEBHOOK_URL, WEBHOOK_URL)
-        sales, revenue = await get_client_payment_stats(b.id)
+        sales, revenue = payment_stats.get(b.id, (0, 0))
         resp.sales = sales
         resp.revenue = float(revenue)
         bots_resp.append(resp)
@@ -948,14 +991,17 @@ async def create_gateway_connection_api(request: Request, body: GatewayConnectio
 @api_router.get("/api/bots")
 async def list_bots(request: Request):
     current_user = await get_current_user(request)
-    user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    state = getattr(request, "state", None)
+    user = (getattr(state, "db_user", None) if state is not None else None) or await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     bots = await get_user_bots(owner_id=user.id)
     subscriptions = await get_user_bot_subscriptions(owner_id=user.id)
+    bot_ids = [b.id for b in bots]
+    payment_stats = await get_bulk_client_payment_stats(bot_ids)
 
     bots_resp = []
     for b in bots:
         resp = BotApiResponse.from_orm_bot(b, TG_WEBHOOK_URL, WEBHOOK_URL)
-        sales, revenue = await get_client_payment_stats(b.id)
+        sales, revenue = payment_stats.get(b.id, (0, 0))
         resp.sales = sales
         resp.revenue = float(revenue)
         subscription = subscriptions.get(b.id)
@@ -1956,6 +2002,8 @@ async def sse_events_endpoint(request: Request):
                     yield ": keep-alive\n\n"
         except (asyncio.CancelledError, GeneratorExit):
             pass
+        except Exception as exc:
+            logger.debug("SSE client disconnected (%s): %s", user_tg_id, exc)
         finally:
             await event_bus.unsubscribe(user_tg_id, queue)
 

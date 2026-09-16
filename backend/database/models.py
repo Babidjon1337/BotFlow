@@ -44,7 +44,7 @@ class User(Base):
 
     # Подписка на SaaS и юридическое согласие
     subscription_ends_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True)
+        DateTime(timezone=True), index=True
     )
     lifetime_slots: Mapped[int] = mapped_column(Integer, default=0)
     agreed_to_tos_at: Mapped[Optional[datetime]] = mapped_column(
@@ -54,7 +54,7 @@ class User(Base):
     subscription_payment_method_enc: Mapped[Optional[bytes]] = mapped_column(nullable=True)
     subscription_retry_count: Mapped[int] = mapped_column(Integer, default=0)
     subscription_next_retry_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True)
+        DateTime(timezone=True), index=True
     )
     subscription_grace_until: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True)
@@ -65,7 +65,7 @@ class User(Base):
     # Account access may be paused by a platform administrator.  Data and
     # entitlements remain intact so that restoring access never requires a
     # destructive recovery operation.
-    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_disabled: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     disabled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
@@ -353,13 +353,13 @@ class BotSubscription(Base):
     status: Mapped[str] = mapped_column(String(20), default="inactive", index=True)
     product_code: Mapped[Optional[str]] = mapped_column(String(64))
     starts_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     # Per-bot биллинг: цена этого бота (990 ₽ + доплаты), автосписание и ретраи.
     amount_rub: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     auto_renew: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     grace_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
@@ -385,13 +385,15 @@ class AdminAuditLog(Base):
 # 4. ТАБЛИЦА SCHEDULED_TASKS (Очередь дожимов)
 # ==========================================
 class ScheduledTask(Base):
+    """Сохраненные задачи для дожимов (отложенные сообщения)."""
+
     __tablename__ = "scheduled_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"))
-    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"))
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
 
     # ID шага (например, "node_dozhim_1")
     step_to_send: Mapped[str] = mapped_column(String(255), default="node_dozhim_1")

@@ -26,6 +26,8 @@ class UploadSession:
     is_cancelled: bool = False
 
 
+MAX_SESSIONS = 1000
+
 _sessions: dict[str, UploadSession] = {}
 _sessions_by_user_bot: dict[tuple[int, int], str] = {}
 
@@ -155,3 +157,17 @@ def cleanup_expired_sessions() -> None:
         s = _sessions.pop(s_id, None)
         if s:
             _sessions_by_user_bot.pop((s.owner_tg_id, s.tg_bot_id), None)
+
+    if len(_sessions) > MAX_SESSIONS:
+        overflow_count = len(_sessions) - MAX_SESSIONS
+        oldest_sessions = sorted(_sessions.values(), key=lambda s: s.created_at)[:overflow_count]
+        for s in oldest_sessions:
+            if s.debounce_task and not s.debounce_task.done():
+                s.debounce_task.cancel()
+            _sessions.pop(s.id, None)
+            _sessions_by_user_bot.pop((s.owner_tg_id, s.tg_bot_id), None)
+        logger.warning(
+            "Сессии загрузки медиа превысили лимит %d, удалено %d старых сессий",
+            MAX_SESSIONS,
+            overflow_count,
+        )

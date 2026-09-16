@@ -56,7 +56,7 @@ bot_lifecycle_service = BotLifecycleService()
 
 
 async def check_reminders_job():
-    tasks = await get_reminder_tasks()
+    tasks = await get_reminder_tasks(limit=100)
     if not tasks:
         return
 
@@ -66,8 +66,15 @@ async def check_reminders_job():
             tasks_by_bot[task.bot_id] = []
         tasks_by_bot[task.bot_id].append(task)
 
+    # Bounded concurrency: max 5 bots sending concurrently to prevent CPU/network spikes
+    semaphore = asyncio.Semaphore(5)
+
+    async def _send_with_limit(bot_id: int, bot_tasks: list):
+        async with semaphore:
+            return await send_bot_reminders(bot_id, bot_tasks)
+
     coroutines = [
-        send_bot_reminders(bot_id, bot_tasks)
+        _send_with_limit(bot_id, bot_tasks)
         for bot_id, bot_tasks in tasks_by_bot.items()
     ]
     grouped_results = await asyncio.gather(*coroutines)
@@ -229,11 +236,18 @@ async def resume_subscription_bots_job():
 
 async def retry_client_payment_fulfillments_job():
     """Retry paid access and owner notifications from durable payment state."""
-    payment_ids = await get_due_client_payment_delivery_ids()
-    for payment_id in payment_ids:
-        await process_client_payment_fulfillment(
-            payment_id, shared_scheduler_session
-        )
+    payment_ids = await get_due_client_payment_delivery_ids(limit=50)
+    if not payment_ids:
+        return
+    semaphore = asyncio.Semaphore(5)
+
+    async def _process_one(payment_id):
+        async with semaphore:
+            await process_client_payment_fulfillment(
+                payment_id, shared_scheduler_session
+            )
+
+    await asyncio.gather(*[_process_one(pid) for pid in payment_ids])
 
 
 MAX_BROADCASTS_PER_TICK = 20
@@ -338,9 +352,16 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
             )
             results.append({task.id: "delete"})
 
-        except (TelegramRetryAfter, TelegramAPIError) as e:
+        except TelegramRetryAfter as e:
             logger.warning(
-                f"⏳ Временный сбой/флуд-лимит у бота {bot_id}. Попробуем позже. Ошибка: {e}"
+                f"⏳ Флуд-лимит у бота {bot_id} (ждать {e.retry_after} сек). Прерываем оставшиеся задачи бота."
+            )
+            results.append({task.id: "keep_for_retry"})
+            break
+
+        except TelegramAPIError as e:
+            logger.warning(
+                f"⏳ Временный сбой API у бота {bot_id}. Ошибка: {e}"
             )
             results.append({task.id: "keep_for_retry"})
 
