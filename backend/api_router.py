@@ -1520,19 +1520,75 @@ async def upload_bot_media(
     return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
 
 
+@api_router.post("/api/bots/{bot_id}/media-upload-session")
+async def create_large_media_session(bot_id: int, request: Request):
+    """Create a temporary session for uploading large media via the user's Telegram bot."""
+    bot = await get_owned_bot(bot_id, request)
+    body = await request.json()
+    node_id = (body.get("node_id") or "").strip()
+    if not node_id:
+        raise HTTPException(status_code=422, detail="node_id обязателен")
+
+    from services.media_upload_session import create_upload_session, get_node_human_title
+    node_title = get_node_human_title(node_id, bot.funnel_schema)
+    session = create_upload_session(
+        bot_id=bot.id,
+        tg_bot_id=bot.tg_bot_id,
+        owner_tg_id=bot.owner.telegram_id,
+        node_id=node_id,
+        node_title=node_title,
+    )
+    return {
+        "sessionId": session.id,
+        "botUsername": bot.bot_username,
+        "deepLink": f"https://t.me/{bot.bot_username}?start=up_{session.id}",
+        "nodeTitle": session.node_title,
+    }
+
+
+@api_router.get("/api/bots/{bot_id}/media-upload-session/{session_id}")
+async def get_large_media_session_status(bot_id: int, session_id: str, request: Request):
+    """Check status and newly uploaded assets of a large media upload session."""
+    bot = await get_owned_bot(bot_id, request)
+    from services.media_upload_session import get_upload_session
+    session = get_upload_session(session_id)
+    if not session or session.bot_id != bot.id:
+        return {
+            "sessionId": session_id,
+            "nodeId": "",
+            "isCompleted": True,
+            "isCancelled": False,
+            "mediaAssets": [],
+        }
+    return {
+        "sessionId": session.id,
+        "nodeId": session.node_id,
+        "isCompleted": session.is_completed,
+        "isCancelled": session.is_cancelled,
+        "mediaAssets": session.media_assets,
+    }
+
+
 @api_router.get("/api/bots/{bot_id}/media/{asset_id}/preview")
 async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
     """Stream a saved Telegram file for the owner's Mini App preview only."""
     bot = await get_owned_bot(bot_id, request)
     from aiogram import Bot
-    from database.requests.media_rq import get_bot_media_asset
+    from database.requests.media_rq import get_bot_media_asset, get_thumbnail_media_asset
 
     asset = await get_bot_media_asset(bot.id, asset_id)
     if not asset:
         raise HTTPException(status_code=404, detail="Файл не найден для этого бота.")
+
+    thumb_asset = None
+    if asset.media_type == "video":
+        thumb_asset = await get_thumbnail_media_asset(bot.id, asset.id)
+
+    target_asset = thumb_asset if thumb_asset else asset
+
     try:
         telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
-        telegram_file = await telegram_bot.get_file(asset.telegram_file_id)
+        telegram_file = await telegram_bot.get_file(target_asset.telegram_file_id)
         payload = io.BytesIO()
         await telegram_bot.download_file(telegram_file.file_path, destination=payload)
     except Exception as exc:
@@ -1541,9 +1597,10 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
 
     return Response(
         content=payload.getvalue(),
-        media_type=asset.mime_type or "application/octet-stream",
+        media_type=target_asset.mime_type or ("image/jpeg" if thumb_asset else (asset.mime_type or "application/octet-stream")),
         headers={"Cache-Control": "private, max-age=300"},
     )
+
 
 
 @api_router.delete("/api/bots/{bot_id}/leads")

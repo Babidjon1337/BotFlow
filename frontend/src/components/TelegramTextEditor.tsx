@@ -22,6 +22,7 @@ import {
   ImagePlus,
   FileText,
   X,
+  Send,
 } from "lucide-react";
 import {
   escapeHtml,
@@ -138,7 +139,8 @@ export interface TelegramTextEditorProps {
   mediaType?: "photo" | "video" | "document" | null;
   mediaAssets?: NodeMediaAsset[];
   onUploadMedia?: (file: File) => Promise<void>;
-  onRemoveMedia?: () => void;
+  onUploadLargeMedia?: () => void;
+  onRemoveMedia?: (assetId?: string) => void;
   attachment?: ReactNode;
   toolbarAccessory?: ReactNode;
   mediaHint?: string;
@@ -159,6 +161,7 @@ export const TelegramTextEditor = ({
   mediaType,
   mediaAssets = [],
   onUploadMedia,
+  onUploadLargeMedia,
   onRemoveMedia,
   attachment,
   toolbarAccessory,
@@ -172,6 +175,7 @@ export const TelegramTextEditor = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorId = useId();
   const [isUploading, setIsUploading] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   // Active formatting state for toolbar highlights
   const [activeFormats, setActiveFormats] = useState<{
@@ -281,6 +285,32 @@ export const TelegramTextEditor = ({
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    // 1. Проверяем вставку медиафайлов из буфера обмена (картинки, скриншоты, видео)
+    const items = event.clipboardData.items ? Array.from(event.clipboardData.items) : [];
+    const mediaItem = items.find(
+      (item) => item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))
+    );
+    const files = event.clipboardData.files ? Array.from(event.clipboardData.files) : [];
+    const mediaFile = mediaItem
+      ? mediaItem.getAsFile()
+      : files.find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+
+    if (mediaFile && onUploadMedia) {
+      event.preventDefault();
+      if (mediaFile.size > 20 * 1024 * 1024) {
+        if (onUploadLargeMedia) {
+          onUploadLargeMedia();
+        } else {
+          alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+        }
+        return;
+      }
+      setIsUploading(true);
+      onUploadMedia(mediaFile).finally(() => setIsUploading(false));
+      return;
+    }
+
+    // 2. Обычная вставка форматированного текста
     event.preventDefault();
     const htmlData = event.clipboardData.getData("text/html");
     const plainText = event.clipboardData.getData("text/plain");
@@ -288,6 +318,38 @@ export const TelegramTextEditor = ({
     if (cleanHtml) {
       insertHtmlAtSelection(cleanHtml);
       handleInput();
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes("Files")) {
+      e.preventDefault();
+      setIsDraggingOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingOver(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const files = Array.from(e.dataTransfer.files || []);
+    const mediaFile = files.find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+    if (mediaFile && onUploadMedia) {
+      if (mediaFile.size > 20 * 1024 * 1024) {
+        if (onUploadLargeMedia) {
+          onUploadLargeMedia();
+        } else {
+          alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+        }
+        return;
+      }
+      setIsUploading(true);
+      onUploadMedia(mediaFile).finally(() => setIsUploading(false));
     }
   };
 
@@ -599,7 +661,18 @@ export const TelegramTextEditor = ({
     }
   };
 
-  const hasSingleMedia = hasMedia || Boolean(mediaAssetId || mediaFileId);
+  const allAssets: NodeMediaAsset[] =
+    mediaAssets.length > 0
+      ? mediaAssets
+      : (mediaAssetId || mediaFileId)
+      ? [
+          {
+            mediaFileId: mediaFileId || "",
+            mediaAssetId: mediaAssetId || "",
+            mediaType: (mediaType || "photo") as "photo" | "video" | "document",
+          },
+        ]
+      : [];
 
   const getFormatBtnClass = (isActive: boolean) =>
     `flex size-7 items-center justify-center rounded-md transition-all ${
@@ -610,8 +683,13 @@ export const TelegramTextEditor = ({
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-[var(--radius-sm)] border bg-[var(--color-surface)] shadow-2xs transition-colors ${
-        isOverLimit
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`flex flex-col overflow-hidden rounded-[var(--radius-sm)] border bg-[var(--color-surface)] shadow-2xs transition-all ${
+        isDraggingOver
+          ? "border-[var(--color-primary)] ring-2 ring-[var(--color-primary-soft)]"
+          : isOverLimit
           ? "border-[var(--color-danger)]"
           : "border-[var(--color-border)] focus-within:border-[var(--color-primary)]"
       } ${className}`}
@@ -626,27 +704,29 @@ export const TelegramTextEditor = ({
 
       {/* ── Сверху: Медиа-ряд ── */}
       {attachment}
-      {!attachment && onUploadMedia && (
+      {!attachment && (onUploadMedia || onUploadLargeMedia) && (
         <div className="border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
           <ul className="flex flex-wrap items-center gap-2">
             <AnimatePresence mode="popLayout">
-              {mediaAssets.map((asset) => (
+              {allAssets.map((asset, idx) => (
                 <motion.li
-                  key={asset.mediaAssetId}
+                  key={asset.mediaAssetId || `asset-${idx}`}
                   layout
                   initial={{ opacity: 0, scale: 0.6 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.6 }}
                   transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
+                  className="relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shrink-0"
                 >
-                  {botId ? (
+                  {botId && asset.mediaAssetId ? (
                     <SyncedMediaPreview
                       botId={botId}
                       assetId={asset.mediaAssetId}
                       mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType}
                       compact
                     />
+                  ) : asset.mediaType === "document" ? (
+                    <FileText size={20} className="text-[var(--color-primary)]" />
                   ) : (
                     <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
                   )}
@@ -654,61 +734,26 @@ export const TelegramTextEditor = ({
                     <button
                       type="button"
                       onMouseDown={keepEditorSelection}
-                      onClick={onRemoveMedia}
+                      onClick={() => onRemoveMedia(asset.mediaAssetId)}
                       aria-label="Убрать медиа"
-                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 shadow-xs"
+                      title="Удалить этот файл"
+                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 shadow-xs cursor-pointer z-10"
                     >
                       <X className="size-3" aria-hidden />
                     </button>
                   )}
                 </motion.li>
               ))}
-
-              {mediaAssets.length === 0 && hasSingleMedia && (
-                <motion.li
-                  key="single-media"
-                  layout
-                  initial={{ opacity: 0, scale: 0.6 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.6 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className="relative flex size-16 items-center justify-center overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]"
-                >
-                  {mediaType === "document" ? (
-                    <FileText size={20} className="text-[var(--color-primary)]" />
-                  ) : botId && mediaAssetId && mediaType ? (
-                    <SyncedMediaPreview
-                      botId={botId}
-                      assetId={mediaAssetId}
-                      mediaType={mediaType === "video" ? "video" : "photo"}
-                      compact
-                    />
-                  ) : (
-                    <ImageIcon size={20} className="text-[var(--color-foreground-tertiary)]" />
-                  )}
-                  {onRemoveMedia && (
-                    <button
-                      type="button"
-                      onMouseDown={keepEditorSelection}
-                      onClick={onRemoveMedia}
-                      aria-label="Убрать медиа"
-                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 shadow-xs"
-                    >
-                      <X className="size-3" aria-hidden />
-                    </button>
-                  )}
-                </motion.li>
-              )}
             </AnimatePresence>
 
-            {(mediaAssets.length > 0 ? mediaAssets.length < 10 : !hasSingleMedia) && (
+            {allAssets.length < 10 && onUploadMedia && (
               <li>
                 <button
                   type="button"
                   onMouseDown={keepEditorSelection}
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isUploading}
-                  title="Добавить фото или видео"
+                  title="Добавить фото или видео (до 20 МБ)"
                   aria-label="Добавить медиафайл"
                   className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-border-strong)] text-[var(--color-foreground-tertiary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50"
                 >
@@ -720,16 +765,35 @@ export const TelegramTextEditor = ({
                   ) : (
                     <ImagePlus className="size-5" aria-hidden />
                   )}
-                  <span className="text-[10px] font-semibold">{isUploading ? "…" : "фото"}</span>
+                  <span className="text-[10px] font-semibold">{isUploading ? "…" : "+ фото"}</span>
+                </button>
+              </li>
+            )}
+
+            {allAssets.length < 10 && onUploadLargeMedia && (
+              <li>
+                <button
+                  type="button"
+                  onMouseDown={keepEditorSelection}
+                  onClick={onUploadLargeMedia}
+                  title="Загрузить большое видео или медиа через Telegram-бота (до 2 ГБ)"
+                  aria-label="Загрузить большое видео через бота"
+                  className="flex h-16 px-2.5 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-primary)]/40 bg-[var(--color-primary-soft)]/20 text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary-soft)]/40 hover:border-[var(--color-primary)]"
+                >
+                  <div className="flex items-center gap-1">
+                    <Send size={13} className="rotate-45" />
+                    <span className="text-[10px] font-bold tracking-tight">Большое видео</span>
+                  </div>
+                  <span className="text-[9px] opacity-75 font-medium">в боте до 2 ГБ</span>
                 </button>
               </li>
             )}
           </ul>
           <p className="mt-1.5 text-[11px] text-[var(--color-foreground-tertiary)]">
             {mediaHint ||
-              (mediaAssets.length > 0
-                ? "Медиа уйдёт одним сообщением, текст — следующим · до 10 файлов по 20 МБ"
-                : "Фото или видео над текстом · до 20 МБ")}
+              (allAssets.length > 0
+                ? "Медиа над текстом · до 10 файлов · обычные до 20 МБ, большие через Telegram"
+                : "Фото или видео над текстом · обычные до 20 МБ, большие через Telegram")}
           </p>
         </div>
       )}
@@ -887,24 +951,12 @@ export const TelegramTextEditor = ({
           </button>
         </div>
 
-        {/* Правая часть: аксессуар или кнопка «Медиа» */}
-        <div className="flex items-center gap-1 shrink-0 ml-auto">
-          {toolbarAccessory}
-          {!toolbarAccessory && onUploadMedia && (
-            <button
-              type="button"
-              onMouseDown={keepEditorSelection}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold text-[var(--color-primary)] bg-[var(--color-primary-soft)] hover:bg-[var(--color-primary)] hover:text-white transition-all shadow-2xs disabled:opacity-50"
-              title="Прикрепить фото или видео"
-              aria-label="Добавить медиафайл"
-            >
-              <ImageIcon size={13} />
-              <span>{isUploading ? "Загружаем…" : "Медиа"}</span>
-            </button>
-          )}
-        </div>
+        {/* Правая часть: аксессуар (если передан) */}
+        {toolbarAccessory && (
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
+            {toolbarAccessory}
+          </div>
+        )}
       </div>
 
       {/* ── Кастомная модалка добавления / редактирования ссылки через Portal ── */}

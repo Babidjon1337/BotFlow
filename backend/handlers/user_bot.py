@@ -1,3 +1,4 @@
+import asyncio
 from html import escape
 from uuid import UUID
 
@@ -9,8 +10,16 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.exceptions import TelegramBadRequest
+
+from services.media_upload_session import (
+    get_upload_session,
+    get_active_session_for_user_bot,
+    cancel_upload_session,
+    complete_upload_session,
+)
+
 
 from config import MAIN_BOT_TG_ID
 from database.requests import *
@@ -173,7 +182,7 @@ def _funnel_action_keyboard(funnel, node):
 
 
 @user_bot_router.message(CommandStart())
-async def start_command_handler(message: Message):
+async def start_command_handler(message: Message, command: CommandObject | None = None):
     tg_bot_id = message.bot.id
     lead_id = message.from_user.id
     username = message.from_user.username
@@ -189,9 +198,29 @@ async def start_command_handler(message: Message):
     if bot_config.status == "archived":
         return
 
+    # Проверяем deep link загрузки большого медиа для владельца бота
+    if command and command.args and command.args.startswith("up_"):
+        if lead_id == bot_config.owner.telegram_id:
+            session_token = command.args.removeprefix("up_")
+            session = get_upload_session(session_token)
+            if session and session.owner_tg_id == lead_id and session.tg_bot_id == tg_bot_id:
+                text = (
+                    f"Отправьте фото или видео для блока “{session.node_title}”.\n"
+                    "Можно отправить несколько файлов подряд."
+                )
+                kb = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(text="Отмена", callback_data=f"cancel_upload:{session.id}")]
+                    ]
+                )
+                sent = await message.answer(text, reply_markup=kb)
+                session.prompt_message_id = sent.message_id
+                return
+
     if lead_id == bot_config.owner.telegram_id:
         if getattr(bot_config, "media_sync_done", False) == False:
             from database.requests.bot_rq import set_media_sync_done
+
 
             await set_media_sync_done(bot_config.id, True)
             await message.answer(
@@ -304,6 +333,192 @@ async def start_command_handler(message: Message):
             reply_markup=user_agreement_keyboard(),
             disable_web_page_preview=True,
         )
+
+
+@user_bot_router.callback_query(F.data.startswith("cancel_upload:"))
+async def on_cancel_upload_callback(callback: CallbackQuery):
+    session_id = callback.data.removeprefix("cancel_upload:")
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    if not bot_config or callback.from_user.id != bot_config.owner.telegram_id:
+        await callback.answer("Действие недоступно", show_alert=True)
+        return
+
+    cancel_upload_session(session_id)
+    try:
+        await callback.message.delete()
+    except Exception:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+    await callback.answer("Загрузка отменена")
+
+
+async def _finalize_large_upload_after_delay(session_id: str, bot, chat_id: int):
+    try:
+        # Ждём 3 секунды на случай отправки альбома или нескольких файлов подряд
+        await asyncio.sleep(3.0)
+        session = get_upload_session(session_id)
+        if not session or session.is_cancelled or session.is_completed:
+            return
+
+        session.is_completed = True
+
+        done_msg = None
+        try:
+            done_msg = await bot.send_message(
+                chat_id,
+                "Готово. Все файлы загружены.\nСообщения будут удалены через 5 секунд.",
+            )
+        except Exception as e:
+            logger.warning("Не удалось отправить сообщение о завершении загрузки: %s", e)
+
+        # Ждём 5 секунд по ТЗ
+        await asyncio.sleep(5.0)
+
+        # Удаляем отправленные пользователем медиафайлы, чтобы чат не засорялся
+        for msg_id in session.user_media_message_ids:
+            try:
+                await bot.delete_message(chat_id, msg_id)
+            except Exception:
+                pass
+
+        # Удаляем стартовое сообщение-инструкцию с кнопкой «Отмена»
+        if session.prompt_message_id:
+            try:
+                await bot.delete_message(chat_id, session.prompt_message_id)
+            except Exception:
+                pass
+
+        # Удаляем сообщение о готовности
+        if done_msg:
+            try:
+                await bot.delete_message(chat_id, done_msg.message_id)
+            except Exception:
+                pass
+
+        complete_upload_session(session_id)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.warning("Ошибка при финализации сессии загрузки %s: %s", session_id, e)
+
+
+@user_bot_router.message(F.photo | F.video | F.document)
+async def on_owner_media_message(message: Message):
+    bot_config = await get_bot_by_tg_id(message.bot.id)
+    if not bot_config or message.from_user.id != bot_config.owner.telegram_id:
+        return
+
+    session = get_active_session_for_user_bot(message.from_user.id, message.bot.id)
+    if not session or session.is_cancelled or session.is_completed:
+        return
+
+    telegram_file_id = None
+    media_type = None
+    file_name = None
+    mime_type = None
+    thumbnail_file_id = None
+
+    if message.photo:
+        telegram_file_id = message.photo[-1].file_id
+        media_type = "photo"
+        file_name = f"{session.node_id}_{len(session.media_assets) + 1}.jpg"
+        mime_type = "image/jpeg"
+    elif message.video:
+        telegram_file_id = message.video.file_id
+        media_type = "video"
+        file_name = message.video.file_name or f"{session.node_id}_{len(session.media_assets) + 1}.mp4"
+        mime_type = message.video.mime_type or "video/mp4"
+        if message.video.thumbnail:
+            thumbnail_file_id = message.video.thumbnail.file_id
+    elif message.document:
+        doc_mime = (message.document.mime_type or "").lower()
+        fn = (message.document.file_name or "").lower()
+        if doc_mime.startswith("image/") or fn.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            media_type = "photo"
+            mime_type = doc_mime or "image/jpeg"
+        elif doc_mime.startswith("video/") or fn.endswith((".mp4", ".mov", ".avi", ".mkv")):
+            media_type = "video"
+            mime_type = doc_mime or "video/mp4"
+        else:
+            media_type = "document"
+            mime_type = message.document.mime_type or "application/octet-stream"
+        telegram_file_id = message.document.file_id
+        file_name = message.document.file_name or f"{session.node_id}_{len(session.media_assets) + 1}"
+        if message.document.thumbnail:
+            thumbnail_file_id = message.document.thumbnail.file_id
+
+    if not telegram_file_id or not media_type:
+        return
+
+    from database.requests.media_rq import create_media_asset
+    from database.requests.bot_rq import update_bot_funnel
+
+    asset = await create_media_asset(
+        bot_id=bot_config.id,
+        node_id=session.node_id,
+        media_type=media_type,
+        telegram_file_id=telegram_file_id,
+        mime_type=mime_type,
+        file_name=file_name,
+    )
+
+    if thumbnail_file_id:
+        try:
+            await create_media_asset(
+                bot_id=bot_config.id,
+                node_id=f"thumb:{asset.id}",
+                media_type="photo",
+                telegram_file_id=thumbnail_file_id,
+                mime_type="image/jpeg",
+                file_name=f"thumb_{asset.id}.jpg",
+            )
+        except Exception as err:
+            logger.warning("Не удалось сохранить thumbnail для %s: %s", asset.id, err)
+
+    schema = dict(bot_config.funnel_schema or {})
+    nodes = list(schema.get("nodes") or [])
+
+    asset_dict = {
+        "mediaFileId": telegram_file_id,
+        "mediaAssetId": str(asset.id),
+        "mediaType": media_type,
+    }
+
+    if session.node_id.startswith("payment:tariff:"):
+        tariff_id = session.node_id.removeprefix("payment:tariff:")
+        payment_node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == "payment"), None)
+        if payment_node and isinstance(payment_node.get("tariffs"), list):
+            for t in payment_node["tariffs"]:
+                if isinstance(t, dict) and str(t.get("id")) == tariff_id:
+                    t["mediaFileId"] = telegram_file_id
+                    t["mediaAssetId"] = str(asset.id)
+                    t["mediaType"] = media_type
+                    break
+    else:
+        target_node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == session.node_id), None)
+        if target_node:
+            current_assets = list(target_node.get("mediaAssets") or [])
+            current_assets.append(asset_dict)
+            target_node["mediaAssets"] = current_assets[-10:]
+            target_node["media"] = True
+            target_node["mediaFileId"] = telegram_file_id
+            target_node["mediaAssetId"] = str(asset.id)
+            target_node["mediaType"] = media_type
+
+    schema["nodes"] = nodes
+    await update_bot_funnel(bot_config.id, schema, bot_config.funnel_complete)
+
+    session.media_assets.append(asset_dict)
+    session.user_media_message_ids.append(message.message_id)
+
+    if session.debounce_task and not session.debounce_task.done():
+        session.debounce_task.cancel()
+
+    session.debounce_task = asyncio.create_task(
+        _finalize_large_upload_after_delay(session.id, message.bot, message.chat.id)
+    )
 
 
 @user_bot_router.callback_query(F.data == "agree_tos")

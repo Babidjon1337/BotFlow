@@ -315,12 +315,84 @@ export const Build = () => {
     }
   };
 
-  const removeMedia = (nodeId: string) => {
+  const removeMedia = (nodeId: string, assetIdToRemove?: string) => {
+    const node = getBlock(nodeId);
+    const assets = Array.isArray(node?.mediaAssets) ? [...node.mediaAssets] : [];
+    if (assetIdToRemove && assets.length > 0) {
+      const remaining = assets.filter((a) => a.mediaAssetId !== assetIdToRemove);
+      if (remaining.length > 0) {
+        updateBlock(nodeId, "mediaAssets", remaining);
+        updateBlock(nodeId, "media", true);
+        updateBlock(nodeId, "mediaFileId", remaining[0].mediaFileId);
+        updateBlock(nodeId, "mediaAssetId", remaining[0].mediaAssetId);
+        updateBlock(nodeId, "mediaType", remaining[0].mediaType);
+        return;
+      }
+    }
     updateBlock(nodeId, "media", false);
     updateBlock(nodeId, "mediaFileId", null);
     updateBlock(nodeId, "mediaAssetId", null);
     updateBlock(nodeId, "mediaType", null);
     updateBlock(nodeId, "mediaAssets", []);
+  };
+
+  const handleOpenLargeMediaUpload = async (nodeId: string) => {
+    if (!appState.activeBot) return;
+    try {
+      const { apiService } = await import("../../services/api");
+      const session = await apiService.createMediaUploadSession(appState.activeBot.id, nodeId);
+
+      const tg = (window as unknown as { Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } } }).Telegram?.WebApp;
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(session.deepLink);
+      } else {
+        window.open(session.deepLink, "_blank");
+      }
+
+      setToastType("success");
+      setToastMessage("Открываем Telegram для загрузки большого видео…");
+
+      let pollCount = 0;
+      const pollTimer = setInterval(async () => {
+        pollCount++;
+        if (pollCount > 90) {
+          clearInterval(pollTimer);
+          return;
+        }
+        try {
+          const res = await apiService.getMediaUploadSession(appState.activeBot!.id, session.sessionId);
+          if (res.mediaAssets && res.mediaAssets.length > 0) {
+            const node = getBlock(nodeId);
+            const currentAssets = Array.isArray(node?.mediaAssets) ? [...node.mediaAssets] : [];
+            const existingIds = new Set(currentAssets.map((a) => a.mediaAssetId));
+            const newItems = res.mediaAssets.filter((a) => !existingIds.has(a.mediaAssetId));
+            if (newItems.length > 0) {
+              const merged = [...currentAssets, ...newItems].slice(-10);
+              updateBlock(nodeId, "mediaAssets", merged);
+              updateBlock(nodeId, "media", true);
+              updateBlock(nodeId, "mediaFileId", merged[0].mediaFileId);
+              updateBlock(nodeId, "mediaAssetId", merged[0].mediaAssetId);
+              updateBlock(nodeId, "mediaType", merged[0].mediaType);
+              setToastType("success");
+              setToastMessage("Медиа получено из Telegram!");
+            }
+          }
+          if (res.isCompleted || res.isCancelled) {
+            clearInterval(pollTimer);
+          }
+        } catch {
+          clearInterval(pollTimer);
+        }
+      }, 2000);
+    } catch (err) {
+      showAlert({
+        title: "Не удалось открыть Telegram",
+        message: err instanceof Error ? err.message : "Повторите попытку.",
+        type: "danger",
+        confirmText: "Понятно",
+        cancelText: "",
+      });
+    }
   };
 
   const handleTariffMediaUpload = async (tariffId: string, file: File) => {
@@ -652,7 +724,8 @@ export const Build = () => {
                     mediaType={getBlock("start")?.mediaType}
                     mediaAssets={getBlock("start")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("start", file)}
-                    onRemoveMedia={() => removeMedia("start")}
+                    onUploadLargeMedia={() => handleOpenLargeMediaUpload("start")}
+                    onRemoveMedia={(assetId) => removeMedia("start", assetId)}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -703,7 +776,8 @@ export const Build = () => {
                     mediaType={getBlock("push1")?.mediaType}
                     mediaAssets={getBlock("push1")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("push1", file)}
-                    onRemoveMedia={() => removeMedia("push1")}
+                    onUploadLargeMedia={() => handleOpenLargeMediaUpload("push1")}
+                    onRemoveMedia={(assetId) => removeMedia("push1", assetId)}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -762,7 +836,8 @@ export const Build = () => {
                     mediaType={getBlock("push2")?.mediaType}
                     mediaAssets={getBlock("push2")?.mediaAssets ?? []}
                     onUploadMedia={(file) => handleMediaUpload("push2", file)}
-                    onRemoveMedia={() => removeMedia("push2")}
+                    onUploadLargeMedia={() => handleOpenLargeMediaUpload("push2")}
+                    onRemoveMedia={(assetId) => removeMedia("push2", assetId)}
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

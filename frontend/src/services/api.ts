@@ -639,6 +639,32 @@ export const apiService = {
     return response.blob();
   },
 
+  async createMediaUploadSession(botId: string | number, nodeId: string) {
+    return fetchApi<{
+      sessionId: string;
+      botUsername: string;
+      deepLink: string;
+      nodeTitle: string;
+    }>(`/api/bots/${botId}/media-upload-session`, {
+      method: "POST",
+      body: JSON.stringify({ node_id: nodeId }),
+    });
+  },
+
+  async getMediaUploadSession(botId: string | number, sessionId: string) {
+    return fetchApi<{
+      sessionId: string;
+      nodeId: string;
+      isCompleted: boolean;
+      isCancelled: boolean;
+      mediaAssets: Array<{
+        mediaFileId: string;
+        mediaAssetId: string;
+        mediaType: "photo" | "video" | "document";
+      }>;
+    }>(`/api/bots/${botId}/media-upload-session/${sessionId}`);
+  },
+
   async getLeads(
     botId: string | number,
     search?: string,

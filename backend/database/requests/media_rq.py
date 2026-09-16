@@ -36,3 +36,14 @@ async def get_bot_media_asset(bot_id: int, asset_id: UUID) -> MediaAsset | None:
                 MediaAsset.bot_id == bot_id,
             )
         )
+
+
+async def get_thumbnail_media_asset(bot_id: int, parent_asset_id: UUID) -> MediaAsset | None:
+    async with async_session() as session:
+        return await session.scalar(
+            select(MediaAsset).where(
+                MediaAsset.bot_id == bot_id,
+                MediaAsset.node_id == f"thumb:{parent_asset_id}",
+            )
+        )
+
