@@ -37,7 +37,10 @@ GEMINI.md
 
 # Dev artifacts
 gemini_image/
-/tests*
+/tests/
+backend/tests
+backend/tests/*live*
+backend/tests/test_prodamus_live.py
 /backend/test_integration.py
 frontend/.playwright-cli/
 frontend/*.png

@@ -228,9 +228,15 @@ async def client_bots_webhook(bot_db_id: int, request: Request):
 # =====================================================================
 # ЭНДПОИНТ 3: Универсальный вебхук оплат
 # =====================================================================
+@app.post("/webhook/payments/{provider}")
+@app.post("/webhook/payments/{provider}/")
 @app.post("/webhook/payments/{provider}/{tg_bot_id}")
 @limiter.exempt
-async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Request):
+async def universal_payment_webhook(
+    provider: str,
+    request: Request,
+    tg_bot_id: int | None = None,
+):
     try:
         normalized_provider = provider.casefold()
         if normalized_provider == "yookassa":
@@ -245,7 +251,33 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
         else:
             raise PaymentWebhookError("Unsupported payment provider")
 
-        bot_config = await get_bot_by_tg_id(tg_bot_id)
+        bot_config = None
+        if tg_bot_id is not None:
+            bot_config = await get_bot_by_tg_id(tg_bot_id)
+
+        if not bot_config:
+            from database.models import async_session, BotConfig, ClientPayment
+            from sqlalchemy import select
+            import uuid
+            order_id = (
+                data.get("order_id")
+                or data.get("order_num")
+                or data.get("shp_client_payment_id")
+            )
+            async with async_session() as session:
+                if order_id:
+                    try:
+                        order_uuid = uuid.UUID(str(order_id))
+                        client_pmt = await session.get(ClientPayment, order_uuid)
+                        if client_pmt:
+                            bot_config = await session.get(BotConfig, client_pmt.bot_id)
+                    except (ValueError, TypeError):
+                        pass
+                if not bot_config:
+                    bot_config = await session.scalar(
+                        select(BotConfig).where(BotConfig.payment_provider == normalized_provider)
+                    )
+
         if not bot_config:
             raise HTTPException(status_code=404, detail="Bot not found")
 
@@ -280,7 +312,7 @@ async def universal_payment_webhook(provider: str, tg_bot_id: int, request: Requ
             raise PaymentWebhookError(str(exc)) from exc
 
         fulfillment = await process_client_payment_fulfillment(
-            payment.id, request.app.state.session
+            payment.id, getattr(request.app.state, "session", None)
         )
         logger.info(
             "Платёж обработан: payment_id=%s, new=%s, access=%s, owner_notice=%s",

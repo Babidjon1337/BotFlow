@@ -65,8 +65,7 @@ export const PAYMENT_PROVIDERS: Record<PaymentProvider, { key: string; label: st
     { key: 'hash_algorithm',  label: 'Алгоритм подписи', hint: 'md5, sha256 или sha512' },
   ],
   prodamus: [
-    { key: 'api_key',   label: 'API Ключ',     hint: 'prodamus_xxxxx' },
-    { key: 'domain',    label: 'Домен',        hint: 'myshop.payform.ru' },
-    { key: 'sys',       label: 'Код интеграции SYS', hint: 'Код, согласованный с Prodamus' },
+    { key: 'domain',    label: 'Домен платёжной страницы', hint: 'myshop.payform.ru' },
+    { key: 'api_key',   label: 'Секретный API-ключ',     hint: 'Секретный ключ из кабинета Prodamus' },
   ],
 };

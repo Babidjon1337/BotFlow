@@ -78,13 +78,12 @@ async def validate_payment_credentials(provider: str | None, creds: dict | None)
         )
     if normalized_provider == "prodamus":
         valid = bool(
-            credentials.get("api_key")
-            and credentials.get("domain")
-            and credentials.get("sys")
+            (credentials.get("api_key") or credentials.get("secret"))
+            and (credentials.get("domain") or credentials.get("payment_page"))
         )
         return (True, "Реквизиты Prodamus заполнены.") if valid else (
             False,
-            "Укажите API-ключ, домен и код интеграции SYS Prodamus.",
+            "Укажите API-ключ и домен платёжной страницы Prodamus.",
         )
     return False, "Этот платёжный провайдер не поддерживается."
 
@@ -270,23 +269,21 @@ async def _create_prodamus_link(
     if payment_page and not payment_page.startswith("http"):
         payment_page = f"https://{payment_page}"
     payment_page = payment_page.rstrip("/") + "/"
-    api_key = creds.get("api_key")
+    api_key = creds.get("api_key") or creds.get("secret")
     integration_code = creds.get("sys")
 
-    if not payment_page or not api_key or not integration_code:
-        logger.error("Для Prodamus не переданы domain, api_key или sys!")
+    if not payment_page or not api_key:
+        logger.error("Для Prodamus не переданы domain или api_key!")
         return None
 
     prodamus = ProdamusPy(api_key)
     order_id = str(client_payment.id) if client_payment else f"{telegram_id}_{uuid.uuid4()}"
 
-
     data = {
         "do": "link",
-        "sys": str(integration_code),
         "order_id": order_id,
         "tg_user_id": str(telegram_id),
-        "urlSuccess": f"https://t.me/{bot_config.username}" if bot_config.username else "https://t.me/telegram",
+        "customer_extra": str(telegram_id),
         "products": [
             {
                 "name": description,
@@ -296,11 +293,8 @@ async def _create_prodamus_link(
             }
         ],
     }
-    if WEBHOOK_URL:
-        data["urlNotification"] = (
-            f"{WEBHOOK_URL.rstrip('/')}/webhook/payments/prodamus/{bot_config.tg_bot_id}"
-        )
-
+    if integration_code:
+        data["sys"] = str(integration_code)
     data["signature"] = prodamus.sign(data)
     if client_payment:
         await set_client_payment_provider_id(client_payment.id, order_id)

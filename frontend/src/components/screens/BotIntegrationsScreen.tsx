@@ -44,8 +44,8 @@ const PROVIDERS: {
     logo: '/prodamus.png',
     desc: 'Продажи в мессенджерах, гибкие способы оплаты.',
     fields: [
-      { key: 'shop_id', label: 'ID магазина (shop_id)', placeholder: 'demo', help: 'Личный кабинет Prodamus → Интеграции → shop_id.' },
-      { key: 'secret', label: 'Секретный токен', placeholder: '••••••••', help: 'Выдаёт поддержка Продамуса при интеграции.' },
+      { key: 'domain', label: 'Домен платёжной страницы', placeholder: 'myshop.payform.ru', help: 'Адрес вашей платёжной страницы в Prodamus.' },
+      { key: 'api_key', label: 'Секретный API-ключ', placeholder: '••••••••', help: 'Личный кабинет Prodamus → Настройки → Секретный ключ.' },
     ],
   },
 ];
