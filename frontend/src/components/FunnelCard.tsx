@@ -23,12 +23,10 @@ export const FunnelCard = ({ stepId, title, isComplete, defaultExpanded = false,
         borderRadius: '20px',
         border: isExpanded
           ? '1.5px solid var(--color-border-strong)'
-          : `1px solid ${isComplete ? 'var(--color-success-soft)' : 'var(--color-border)'}`,
+          : '1px solid var(--color-border)',
         boxShadow: isExpanded
-          ? '0 8px 24px -8px rgba(0,0,0,0.1)'
-          : isComplete
-          ? '0 2px 8px -4px rgba(0,0,0,0.06)'
-          : '0 1px 4px -2px rgba(0,0,0,0.04)',
+          ? '0 10px 25px -5px rgba(13, 20, 30, 0.08), 0 8px 10px -6px rgba(13, 20, 30, 0.04)'
+          : '0 1px 3px 0 rgba(13, 20, 30, 0.06), 0 1px 2px -1px rgba(13, 20, 30, 0.04)',
         transition: 'border-color 0.3s ease, box-shadow 0.3s ease',
       }}
     >

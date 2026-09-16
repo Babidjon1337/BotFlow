@@ -41,7 +41,7 @@ export function TopBar({
       : ACCOUNT_TABS.find(t => t.id === route.tab)?.label ?? '';
 
   return (
-    <header className="flex min-h-[calc(3.5rem+max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px)))] shrink-0 items-center gap-2 border-b border-border bg-background px-4 pt-[max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px))] lg:min-h-[calc(4rem+max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px)))] lg:px-8">
+    <header className="flex min-h-[calc(3.5rem+max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px)))] shrink-0 items-center gap-2 border-b border-border bg-card px-4 pt-[max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px))] lg:min-h-[calc(4rem+max(env(safe-area-inset-top),var(--tg-content-safe-area-inset-top,0px)))] lg:px-8">
       {route.level === 'bot' ? (
         <>
           <button

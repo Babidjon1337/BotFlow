@@ -998,11 +998,11 @@ export const Build = () => {
                       ? "radial-gradient(circle at 50% 0%, #1a1a24 0%, #0f0f0f 100%)"
                       : "radial-gradient(circle at 50% 0%, #f0f4f8 0%, #e4eaf0 100%)",
                   borderRadius: "44px",
-                  border: `8px solid ${theme === "dark" ? "#18181b" : "#ffffff"}`,
+                  border: "8px solid #18181b",
                   boxShadow:
                     theme === "dark"
                       ? "0 25px 50px -12px rgba(0,0,0,0.6), inset 0 2px 4px rgba(255,255,255,0.05)"
-                      : "0 25px 50px -12px rgba(0,0,0,0.15), inset 0 2px 4px rgba(0,0,0,0.05)",
+                      : "0 20px 40px -12px rgba(13,20,30,0.22), 0 0 0 1px rgba(13,20,30,0.08)",
                   overflow: "hidden",
                   display: "flex",
                   flexDirection: "column",
@@ -1019,7 +1019,7 @@ export const Build = () => {
                     transform: "translateX(-50%)",
                     width: "120px",
                     height: "24px",
-                    background: theme === "dark" ? "#18181b" : "#ffffff",
+                    background: "#18181b",
                     borderBottomLeftRadius: "16px",
                     borderBottomRightRadius: "16px",
                     zIndex: 20,

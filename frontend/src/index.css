@@ -11,17 +11,17 @@
 :root {
   /* ── Primitive: нейтральная шкала ── */
   --n-0: #ffffff;
-  --n-25: #fcfcfd;
-  --n-50: #f7f8fa;
-  --n-100: #eef1f5;
-  --n-200: #e1e5ea;
-  --n-300: #cfd4de;
-  --n-400: #98a2b3;
-  --n-500: #667085;
-  --n-600: #475467;
-  --n-700: #344054;
-  --n-800: #1d2939;
-  --n-900: #101828;
+  --n-25: #f8fafc;
+  --n-50: #f0f3f8;
+  --n-100: #e4e9f2;
+  --n-200: #d5dce6;
+  --n-300: #bac4d4;
+  --n-400: #8895a7;
+  --n-500: #5d6b7e;
+  --n-600: #424e61;
+  --n-700: #2c3646;
+  --n-800: #192231;
+  --n-900: #0d141e;
 
   /* ── Primitive: акцент Blue ── */
   --p-100: #eff6ff;
@@ -38,16 +38,16 @@
   --v-600: #6d28d9;
 
   /* ── Semantic: Light theme ── */
-  --background: var(--n-0);
+  --background: var(--n-50);
   --foreground: var(--n-900);
-  --fg-secondary: var(--n-600);
+  --fg-secondary: var(--n-500);
   --fg-tertiary: var(--n-400);
 
   --card: #ffffff;
   --card-foreground: var(--foreground);
   --surface-raised: #ffffff;
 
-  --muted: var(--n-50);
+  --muted: var(--n-100);
   --muted-foreground: var(--n-500);
   --secondary: var(--n-100);
   --secondary-foreground: var(--n-700);
@@ -66,20 +66,20 @@
   --input: var(--n-200);
   --popover: #ffffff;
   --popover-foreground: var(--foreground);
-  --sidebar: var(--n-25);
+  --sidebar: #ffffff;
 
-  --success: #12b76a;
+  --success: #168a55;
   --success-soft: #ecfdf3;
-  --warning: #f79009;
+  --warning: #b76e00;
   --warning-soft: #fffaeb;
-  --danger: #f04438;
+  --danger: #d92d20;
   --danger-soft: #fef3f2;
   --destructive: var(--danger);
   --destructive-foreground: #ffffff;
-  --info: #2e90fa;
+  --info: #2563eb;
   --info-soft: #eff8ff;
 
-  --overlay: rgb(16 24 40 / 0.4);
+  --overlay: rgb(13 20 30 / 0.45);
 
   /* ── Semantic: радиусы ── */
   --radius-chip: 8px;
@@ -93,12 +93,12 @@
   --ink-foreground: var(--n-0);
 
   /* ── Semantic: тени ── */
-  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
-  --shadow-card: 0 1px 3px rgb(16 24 40 / 0.06), 0 1px 2px rgb(16 24 40 / 0.04);
+  --shadow-xs: 0 1px 2px rgb(13 20 30 / 0.05);
+  --shadow-card: 0 1px 3px rgb(13 20 30 / 0.08), 0 1px 2px rgb(13 20 30 / 0.04);
   --shadow-chip:
-    0 12px 28px -8px rgb(16 24 40 / 0.16), 0 2px 8px rgb(16 24 40 / 0.05);
+    0 12px 28px -8px rgb(13 20 30 / 0.16), 0 2px 8px rgb(13 20 30 / 0.05);
   --shadow-float:
-    0 12px 32px -8px rgb(16 24 40 / 0.16), 0 2px 6px rgb(16 24 40 / 0.06);
+    0 12px 32px -8px rgb(13 20 30 / 0.16), 0 2px 6px rgb(13 20 30 / 0.06);
 }
 
 .dark {
