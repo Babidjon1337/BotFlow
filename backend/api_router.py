@@ -1,10 +1,11 @@
+import asyncio
 import json
 import io
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from loggers import logger
 from config import (
     ADMIN_TELEGRAM_IDS,
@@ -16,6 +17,7 @@ from config import (
 )
 from services.security import crypto
 from services.telegram_auth import TelegramAuthError, TelegramUser, validate_init_data
+from services.event_bus import event_bus
 from database.requests.bot_rq import (
     get_bot_by_id,
     get_bot_by_tg_id,
@@ -329,8 +331,11 @@ def _get_development_user(request: Request) -> TelegramUser | None:
     if not ALLOW_INSECURE_DEV_AUTH:
         return None
 
-    telegram_id = request.headers.get("X-Telegram-Id") or request.headers.get(
-        "X-User-Id"
+    telegram_id = (
+        request.headers.get("X-Telegram-Id")
+        or request.headers.get("X-User-Id")
+        or request.query_params.get("telegram_id")
+        or request.query_params.get("user_id")
     )
     if not telegram_id:
         return None
@@ -342,7 +347,11 @@ def _get_development_user(request: Request) -> TelegramUser | None:
 
 async def get_current_user(request: Request) -> TelegramUser:
     """Resolve an authenticated Telegram user for dashboard API requests."""
-    init_data = request.headers.get("X-Telegram-Init-Data")
+    init_data = (
+        request.headers.get("X-Telegram-Init-Data")
+        or request.query_params.get("init_data")
+        or request.query_params.get("initData")
+    )
     if init_data:
         try:
             telegram_user = validate_init_data(init_data)
@@ -1366,8 +1375,20 @@ async def save_bot_funnel_endpoint(
 
 @api_router.post("/api/bots/{bot_id}/media-sync")
 async def sync_bot_media(bot_id: int, request: Request):
-    await get_owned_bot(bot_id, request)
-    await set_media_sync_done(bot_id, True)
+    bot = await get_owned_bot(bot_id, request)
+    owner_tg_id = getattr(getattr(bot, "owner", None), "telegram_id", None)
+    if owner_tg_id:
+        event_bus.publish_user(
+            owner_tg_id,
+            "bot:media_sync_done",
+            {"botId": bot_id, "mediaSyncDone": True},
+        )
+    else:
+        await event_bus.publish_bot(
+            bot_id,
+            "bot:media_sync_done",
+            {"botId": bot_id, "mediaSyncDone": True},
+        )
     return {
         "status": "ok",
         "message": "Синхронизация медиа выполнена",
@@ -1831,6 +1852,19 @@ async def create_broadcast_endpoint(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    owner_tg_id = getattr(getattr(bot, "owner", None), "telegram_id", None)
+    if owner_tg_id:
+        event_bus.publish_user(
+            owner_tg_id,
+            "broadcast:status_changed",
+            {"botId": bot.id, "broadcastId": str(broadcast.id), "status": broadcast.status},
+        )
+    else:
+        await event_bus.publish_bot(
+            bot.id,
+            "broadcast:status_changed",
+            {"botId": bot.id, "broadcastId": str(broadcast.id), "status": broadcast.status},
+        )
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
 
 
@@ -1871,6 +1905,11 @@ async def retry_broadcast_endpoint(broadcast_id: UUID, request: Request):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if requeued == 0:
         raise HTTPException(status_code=400, detail="Нет неудачных доставок для повтора")
+    await event_bus.publish_bot(
+        broadcast.bot_id,
+        "broadcast:status_changed",
+        {"botId": broadcast.bot_id, "broadcastId": str(broadcast.id), "status": "queued"},
+    )
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
 
 
@@ -1883,4 +1922,50 @@ async def cancel_broadcast_endpoint(broadcast_id: UUID, request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     updated = await get_broadcast(broadcast.id)
+    if updated:
+        await event_bus.publish_bot(
+            broadcast.bot_id,
+            "broadcast:status_changed",
+            {"botId": broadcast.bot_id, "broadcastId": str(updated.id), "status": updated.status},
+        )
     return BroadcastApiResponse.from_orm_broadcast(updated).model_dump(by_alias=True)
+
+
+@api_router.get("/api/events")
+async def sse_events_endpoint(request: Request):
+    """Server-Sent Events stream for real-time notifications (upload completion, media sync, broadcasts)."""
+    current_user = await get_current_user(request)
+    user_tg_id = current_user.telegram_id
+
+    async def event_generator():
+        queue = await event_bus.subscribe(user_tg_id)
+        try:
+            yield "event: connected\ndata: {}\n\n"
+            while True:
+                try:
+                    if await request.is_disconnected():
+                        break
+                except Exception:
+                    pass
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    event_type = event.get("type", "message")
+                    payload = json.dumps(event.get("data", {}), ensure_ascii=False)
+                    yield f"event: {event_type}\ndata: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            await event_bus.unsubscribe(user_tg_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+

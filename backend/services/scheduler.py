@@ -254,6 +254,15 @@ async def process_broadcasts_job():
             broadcast = await claim_queued_broadcast()
             if broadcast is None:
                 return
+            try:
+                from services.event_bus import event_bus
+                await event_bus.publish_bot(
+                    broadcast.bot_id,
+                    "broadcast:status_changed",
+                    {"botId": broadcast.bot_id, "broadcastId": str(broadcast.id), "status": "sending"},
+                )
+            except Exception as exc:
+                logger.warning("SSE: ошибка отправки статуса начала рассылки: %s", exc)
             await run_broadcast_sending(
                 broadcast.id, bot_session=shared_scheduler_session
             )

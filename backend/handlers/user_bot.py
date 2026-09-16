@@ -220,9 +220,14 @@ async def start_command_handler(message: Message, command: CommandObject | None 
     if lead_id == bot_config.owner.telegram_id:
         if getattr(bot_config, "media_sync_done", False) == False:
             from database.requests.bot_rq import set_media_sync_done
-
+            from services.event_bus import event_bus
 
             await set_media_sync_done(bot_config.id, True)
+            event_bus.publish_user(
+                bot_config.owner.telegram_id,
+                "bot:media_sync_done",
+                {"botId": bot_config.id, "mediaSyncDone": True},
+            )
             await message.answer(
                 "🎉 <b>Поздравляем с созданием бота!</b>\n\n"
                 "✅ Синхронизация прошла успешно.\n\n"
@@ -343,7 +348,15 @@ async def on_cancel_upload_callback(callback: CallbackQuery):
         await callback.answer("Действие недоступно", show_alert=True)
         return
 
+    session = get_upload_session(session_id)
     cancel_upload_session(session_id)
+    if session:
+        from services.event_bus import event_bus
+        event_bus.publish_user(
+            session.owner_tg_id,
+            "media:upload_cancelled",
+            {"botId": session.bot_id, "sessionId": session.id, "nodeId": session.node_id, "isCancelled": True},
+        )
     try:
         await callback.message.delete()
     except Exception:
@@ -363,6 +376,18 @@ async def _finalize_large_upload_after_delay(session_id: str, bot, chat_id: int)
             return
 
         session.is_completed = True
+        from services.event_bus import event_bus
+        event_bus.publish_user(
+            session.owner_tg_id,
+            "media:upload_completed",
+            {
+                "botId": session.bot_id,
+                "sessionId": session.id,
+                "nodeId": session.node_id,
+                "mediaAssets": session.media_assets,
+                "isCompleted": True,
+            },
+        )
 
         done_msg = None
         try:

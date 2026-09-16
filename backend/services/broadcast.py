@@ -235,7 +235,17 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
             await mark_recipient_failed(
                 recipient.id, broadcast_id, "У бота не настроен токен"
             )
-        return await finalize_broadcast(broadcast_id)
+        final_status = await finalize_broadcast(broadcast_id)
+        try:
+            from services.event_bus import event_bus
+            await event_bus.publish_bot(
+                broadcast.bot_id,
+                "broadcast:status_changed",
+                {"botId": broadcast.bot_id, "broadcastId": str(broadcast_id), "status": final_status},
+            )
+        except Exception as exc:
+            logger.warning("SSE: ошибка отправки статуса рассылки: %s", exc)
+        return final_status
 
     token = crypto.decrypt(bot_config.bot_token_enc)
     bot = Bot(
@@ -264,4 +274,13 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
     finally:
         final_status = await finalize_broadcast(broadcast_id)
         logger.info("Рассылка %s завершена со статусом %s", broadcast_id, final_status)
+        try:
+            from services.event_bus import event_bus
+            await event_bus.publish_bot(
+                broadcast.bot_id,
+                "broadcast:status_changed",
+                {"botId": broadcast.bot_id, "broadcastId": str(broadcast_id), "status": final_status},
+            )
+        except Exception as exc:
+            logger.warning("SSE: ошибка отправки статуса завершения рассылки: %s", exc)
     return final_status
