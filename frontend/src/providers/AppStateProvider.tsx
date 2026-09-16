@@ -24,6 +24,7 @@ interface AppContextType {
   setSheet: (sheet: SheetType | null, data?: AppState['sheetData']) => void;
   toggleTheme: () => void;
   updateBlock: <K extends keyof FunnelNode>(id: string, field: K, value: FunnelNode[K]) => void;
+  updateBlockFields: (id: string, updates: Partial<FunnelNode>) => void;
   handleCreateBotClick: () => void;
   handlePurchaseSuccess: (plan: 'basic' | 'pro') => void;
   isAdmin: boolean;
@@ -324,6 +325,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const updateBlockFields = (id: string, updates: Partial<FunnelNode>) => {
+    const currentBlocks = blocksRef.current;
+    const existingBlock = currentBlocks.find(block => block.id === id);
+    let nextBlocks: FunnelNode[] | null = null;
+
+    if (existingBlock) {
+      nextBlocks = currentBlocks.map(block => block.id === id ? { ...block, ...updates } : block);
+    } else {
+      const defaultBlock = INITIAL_BLOCKS.find(block => block.id === id);
+      if (!defaultBlock) return;
+      nextBlocks = [...currentBlocks, { ...defaultBlock, ...updates }];
+    }
+
+    funnelRevisionRef.current += 1;
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
+    setAppState(prev => ({
+      ...prev,
+      isDirty: funnelFingerprint(nextBlocks) !== savedFunnelFingerprintRef.current,
+    }));
+  };
+
   const getFunnelRevision = useCallback(() => funnelRevisionRef.current, []);
   const getFunnelWorkspaceGeneration = useCallback(
     () => funnelWorkspaceGenerationRef.current,
@@ -391,6 +414,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setSheet,
         toggleTheme,
         updateBlock,
+        updateBlockFields,
         handleCreateBotClick,
         handlePurchaseSuccess,
         isAdmin,

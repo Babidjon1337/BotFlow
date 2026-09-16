@@ -287,26 +287,41 @@ export const TelegramTextEditor = ({
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     // 1. Проверяем вставку медиафайлов из буфера обмена (картинки, скриншоты, видео)
     const items = event.clipboardData.items ? Array.from(event.clipboardData.items) : [];
-    const mediaItem = items.find(
-      (item) => item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))
-    );
-    const files = event.clipboardData.files ? Array.from(event.clipboardData.files) : [];
-    const mediaFile = mediaItem
-      ? mediaItem.getAsFile()
-      : files.find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
-
-    if (mediaFile && onUploadMedia) {
-      event.preventDefault();
-      if (mediaFile.size > 20 * 1024 * 1024) {
-        if (onUploadLargeMedia) {
-          onUploadLargeMedia();
-        } else {
-          alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
-        }
-        return;
+    const mediaFiles: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))) {
+        const f = item.getAsFile();
+        if (f) mediaFiles.push(f);
       }
+    }
+    if (mediaFiles.length === 0 && event.clipboardData.files) {
+      for (const f of Array.from(event.clipboardData.files)) {
+        if (f.type.startsWith("image/") || f.type.startsWith("video/")) {
+          mediaFiles.push(f);
+        }
+      }
+    }
+
+    if (mediaFiles.length > 0 && onUploadMedia) {
+      event.preventDefault();
       setIsUploading(true);
-      onUploadMedia(mediaFile).finally(() => setIsUploading(false));
+      (async () => {
+        try {
+          for (const mediaFile of mediaFiles) {
+            if (mediaFile.size > 20 * 1024 * 1024) {
+              if (onUploadLargeMedia) {
+                onUploadLargeMedia();
+              } else {
+                alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+              }
+              break;
+            }
+            await onUploadMedia(mediaFile);
+          }
+        } finally {
+          setIsUploading(false);
+        }
+      })();
       return;
     }
 
@@ -334,22 +349,29 @@ export const TelegramTextEditor = ({
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    const mediaFile = files.find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
-    if (mediaFile && onUploadMedia) {
-      if (mediaFile.size > 20 * 1024 * 1024) {
-        if (onUploadLargeMedia) {
-          onUploadLargeMedia();
-        } else {
-          alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
-        }
-        return;
-      }
+    const files = Array.from(e.dataTransfer.files || []).filter(
+      (f) => f.type.startsWith("image/") || f.type.startsWith("video/")
+    );
+    if (files.length > 0 && onUploadMedia) {
       setIsUploading(true);
-      onUploadMedia(mediaFile).finally(() => setIsUploading(false));
+      try {
+        for (const mediaFile of files) {
+          if (mediaFile.size > 20 * 1024 * 1024) {
+            if (onUploadLargeMedia) {
+              onUploadLargeMedia();
+            } else {
+              alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+            }
+            break;
+          }
+          await onUploadMedia(mediaFile);
+        }
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
@@ -650,12 +672,14 @@ export const TelegramTextEditor = ({
   const isEmpty = !value || charCount === 0;
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = event.target.files?.[0];
+    const selectedFiles = Array.from(event.target.files || []);
     event.target.value = "";
-    if (!selectedFile || !onUploadMedia) return;
+    if (selectedFiles.length === 0 || !onUploadMedia) return;
     setIsUploading(true);
     try {
-      await onUploadMedia(selectedFile);
+      for (const selectedFile of selectedFiles) {
+        await onUploadMedia(selectedFile);
+      }
     } finally {
       setIsUploading(false);
     }
@@ -697,6 +721,7 @@ export const TelegramTextEditor = ({
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
         className="sr-only"
         onChange={handleFileChange}

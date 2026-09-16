@@ -239,6 +239,7 @@ export const Build = () => {
     selectedBlockId,
     setSelectedBlockId,
     updateBlock,
+    updateBlockFields,
     theme,
     setSheet,
     handleCreateBotClick: onCreateBot,
@@ -292,15 +293,26 @@ export const Build = () => {
         setToastMessage("Файл загружен для исходного бота. Откройте его воронку, чтобы увидеть результат.");
         return;
       }
-      updateBlock(nodeId, "media", true);
-      updateBlock(nodeId, "mediaFileId", media.fileId);
-      updateBlock(nodeId, "mediaAssetId", media.id);
-      updateBlock(nodeId, "mediaType", media.mediaType);
-      // Новый формат: массив медиа на шаге (до 10) — несколько фото/видео.
+
       const node = getBlock(nodeId);
-      const assets = Array.isArray(node?.mediaAssets) ? [...node!.mediaAssets!] : [];
-      assets.push({ mediaFileId: media.fileId, mediaAssetId: media.id, mediaType: media.mediaType });
-      updateBlock(nodeId, "mediaAssets", assets.slice(-10));
+      const existingAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
+        ? [...node.mediaAssets]
+        : (node?.mediaAssetId && node?.mediaFileId)
+        ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+        : [];
+
+      const newAssets = media.mediaAssets && media.mediaAssets.length > 0
+        ? media.mediaAssets
+        : [...existingAssets.filter(a => a.mediaAssetId !== media.id), { mediaFileId: media.fileId, mediaAssetId: media.id, mediaType: media.mediaType }].slice(-10);
+
+      updateBlockFields(nodeId, {
+        media: true,
+        mediaFileId: newAssets[0].mediaFileId,
+        mediaAssetId: newAssets[0].mediaAssetId,
+        mediaType: newAssets[0].mediaType,
+        mediaAssets: newAssets,
+      });
+
       setToastType("success");
       setToastMessage("Файл синхронизирован с Telegram");
     } catch (error) {
@@ -317,23 +329,32 @@ export const Build = () => {
 
   const removeMedia = (nodeId: string, assetIdToRemove?: string) => {
     const node = getBlock(nodeId);
-    const assets = Array.isArray(node?.mediaAssets) ? [...node.mediaAssets] : [];
-    if (assetIdToRemove && assets.length > 0) {
-      const remaining = assets.filter((a) => a.mediaAssetId !== assetIdToRemove);
+    const existingAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
+      ? [...node.mediaAssets]
+      : (node?.mediaAssetId && node?.mediaFileId)
+      ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+      : [];
+
+    if (assetIdToRemove && existingAssets.length > 0) {
+      const remaining = existingAssets.filter((a) => a.mediaAssetId !== assetIdToRemove);
       if (remaining.length > 0) {
-        updateBlock(nodeId, "mediaAssets", remaining);
-        updateBlock(nodeId, "media", true);
-        updateBlock(nodeId, "mediaFileId", remaining[0].mediaFileId);
-        updateBlock(nodeId, "mediaAssetId", remaining[0].mediaAssetId);
-        updateBlock(nodeId, "mediaType", remaining[0].mediaType);
+        updateBlockFields(nodeId, {
+          media: true,
+          mediaFileId: remaining[0].mediaFileId,
+          mediaAssetId: remaining[0].mediaAssetId,
+          mediaType: remaining[0].mediaType,
+          mediaAssets: remaining,
+        });
         return;
       }
     }
-    updateBlock(nodeId, "media", false);
-    updateBlock(nodeId, "mediaFileId", null);
-    updateBlock(nodeId, "mediaAssetId", null);
-    updateBlock(nodeId, "mediaType", null);
-    updateBlock(nodeId, "mediaAssets", []);
+    updateBlockFields(nodeId, {
+      media: false,
+      mediaFileId: null,
+      mediaAssetId: null,
+      mediaType: null,
+      mediaAssets: [],
+    });
   };
 
   const handleOpenLargeMediaUpload = async (nodeId: string) => {
@@ -363,16 +384,22 @@ export const Build = () => {
           const res = await apiService.getMediaUploadSession(appState.activeBot!.id, session.sessionId);
           if (res.mediaAssets && res.mediaAssets.length > 0) {
             const node = getBlock(nodeId);
-            const currentAssets = Array.isArray(node?.mediaAssets) ? [...node.mediaAssets] : [];
+            const currentAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
+              ? [...node.mediaAssets]
+              : (node?.mediaAssetId && node?.mediaFileId)
+              ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: (node.mediaType as any) || "photo" }]
+              : [];
             const existingIds = new Set(currentAssets.map((a) => a.mediaAssetId));
             const newItems = res.mediaAssets.filter((a) => !existingIds.has(a.mediaAssetId));
             if (newItems.length > 0) {
               const merged = [...currentAssets, ...newItems].slice(-10);
-              updateBlock(nodeId, "mediaAssets", merged);
-              updateBlock(nodeId, "media", true);
-              updateBlock(nodeId, "mediaFileId", merged[0].mediaFileId);
-              updateBlock(nodeId, "mediaAssetId", merged[0].mediaAssetId);
-              updateBlock(nodeId, "mediaType", merged[0].mediaType);
+              updateBlockFields(nodeId, {
+                media: true,
+                mediaFileId: merged[0].mediaFileId,
+                mediaAssetId: merged[0].mediaAssetId,
+                mediaType: merged[0].mediaType,
+                mediaAssets: merged,
+              });
               setToastType("success");
               setToastMessage("Медиа получено из Telegram!");
             }

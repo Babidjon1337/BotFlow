@@ -58,6 +58,31 @@ class FunnelSchemaOld(BaseModel):
 # ==========================================
 # НОВАЯ СХЕМА V2 (Совместимая с Frontend React)
 # ==========================================
+class FunnelMediaAssetSchema(BaseModel):
+    media_file_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("mediaFileId", "media_file_id", "fileId", "file_id"),
+        serialization_alias="mediaFileId",
+    )
+    media_asset_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("mediaAssetId", "media_asset_id", "id", "asset_id"),
+        serialization_alias="mediaAssetId",
+    )
+    media_type: Literal["photo", "video", "document"] = Field(
+        default="photo",
+        validation_alias=AliasChoices("mediaType", "media_type", "type"),
+        serialization_alias="mediaType",
+    )
+    file_name: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("fileName", "file_name", "filename"),
+        serialization_alias="fileName",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class TariffSchema(BaseModel):
     id: str
     name: str
@@ -76,8 +101,22 @@ class TariffSchema(BaseModel):
     media_file_id: Optional[str] = Field(default=None, alias="mediaFileId")
     media_asset_id: Optional[str] = Field(default=None, alias="mediaAssetId")
     media_type: Optional[Literal["photo", "video"]] = Field(default=None, alias="mediaType")
+    media_assets: list[FunnelMediaAssetSchema] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("mediaAssets", "media_assets"),
+        serialization_alias="mediaAssets",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("media_assets", mode="before")
+    @classmethod
+    def parse_tariff_media_assets(cls, v: Any) -> list:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [item for item in v if item]
+        return []
 
 
 class FunnelNodeSchema(BaseModel):
@@ -102,10 +141,45 @@ class FunnelNodeSchema(BaseModel):
     media_asset_id: Optional[str] = Field(default=None, alias="mediaAssetId")
     media_type: Optional[Literal["photo", "video", "document"]] = Field(default=None, alias="mediaType")
     media: Optional[bool] = False
+    media_assets: list[FunnelMediaAssetSchema] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("mediaAssets", "media_assets"),
+        serialization_alias="mediaAssets",
+    )
     x: Optional[float] = 0
     y: Optional[float] = 0
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @field_validator("media_assets", mode="before")
+    @classmethod
+    def parse_node_media_assets(cls, v: Any) -> list:
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [item for item in v if item]
+        return []
+
+    @model_validator(mode="after")
+    def sync_primary_media_fields(self):
+        if self.media_assets and len(self.media_assets) > 0:
+            self.media = True
+            if not self.media_file_id:
+                self.media_file_id = self.media_assets[0].media_file_id
+            if not self.media_asset_id:
+                self.media_asset_id = self.media_assets[0].media_asset_id
+            if not self.media_type:
+                self.media_type = self.media_assets[0].media_type
+        elif self.media_file_id and self.media_asset_id and not self.media_assets:
+            self.media = True
+            self.media_assets = [
+                FunnelMediaAssetSchema(
+                    mediaFileId=self.media_file_id,
+                    mediaAssetId=self.media_asset_id,
+                    mediaType=self.media_type or "photo",
+                )
+            ]
+        return self
 
     @field_validator("delay_seconds", mode="before")
     @classmethod

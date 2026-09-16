@@ -622,7 +622,13 @@ export const apiService = {
   async uploadBotMedia(botId: string | number, nodeId: string, file: File) {
     const formData = new FormData();
     formData.append("file", file);
-    return fetchApi<{ id: string; nodeId: string; mediaType: "photo" | "video" | "document"; fileId: string }>(
+    return fetchApi<{
+      id: string;
+      nodeId: string;
+      mediaType: "photo" | "video" | "document";
+      fileId: string;
+      mediaAssets?: import("../types").NodeMediaAsset[];
+    }>(
       `/api/bots/${botId}/media?node_id=${encodeURIComponent(nodeId)}`,
       { method: "POST", body: formData }
     );

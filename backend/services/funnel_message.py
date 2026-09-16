@@ -225,6 +225,7 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
         button_text = node.get("buttonText") or node.get("button_text")
         if not button_text and isinstance(node.get("button"), dict):
             button_text = node["button"].get("text")
+        media_assets = node.get("mediaAssets") or node.get("media_assets") or []
     else:
         text = getattr(node, "content", "")
         if not isinstance(text, str) and hasattr(text, "text"):
@@ -237,31 +238,70 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
         button_text = getattr(node, "button_text", None)
         if not button_text and hasattr(node, "button") and node.button:
             button_text = getattr(node.button, "text", None)
+        media_assets = getattr(node, "media_assets", []) or getattr(node, "mediaAssets", []) or []
 
     text = to_telegram_html(text)
 
     if reply_markup is None and button_text:
         reply_markup = user_payment_button(button_text)
 
+    # Collect valid media items
+    valid_assets: list[tuple[str, str]] = []
+    if isinstance(media_assets, list) and len(media_assets) > 0:
+        for item in media_assets[:10]:
+            if isinstance(item, dict):
+                fid = item.get("mediaFileId") or item.get("media_file_id") or item.get("fileId")
+                mtype = item.get("mediaType") or item.get("media_type") or "photo"
+                if fid:
+                    valid_assets.append((fid, mtype))
+            elif hasattr(item, "media_file_id") and item.media_file_id:
+                valid_assets.append((item.media_file_id, getattr(item, "media_type", "photo")))
+    elif file_id:
+        valid_assets.append((file_id, media_type or "photo"))
+
     try:
-        if media_type == "video" and file_id:
+        if len(valid_assets) > 1:
+            from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument
+            group = []
+            for i, (fid, mtype) in enumerate(valid_assets):
+                caption = text if i == 0 else None
+                parse_mode = "HTML" if caption else None
+                if mtype == "video":
+                    group.append(InputMediaVideo(media=fid, caption=caption, parse_mode=parse_mode))
+                elif mtype == "document":
+                    group.append(InputMediaDocument(media=fid, caption=caption, parse_mode=parse_mode))
+                else:
+                    group.append(InputMediaPhoto(media=fid, caption=caption, parse_mode=parse_mode))
+            await bot.send_media_group(chat_id=chat_id, media=group)
+            if reply_markup:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text="👇",
+                    reply_markup=reply_markup,
+                )
+            return
+
+        active_file_id = valid_assets[0][0] if valid_assets else file_id
+        active_media_type = valid_assets[0][1] if valid_assets else media_type
+
+        if active_media_type == "video" and active_file_id:
             await bot.send_video(
                 chat_id=chat_id,
-                video=file_id,
+                video=active_file_id,
                 caption=text,
                 reply_markup=reply_markup,
             )
-        elif media_type == "photo" and file_id:
+        elif active_media_type == "photo" and active_file_id:
             await bot.send_photo(
                 chat_id=chat_id,
-                photo=file_id,
+                photo=active_file_id,
                 caption=text,
                 reply_markup=reply_markup,
             )
-        elif media_type == "document" and file_id:
+        elif active_media_type == "document" and active_file_id:
             await bot.send_document(
                 chat_id=chat_id,
-                document=file_id,
+                document=active_file_id,
                 caption=text,
                 reply_markup=reply_markup,
             )

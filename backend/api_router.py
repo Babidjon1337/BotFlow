@@ -1499,25 +1499,42 @@ async def upload_bot_media(
 
     media_target = current_tariff if current_tariff is not None else current_node
     assert media_target is not None
-    media_target["mediaFileId"] = telegram_file_id
-    media_target["mediaAssetId"] = str(asset.id)
-    media_target["mediaType"] = media_type
-    media_target["media"] = True
-    # Новый формат: массив медиа на шаге (до 10) — несколько фото/видео.
+
+    existing_asset_id = media_target.get("mediaAssetId")
+    existing_file_id = media_target.get("mediaFileId")
+    existing_type = media_target.get("mediaType") or "photo"
+
     assets_list = media_target.get("mediaAssets")
-    if not isinstance(assets_list, list):
+    if not isinstance(assets_list, list) or len(assets_list) == 0:
         assets_list = []
+        if existing_asset_id and existing_file_id and str(existing_asset_id) != str(asset.id):
+            assets_list.append({
+                "mediaFileId": existing_file_id,
+                "mediaAssetId": str(existing_asset_id),
+                "mediaType": existing_type,
+            })
+
     # Заменяем прежнюю одиночную запись в массиве (если была) на новую.
-    assets_list = [a for a in assets_list if isinstance(a, dict) and a.get("mediaAssetId") != str(asset.id)]
+    assets_list = [a for a in assets_list if isinstance(a, dict) and str(a.get("mediaAssetId")) != str(asset.id)]
     assets_list.append({
         "mediaFileId": telegram_file_id,
         "mediaAssetId": str(asset.id),
         "mediaType": media_type,
     })
     media_target["mediaAssets"] = assets_list[-10:]
+    media_target["mediaFileId"] = media_target["mediaAssets"][0]["mediaFileId"]
+    media_target["mediaAssetId"] = media_target["mediaAssets"][0]["mediaAssetId"]
+    media_target["mediaType"] = media_target["mediaAssets"][0]["mediaType"]
+    media_target["media"] = True
     current_schema["nodes"] = current_nodes
     await update_bot_funnel(current_bot.id, current_schema, current_bot.funnel_complete)
-    return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
+    return {
+        "id": str(asset.id),
+        "nodeId": node_id,
+        "mediaType": media_type,
+        "fileId": telegram_file_id,
+        "mediaAssets": media_target["mediaAssets"],
+    }
 
 
 @api_router.post("/api/bots/{bot_id}/media-upload-session")
