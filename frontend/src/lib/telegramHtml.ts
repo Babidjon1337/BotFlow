@@ -76,9 +76,12 @@ export function markdownToTelegramHtml(markdown: string): string {
   });
 
   // 2. Escape raw HTML characters in remaining text so user text doesn't break HTML
-  // Note: if user already had <b> etc., we preserve Telegram valid tags
+  // Preserve valid Telegram HTML tags (opening and closing: b, strong, i, em, u, ins, s, strike, del, code, pre, blockquote, tg-spoiler, span, a, tg-emoji)
   text = text.replace(/&(?!amp;|lt;|gt;|quot;)/g, "&amp;");
-  text = text.replace(/<(?!(\/?(b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|tg-spoiler)|span class="tg-spoiler"|a href="[^"]*"))/gi, "&lt;");
+  text = text.replace(
+    /<(?!\/?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|tg-spoiler|span|a|tg-emoji)\b(?:\s+[^>]*)?>)/gi,
+    "&lt;"
+  );
 
   // 3. Blockquotes: lines starting with >
   const lines = text.split("\n");
@@ -216,11 +219,17 @@ function cleanNode(node: Node): string {
   let result = inner;
 
   if (isCode) {
-    result = `<code>${result}</code>`;
+    const langMatch = (el.getAttribute("class") || "").match(/language-[\w-]+/);
+    if (langMatch) {
+      result = `<code class="${langMatch[0]}">${result}</code>`;
+    } else {
+      result = `<code>${result}</code>`;
+    }
   } else if (isPre) {
     result = `<pre>${result}</pre>`;
   } else if (isQuote) {
-    result = `<blockquote>${result}</blockquote>`;
+    const isExpandable = el.hasAttribute("expandable");
+    result = `<blockquote${isExpandable ? " expandable" : ""}>${result}</blockquote>`;
   } else if (isSpoiler) {
     result = `<span class="tg-spoiler">${result}</span>`;
   }
@@ -245,9 +254,9 @@ function cleanNode(node: Node): string {
     }
   }
 
-  // Blocks add newlines
+  // Blocks add a trailing newline (only if not already ending with one)
   if (isBlock) {
-    result = `\n${result}\n`;
+    result = result.endsWith("\n") ? result : `${result}\n`;
   }
 
   return result;

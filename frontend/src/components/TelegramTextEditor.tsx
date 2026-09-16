@@ -1,10 +1,12 @@
 import React, {
+  useCallback,
   useEffect,
   useId,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bold,
@@ -28,6 +30,7 @@ import {
   normalizePasteInput,
   toTelegramHtml,
 } from "../lib/telegramHtml";
+import { apiService } from "../services/api";
 import type { NodeMediaAsset } from "../types";
 
 export const SyncedMediaPreview = ({
@@ -41,30 +44,42 @@ export const SyncedMediaPreview = ({
   mediaType: "photo" | "video";
   compact?: boolean;
 }) => {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewError, setPreviewError] = useState(false);
+  const [mediaState, setMediaState] = useState<{
+    assetId: string;
+    url: string | null;
+    error: boolean;
+  }>({
+    assetId,
+    url: null,
+    error: false,
+  });
 
   useEffect(() => {
     let objectUrl: string | null = null;
     let cancelled = false;
-    void import("../services/api")
-      .then(({ apiService }) => {
-        setPreviewError(false);
-        setPreviewUrl(null);
-        return apiService.getBotMediaPreview(botId, assetId);
-      })
+
+    apiService
+      .getBotMediaPreview(botId, assetId)
       .then((blob) => {
         if (!cancelled) {
           objectUrl = URL.createObjectURL(blob);
-          setPreviewUrl(objectUrl);
+          setMediaState({ assetId, url: objectUrl, error: false });
         }
       })
-      .catch(() => !cancelled && setPreviewError(true));
+      .catch(() => {
+        if (!cancelled) {
+          setMediaState({ assetId, url: null, error: true });
+        }
+      });
+
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [assetId, botId]);
+
+  const previewUrl = mediaState.assetId === assetId ? mediaState.url : null;
+  const previewError = mediaState.assetId === assetId ? mediaState.error : false;
 
   if (compact) {
     if (previewError || !previewUrl) {
@@ -158,27 +173,110 @@ export const TelegramTextEditor = ({
   const editorId = useId();
   const [isUploading, setIsUploading] = useState(false);
 
+  // Active formatting state for toolbar highlights
+  const [activeFormats, setActiveFormats] = useState<{
+    bold: boolean;
+    italic: boolean;
+    strikeThrough: boolean;
+    underline: boolean;
+    spoiler: boolean;
+    code: boolean;
+    pre: boolean;
+    blockquote: boolean;
+    link: boolean;
+  }>({
+    bold: false,
+    italic: false,
+    strikeThrough: false,
+    underline: false,
+    spoiler: false,
+    code: false,
+    pre: false,
+    blockquote: false,
+    link: false,
+  });
+
   // Modal for adding/editing links
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkText, setLinkText] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
   const [isEditingExistingLink, setIsEditingExistingLink] = useState(false);
   const savedRangeRef = useRef<Range | null>(null);
+  const editingAnchorRef = useRef<HTMLAnchorElement | null>(null);
+  const linkTextInputRef = useRef<HTMLInputElement>(null);
   const linkUrlInputRef = useRef<HTMLInputElement>(null);
+
+  const updateActiveFormats = useCallback(() => {
+    if (typeof document === "undefined" || !editorRef.current) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      return;
+    }
+
+    let isSpoiler = false;
+    let isCode = false;
+    let isPre = false;
+    let isQuote = false;
+    let isLink = false;
+
+    let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    while (node && node !== editorRef.current) {
+      if (node instanceof HTMLElement) {
+        const tag = node.tagName.toLowerCase();
+        if (tag === "span" && node.classList.contains("tg-spoiler")) isSpoiler = true;
+        if (tag === "tg-spoiler") isSpoiler = true;
+        if (tag === "code") isCode = true;
+        if (tag === "pre") isPre = true;
+        if (tag === "blockquote") isQuote = true;
+        if (tag === "a") isLink = true;
+      }
+      node = node.parentElement;
+    }
+
+    setActiveFormats({
+      bold: document.queryCommandState("bold"),
+      italic: document.queryCommandState("italic"),
+      strikeThrough: document.queryCommandState("strikeThrough"),
+      underline: document.queryCommandState("underline"),
+      spoiler: isSpoiler,
+      code: isCode,
+      pre: isPre,
+      blockquote: isQuote,
+      link: isLink,
+    });
+  }, []);
 
   useEffect(() => {
     if (editorRef.current && document.activeElement !== editorRef.current) {
       const cleanValue = toTelegramHtml(value || "");
-      if (toTelegramHtml(editorRef.current.innerHTML) !== cleanValue) {
+      if (!cleanValue) {
+        if (editorRef.current.innerHTML !== "") {
+          editorRef.current.innerHTML = "";
+        }
+      } else if (toTelegramHtml(editorRef.current.innerHTML) !== cleanValue) {
         editorRef.current.innerHTML = cleanValue;
       }
     }
   }, [value]);
 
+  // Global Escape handler when modal is open
+  useEffect(() => {
+    if (!isLinkModalOpen) return;
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsLinkModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isLinkModalOpen]);
+
   const handleInput = () => {
     if (editorRef.current) {
       const clean = toTelegramHtml(editorRef.current.innerHTML);
       onChange(clean);
+      updateActiveFormats();
     }
   };
 
@@ -198,21 +296,30 @@ export const TelegramTextEditor = ({
   };
 
   const execFormat = (type: "bold" | "italic" | "strikeThrough" | "underline" | "spoiler" | "code" | "pre" | "blockquote") => {
+    if (editorRef.current && document.activeElement !== editorRef.current) {
+      editorRef.current.focus();
+    }
+
     if (type === "bold" || type === "italic" || type === "strikeThrough" || type === "underline") {
       document.execCommand(type, false);
       handleInput();
+      updateActiveFormats();
       editorRef.current?.focus();
       return;
     }
 
     const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
-    const range = sel.getRangeAt(0);
+    if (!sel || !editorRef.current) return;
 
-    if (!editorRef.current.contains(range.commonAncestorContainer)) {
-      editorRef.current.focus();
-      return;
+    if (sel.rangeCount === 0 || !editorRef.current.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
     }
+
+    const range = sel.getRangeAt(0);
 
     const toggleWrapper = (
       tagName: string,
@@ -243,6 +350,7 @@ export const TelegramTextEditor = ({
           }
           parent.removeChild(targetEl);
           handleInput();
+          updateActiveFormats();
         }
         return;
       }
@@ -256,6 +364,7 @@ export const TelegramTextEditor = ({
         insertHtmlAtSelection(`<${tagName}${wrapperClass}>${div.innerHTML}</${tagName}>`);
       }
       handleInput();
+      updateActiveFormats();
     };
 
     if (type === "spoiler") {
@@ -276,6 +385,7 @@ export const TelegramTextEditor = ({
     let text = "";
     let url = "";
     let isExisting = false;
+    let foundAnchor: HTMLAnchorElement | null = null;
 
     if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
       const range = sel.getRangeAt(0);
@@ -286,6 +396,7 @@ export const TelegramTextEditor = ({
       if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
       while (node && node !== editorRef.current) {
         if (node instanceof HTMLAnchorElement) {
+          foundAnchor = node;
           url = node.getAttribute("href") || "";
           if (!text) text = node.textContent || "";
           isExisting = true;
@@ -297,12 +408,19 @@ export const TelegramTextEditor = ({
       savedRangeRef.current = null;
     }
 
+    editingAnchorRef.current = foundAnchor;
     setLinkText(text);
     setLinkUrl(url);
     setIsEditingExistingLink(isExisting);
     setIsLinkModalOpen(true);
+
     setTimeout(() => {
-      linkUrlInputRef.current?.focus();
+      if (!text) {
+        linkTextInputRef.current?.focus();
+      } else {
+        linkUrlInputRef.current?.focus();
+        linkUrlInputRef.current?.select();
+      }
     }, 60);
   };
 
@@ -316,18 +434,45 @@ export const TelegramTextEditor = ({
 
     const textToDisplay = linkText.trim() || url;
 
-    if (savedRangeRef.current && editorRef.current) {
-      const sel = window.getSelection();
-      if (sel) {
-        sel.removeAllRanges();
-        sel.addRange(savedRangeRef.current);
-      }
+    // Focus editor first so DOM/Range operations apply to the editor
+    if (editorRef.current) {
+      editorRef.current.focus();
     }
 
+    // Direct anchor update if we targeted an existing element
+    const anchor = editingAnchorRef.current;
+    if (anchor && editorRef.current?.contains(anchor)) {
+      anchor.setAttribute("href", url);
+      anchor.textContent = textToDisplay;
+      handleInput();
+      setIsLinkModalOpen(false);
+      editingAnchorRef.current = null;
+      editorRef.current?.focus();
+      return;
+    }
+
+    // Restore saved selection
     const sel = window.getSelection();
+    if (savedRangeRef.current && sel && editorRef.current) {
+      try {
+        sel.removeAllRanges();
+        sel.addRange(savedRangeRef.current);
+      } catch {
+        // Fallback handled below
+      }
+    } else if (sel && editorRef.current && (!sel.rangeCount || !editorRef.current.contains(sel.getRangeAt(0).commonAncestorContainer))) {
+      const range = document.createRange();
+      range.selectNodeContents(editorRef.current);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    // Check if restored selection is inside an anchor
     let existingAnchor: HTMLAnchorElement | null = null;
-    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
-      let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+    const currentSel = window.getSelection();
+    if (currentSel && currentSel.rangeCount > 0 && editorRef.current?.contains(currentSel.getRangeAt(0).commonAncestorContainer)) {
+      let node: Node | null = currentSel.getRangeAt(0).commonAncestorContainer;
       if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
       while (node && node !== editorRef.current) {
         if (node instanceof HTMLAnchorElement) {
@@ -349,21 +494,44 @@ export const TelegramTextEditor = ({
     }
 
     setIsLinkModalOpen(false);
+    editingAnchorRef.current = null;
     editorRef.current?.focus();
   };
 
   const handleRemoveLink = () => {
-    if (savedRangeRef.current && editorRef.current) {
-      const sel = window.getSelection();
-      if (sel) {
-        sel.removeAllRanges();
-        sel.addRange(savedRangeRef.current);
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+
+    const anchor = editingAnchorRef.current;
+    if (anchor && editorRef.current?.contains(anchor)) {
+      const parent = anchor.parentNode;
+      if (parent) {
+        while (anchor.firstChild) {
+          parent.insertBefore(anchor.firstChild, anchor);
+        }
+        parent.removeChild(anchor);
+        handleInput();
       }
+      setIsLinkModalOpen(false);
+      editingAnchorRef.current = null;
+      editorRef.current?.focus();
+      return;
     }
 
     const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.getRangeAt(0).commonAncestorContainer)) {
-      let node: Node | null = sel.getRangeAt(0).commonAncestorContainer;
+    if (savedRangeRef.current && sel && editorRef.current) {
+      try {
+        sel.removeAllRanges();
+        sel.addRange(savedRangeRef.current);
+      } catch {
+        // Selection restoration failed, proceed with fallback
+      }
+    }
+
+    const currentSel = window.getSelection();
+    if (currentSel && currentSel.rangeCount > 0 && editorRef.current?.contains(currentSel.getRangeAt(0).commonAncestorContainer)) {
+      let node: Node | null = currentSel.getRangeAt(0).commonAncestorContainer;
       if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
       while (node && node !== editorRef.current) {
         if (node instanceof HTMLAnchorElement) {
@@ -382,7 +550,29 @@ export const TelegramTextEditor = ({
     }
 
     setIsLinkModalOpen(false);
+    editingAnchorRef.current = null;
     editorRef.current?.focus();
+  };
+
+  const handleEditorClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null;
+    const anchor = target?.closest("a");
+    if (anchor && editorRef.current?.contains(anchor)) {
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(anchor);
+      const sel = window.getSelection();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      savedRangeRef.current = range;
+      editingAnchorRef.current = anchor as HTMLAnchorElement;
+      setLinkText(anchor.textContent || "");
+      setLinkUrl(anchor.getAttribute("href") || "");
+      setIsEditingExistingLink(true);
+      setIsLinkModalOpen(true);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -395,6 +585,7 @@ export const TelegramTextEditor = ({
   const charCount = getPlainTextLength(value);
   const limit = maxCharacters || (hasMedia ? 1024 : 4096);
   const isOverLimit = charCount > limit;
+  const isEmpty = !value || charCount === 0;
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0];
@@ -409,6 +600,13 @@ export const TelegramTextEditor = ({
   };
 
   const hasSingleMedia = hasMedia || Boolean(mediaAssetId || mediaFileId);
+
+  const getFormatBtnClass = (isActive: boolean) =>
+    `flex size-7 items-center justify-center rounded-md transition-all ${
+      isActive
+        ? "bg-[var(--color-primary-soft)] text-[var(--color-primary)] font-semibold shadow-xs"
+        : "text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+    }`;
 
   return (
     <div
@@ -458,9 +656,9 @@ export const TelegramTextEditor = ({
                       onMouseDown={keepEditorSelection}
                       onClick={onRemoveMedia}
                       aria-label="Убрать медиа"
-                      className="absolute right-0.5 top-0.5 flex size-4.5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
+                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 shadow-xs"
                     >
-                      <X className="size-2.5" aria-hidden />
+                      <X className="size-3" aria-hidden />
                     </button>
                   )}
                 </motion.li>
@@ -494,9 +692,9 @@ export const TelegramTextEditor = ({
                       onMouseDown={keepEditorSelection}
                       onClick={onRemoveMedia}
                       aria-label="Убрать медиа"
-                      className="absolute right-0.5 top-0.5 flex size-4.5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80"
+                      className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm transition-colors hover:bg-black/80 shadow-xs"
                     >
-                      <X className="size-2.5" aria-hidden />
+                      <X className="size-3" aria-hidden />
                     </button>
                   )}
                 </motion.li>
@@ -545,8 +743,13 @@ export const TelegramTextEditor = ({
         aria-multiline="true"
         aria-label={placeholder || "Текст сообщения"}
         onInput={handleInput}
+        onClick={handleEditorClick}
+        onKeyUp={updateActiveFormats}
+        onMouseUp={updateActiveFormats}
+        onSelect={updateActiveFormats}
         onFocus={(event) => {
           keepMobileFieldVisible(event.currentTarget);
+          updateActiveFormats();
         }}
         onBlur={handleInput}
         onPaste={handlePaste}
@@ -561,6 +764,7 @@ export const TelegramTextEditor = ({
           boxSizing: "border-box",
         }}
         data-placeholder={placeholder}
+        data-empty={isEmpty ? "true" : undefined}
       />
 
       {/* ── Снизу: Панель форматирования Telegram HTML ── */}
@@ -575,7 +779,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("bold")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.bold)}
             title="Жирный (Ctrl+B)"
             aria-label="Жирный"
           >
@@ -587,7 +791,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("italic")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.italic)}
             title="Курсив (Ctrl+I)"
             aria-label="Курсив"
           >
@@ -599,7 +803,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("strikeThrough")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.strikeThrough)}
             title="Зачёркнутый"
             aria-label="Зачёркнутый"
           >
@@ -611,7 +815,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("underline")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.underline)}
             title="Подчёркнутый (Ctrl+U)"
             aria-label="Подчёркнутый"
           >
@@ -625,7 +829,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("spoiler")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.spoiler)}
             title="Спойлер"
             aria-label="Спойлер"
           >
@@ -637,7 +841,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("code")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.code)}
             title="Моноширинный код"
             aria-label="Моноширинный код"
           >
@@ -649,7 +853,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("pre")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.pre)}
             title="Блок кода"
             aria-label="Блок кода"
           >
@@ -661,7 +865,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={() => execFormat("blockquote")}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.blockquote)}
             title="Цитата"
             aria-label="Цитата"
           >
@@ -675,7 +879,7 @@ export const TelegramTextEditor = ({
             type="button"
             onMouseDown={keepEditorSelection}
             onClick={handleOpenLinkModal}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
+            className={getFormatBtnClass(activeFormats.link)}
             title="Добавить ссылку (Ctrl+K)"
             aria-label="Добавить ссылку"
           >
@@ -703,10 +907,10 @@ export const TelegramTextEditor = ({
         </div>
       </div>
 
-      {/* ── Кастомная модалка добавления / редактирования ссылки ── */}
-      {isLinkModalOpen && (
+      {/* ── Кастомная модалка добавления / редактирования ссылки через Portal ── */}
+      {isLinkModalOpen && typeof document !== "undefined" && createPortal(
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setIsLinkModalOpen(false);
@@ -714,7 +918,7 @@ export const TelegramTextEditor = ({
           }}
         >
           <div
-            className="relative w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl space-y-4"
+            className="relative w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-150"
             role="dialog"
             aria-modal="true"
             aria-labelledby="link-dialog-title"
@@ -743,9 +947,23 @@ export const TelegramTextEditor = ({
                   Текст ссылки
                 </label>
                 <input
+                  ref={linkTextInputRef}
                   type="text"
                   value={linkText}
                   onChange={(e) => setLinkText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (!linkUrl.trim() && linkUrlInputRef.current) {
+                        linkUrlInputRef.current.focus();
+                      } else {
+                        handleApplyLink();
+                      }
+                    } else if (e.key === "Escape") {
+                      e.preventDefault();
+                      setIsLinkModalOpen(false);
+                    }
+                  }}
                   placeholder="Текст для перехода"
                   className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm text-[var(--color-foreground)] placeholder:text-[var(--color-foreground-tertiary)] outline-none focus:border-[var(--color-primary)] transition-colors"
                 />
@@ -780,7 +998,7 @@ export const TelegramTextEditor = ({
                 <button
                   type="button"
                   onClick={handleRemoveLink}
-                  className="text-xs text-[var(--color-danger)] hover:underline"
+                  className="text-xs font-medium text-[var(--color-danger)] hover:underline"
                 >
                   Удалить ссылку
                 </button>
@@ -806,7 +1024,8 @@ export const TelegramTextEditor = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

@@ -687,9 +687,10 @@ body {
   letter-spacing: normal !important;
 }
 
-.rich-text-editor:empty:before {
+.rich-text-editor:empty:before,
+.rich-text-editor[data-empty="true"]:before {
   content: attr(data-placeholder);
-  color: var(--fg-tertiary, #94a3b8) !important;
+  color: var(--color-foreground-tertiary, var(--fg-tertiary, #94a3b8)) !important;
   pointer-events: none;
   display: block;
 }
@@ -777,25 +778,28 @@ body {
 
 .rich-text-editor .tg-spoiler,
 .rich-text-editor tg-spoiler {
-  background-color: var(--color-surface-3, rgba(120, 120, 120, 0.28)) !important;
-  color: transparent !important;
+  background-color: var(--color-surface-3, rgba(120, 120, 120, 0.25)) !important;
+  color: var(--color-foreground, inherit) !important;
   border-radius: 5px !important;
   padding: 1.5px 6px !important;
-  filter: blur(4.5px);
+  border-bottom: 2px dotted var(--color-primary, #2563eb) !important;
+  filter: blur(2.5px);
   cursor: pointer;
-  transition: filter 0.2s ease, color 0.2s ease, background-color 0.2s ease;
-  user-select: none;
+  transition: filter 0.15s ease, background-color 0.15s ease;
+  user-select: text !important;
   display: inline;
 }
 
 .rich-text-editor .tg-spoiler:hover,
 .rich-text-editor .tg-spoiler:focus,
+.rich-text-editor .tg-spoiler:focus-within,
 .rich-text-editor tg-spoiler:hover,
-.rich-text-editor tg-spoiler:focus {
-  filter: none;
+.rich-text-editor tg-spoiler:focus,
+.rich-text-editor tg-spoiler:focus-within {
+  filter: none !important;
   color: var(--color-foreground, inherit) !important;
   background-color: var(--color-surface-2, rgba(120, 120, 120, 0.15)) !important;
-  user-select: text;
+  user-select: text !important;
 }
 
 /* ============================================================
