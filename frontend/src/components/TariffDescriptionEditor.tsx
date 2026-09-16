@@ -1,5 +1,11 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Bold, Italic, Strikethrough } from "lucide-react";
+import {
+  getPlainTextLength,
+  insertHtmlAtSelection,
+  normalizePasteInput,
+  toTelegramHtml,
+} from "../lib/telegramHtml";
 
 interface TariffDescriptionEditorProps {
   value: string;
@@ -12,10 +18,6 @@ interface TariffDescriptionEditorProps {
 }
 
 const DEFAULT_MAX_CHARACTERS = 3000;
-
-function getPlainTextLength(html: string): number {
-  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim().length;
-}
 
 /** Compact rich-text field for the description shown in the Telegram invoice. */
 export function TariffDescriptionEditor({
@@ -32,16 +34,31 @@ export function TariffDescriptionEditor({
   const isOverLimit = textLength > maxCharacters;
 
   useEffect(() => {
-    if (
-      editorRef.current &&
-      document.activeElement !== editorRef.current &&
-      editorRef.current.innerHTML !== value
-    ) {
-      editorRef.current.innerHTML = value || "";
+    if (editorRef.current && document.activeElement !== editorRef.current) {
+      const cleanValue = toTelegramHtml(value || "");
+      if (toTelegramHtml(editorRef.current.innerHTML) !== cleanValue) {
+        editorRef.current.innerHTML = cleanValue;
+      }
     }
   }, [value]);
 
-  const emitValue = () => onChange(editorRef.current?.innerHTML || "");
+  const emitValue = () => {
+    if (editorRef.current) {
+      const clean = toTelegramHtml(editorRef.current.innerHTML);
+      onChange(clean);
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const htmlData = event.clipboardData.getData("text/html");
+    const plainText = event.clipboardData.getData("text/plain");
+    const cleanHtml = normalizePasteInput(htmlData, plainText);
+    if (cleanHtml) {
+      insertHtmlAtSelection(cleanHtml);
+      emitValue();
+    }
+  };
 
   const format = (command: "bold" | "italic" | "strikeThrough") => {
     document.execCommand(command, false);
@@ -102,6 +119,7 @@ export function TariffDescriptionEditor({
         data-placeholder={placeholder}
         onInput={emitValue}
         onBlur={emitValue}
+        onPaste={handlePaste}
         className="rich-text-editor min-h-[88px] p-3 text-[14px] outline-none"
         style={{
           color: "var(--color-foreground)",

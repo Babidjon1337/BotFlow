@@ -33,6 +33,12 @@ import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
 import { useAlert } from "../AlertProvider";
 import type { Tariff } from "../../types";
+import {
+  getPlainTextLength,
+  insertHtmlAtSelection,
+  normalizePasteInput,
+  toTelegramHtml,
+} from "../../lib/telegramHtml";
 
 const keepMobileFieldVisible = (element: HTMLElement) => {
   if (window.innerWidth >= 1024) return;
@@ -195,18 +201,29 @@ export const RichTextEditor = ({
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (
-      editorRef.current &&
-      value !== editorRef.current.innerHTML &&
-      document.activeElement !== editorRef.current
-    ) {
-      editorRef.current.innerHTML = value || "";
+    if (editorRef.current && document.activeElement !== editorRef.current) {
+      const cleanValue = toTelegramHtml(value || "");
+      if (toTelegramHtml(editorRef.current.innerHTML) !== cleanValue) {
+        editorRef.current.innerHTML = cleanValue;
+      }
     }
   }, [value]);
 
   const handleInput = () => {
     if (editorRef.current) {
-      onChange(editorRef.current.innerHTML);
+      const clean = toTelegramHtml(editorRef.current.innerHTML);
+      onChange(clean);
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const htmlData = event.clipboardData.getData("text/html");
+    const plainText = event.clipboardData.getData("text/plain");
+    const cleanHtml = normalizePasteInput(htmlData, plainText);
+    if (cleanHtml) {
+      insertHtmlAtSelection(cleanHtml);
+      handleInput();
     }
   };
 
@@ -220,8 +237,7 @@ export const RichTextEditor = ({
     event.preventDefault();
   };
 
-  const plainText = value ? value.replace(/<[^>]*>?/gm, "").replace(/&nbsp;/g, " ").trim() : "";
-  const charCount = plainText.length;
+  const charCount = getPlainTextLength(value);
   const maxChars = hasMedia ? 1024 : 4096;
   const isOverLimit = charCount > maxChars;
 
@@ -350,6 +366,7 @@ export const RichTextEditor = ({
           keepMobileFieldVisible(event.currentTarget);
         }}
         onBlur={() => { handleInput(); setIsFocused(false); }}
+        onPaste={handlePaste}
         className="p-3 min-h-[88px] max-h-[360px] overflow-y-auto outline-none text-[14px] rich-text-editor scroll-my-24"
         style={{
           color: "var(--color-foreground)",

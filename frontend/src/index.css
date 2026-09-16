@@ -673,11 +673,103 @@ body {
   width: 100%;
 }
 
+.rich-text-editor {
+  font-family: inherit !important;
+  color: var(--color-foreground, inherit) !important;
+  line-height: 1.5 !important;
+}
+
+.rich-text-editor,
+.rich-text-editor * {
+  font-family: inherit !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  letter-spacing: normal !important;
+}
+
 .rich-text-editor:empty:before {
   content: attr(data-placeholder);
-  color: var(--fg-tertiary);
+  color: var(--fg-tertiary, #94a3b8) !important;
   pointer-events: none;
   display: block;
+}
+
+.rich-text-editor b,
+.rich-text-editor strong {
+  font-weight: 700 !important;
+  color: var(--color-foreground, inherit) !important;
+}
+
+.rich-text-editor i,
+.rich-text-editor em {
+  font-style: italic !important;
+  color: var(--color-foreground, inherit) !important;
+}
+
+.rich-text-editor u,
+.rich-text-editor ins {
+  text-decoration: underline !important;
+  color: var(--color-foreground, inherit) !important;
+}
+
+.rich-text-editor s,
+.rich-text-editor strike,
+.rich-text-editor del {
+  text-decoration: line-through !important;
+  color: var(--color-foreground-secondary, inherit) !important;
+}
+
+.rich-text-editor a {
+  color: var(--color-primary, #6366f1) !important;
+  text-decoration: underline !important;
+  cursor: pointer !important;
+}
+
+.rich-text-editor code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-size: 13px !important;
+  background-color: var(--color-surface-2, rgba(0, 0, 0, 0.05)) !important;
+  color: var(--color-foreground, inherit) !important;
+  padding: 2px 4px !important;
+  border-radius: 4px !important;
+}
+
+.rich-text-editor pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+  font-size: 13px !important;
+  background-color: var(--color-surface-2, rgba(0, 0, 0, 0.05)) !important;
+  color: var(--color-foreground, inherit) !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  display: block !important;
+  margin: 6px 0 !important;
+  white-space: pre-wrap !important;
+}
+
+.rich-text-editor blockquote {
+  border-left: 3px solid var(--color-primary, #6366f1) !important;
+  padding-left: 10px !important;
+  margin: 6px 0 !important;
+  color: var(--color-foreground-secondary, inherit) !important;
+  font-style: italic !important;
+  display: block !important;
+}
+
+.rich-text-editor .tg-spoiler,
+.rich-text-editor tg-spoiler {
+  background-color: var(--color-surface-3, rgba(120, 120, 120, 0.25)) !important;
+  color: transparent !important;
+  border-radius: 4px !important;
+  padding: 1px 4px !important;
+  filter: blur(4px);
+  cursor: pointer;
+  transition: filter 0.2s ease, color 0.2s ease;
+}
+
+.rich-text-editor .tg-spoiler:hover,
+.rich-text-editor tg-spoiler:hover {
+  filter: blur(0);
+  color: var(--color-foreground, inherit) !important;
 }
 
 /* ============================================================
