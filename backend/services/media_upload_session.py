@@ -171,3 +171,17 @@ def cleanup_expired_sessions() -> None:
             MAX_SESSIONS,
             overflow_count,
         )
+
+
+def cancel_all_upload_sessions() -> int:
+    """Cancels all active upload debounce tasks upon application shutdown."""
+    count = 0
+    for session in list(_sessions.values()):
+        if session.debounce_task and not session.debounce_task.done():
+            session.debounce_task.cancel()
+            count += 1
+        session.is_cancelled = True
+    _sessions.clear()
+    _sessions_by_user_bot.clear()
+    return count
+

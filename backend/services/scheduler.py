@@ -80,14 +80,19 @@ async def check_reminders_job():
     grouped_results = await asyncio.gather(*coroutines)
 
     task_ids_to_delete = []
+    task_ids_to_postpone = []
     for bot_results in grouped_results:
         for result_dict in bot_results:
             for task_id, status in result_dict.items():
                 if status != "keep_for_retry":
                     task_ids_to_delete.append(task_id)
+                else:
+                    task_ids_to_postpone.append(task_id)
 
     if task_ids_to_delete:
         await delete_list_tasks(task_ids_to_delete)
+    if task_ids_to_postpone:
+        await postpone_tasks(task_ids_to_postpone, delay_seconds=180)
 
 
 async def renew_pro_subscriptions_job():
@@ -156,29 +161,37 @@ async def renew_bot_subscriptions_job():
 
 async def expire_bot_subscriptions_job():
     """Pause only the published bot whose dedicated subscription has ended."""
-    for bot_config in await get_expired_published_bots():
-        if not await claim_expired_bot_subscription(bot_config.id):
-            continue
-        try:
-            token = crypto.decrypt(bot_config.bot_token_enc)
-            bot = Bot(token=token, session=shared_scheduler_session)
-            await bot.delete_webhook()
-            await bot_lifecycle_service.transition(
-                bot_config, "paused", reason="subscription"
-            )
-            await set_bot_lifecycle_state(
-                bot_config.id,
-                bot_config.lifecycle_status,
-                bot_config.pause_reason,
-            )
-            await finalize_bot_subscription_expiry(bot_config.id)
-        except Exception as exc:
-            await release_bot_subscription_expiry_claim(bot_config.id)
-            logger.warning(
-                "Не удалось остановить бота %s после окончания подписки: %s",
-                bot_config.id,
-                exc,
-            )
+    bots = await get_expired_published_bots(limit=50)
+    if not bots:
+        return
+    semaphore = asyncio.Semaphore(5)
+
+    async def _process_expire_bot(bot_config):
+        async with semaphore:
+            if not await claim_expired_bot_subscription(bot_config.id):
+                return
+            try:
+                token = crypto.decrypt(bot_config.bot_token_enc)
+                bot = Bot(token=token, session=shared_scheduler_session)
+                await bot.delete_webhook()
+                await bot_lifecycle_service.transition(
+                    bot_config, "paused", reason="subscription"
+                )
+                await set_bot_lifecycle_state(
+                    bot_config.id,
+                    bot_config.lifecycle_status,
+                    bot_config.pause_reason,
+                )
+                await finalize_bot_subscription_expiry(bot_config.id)
+            except Exception as exc:
+                await release_bot_subscription_expiry_claim(bot_config.id)
+                logger.warning(
+                    "Не удалось остановить бота %s после окончания подписки: %s",
+                    bot_config.id,
+                    exc,
+                )
+
+    await asyncio.gather(*[_process_expire_bot(b) for b in bots])
 
 
 async def expire_account_subscription_bots_job():
@@ -187,51 +200,68 @@ async def expire_account_subscription_bots_job():
     Бесплатные (lifetime) боты и админы продолжают работать. Настройки и клиенты
     сохраняются — после оплаты публикация вернётся автоматически.
     """
-    for bot_config in await get_expired_account_subscription_bots():
-        try:
-            token = crypto.decrypt(bot_config.bot_token_enc)
-            bot = Bot(token=token, session=shared_scheduler_session)
-            await bot.delete_webhook()
-            await bot_lifecycle_service.transition(
-                bot_config, "paused", reason="subscription"
-            )
-            await set_bot_lifecycle_state(
-                bot_config.id,
-                bot_config.lifecycle_status,
-                bot_config.pause_reason,
-            )
-            logger.info("Бот %s остановлен: подписка владельца истекла", bot_config.id)
-        except Exception as exc:
-            logger.warning(
-                "Не удалось остановить бота %s после истечения подписки: %s",
-                bot_config.id,
-                exc,
-            )
+    bots = await get_expired_account_subscription_bots(limit=50)
+    if not bots:
+        return
+    semaphore = asyncio.Semaphore(5)
+
+    async def _process_expire_account_bot(bot_config):
+        async with semaphore:
+            try:
+                token = crypto.decrypt(bot_config.bot_token_enc)
+                bot = Bot(token=token, session=shared_scheduler_session)
+                await bot.delete_webhook()
+                await bot_lifecycle_service.transition(
+                    bot_config, "paused", reason="subscription"
+                )
+                await set_bot_lifecycle_state(
+                    bot_config.id,
+                    bot_config.lifecycle_status,
+                    bot_config.pause_reason,
+                )
+                logger.info("Бот %s остановлен: подписка владельца истекла", bot_config.id)
+            except Exception as exc:
+                logger.warning(
+                    "Не удалось остановить бота %s после истечения подписки: %s",
+                    bot_config.id,
+                    exc,
+                )
+
+    await asyncio.gather(*[_process_expire_account_bot(b) for b in bots])
 
 
 async def resume_subscription_bots_job():
     """Возвращает публикацию ботам, остановленным из-за подписки, после оплаты."""
-    for bot_config in await get_subscription_paused_bots_to_resume():
-        try:
-            token = crypto.decrypt(bot_config.bot_token_enc)
-            bot = Bot(token=token, session=shared_scheduler_session)
-            await bot.set_webhook(url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot_config.id}")
-            await bot_lifecycle_service.transition(bot_config, "published")
-            await set_bot_lifecycle_state(
-                bot_config.id,
-                bot_config.lifecycle_status,
-                bot_config.pause_reason,
-            )
-            await notify_billing_user(
-                bot_config.owner.telegram_id,
-                f"✅ Оплата получена — бот «{bot_config.name}» снова работает.",
-            )
-        except Exception as exc:
-            logger.warning(
-                "Не удалось вернуть бота %s после оплаты подписки: %s",
-                bot_config.id,
-                exc,
-            )
+    bots = await get_subscription_paused_bots_to_resume(limit=50)
+    if not bots:
+        return
+    semaphore = asyncio.Semaphore(5)
+
+    async def _process_resume_bot(bot_config):
+        async with semaphore:
+            try:
+                token = crypto.decrypt(bot_config.bot_token_enc)
+                bot = Bot(token=token, session=shared_scheduler_session)
+                await bot.set_webhook(url=f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot_config.id}")
+                await bot_lifecycle_service.transition(bot_config, "published")
+                await set_bot_lifecycle_state(
+                    bot_config.id,
+                    bot_config.lifecycle_status,
+                    bot_config.pause_reason,
+                )
+                display_title = getattr(bot_config, "name", None) or getattr(bot_config, "display_name", None) or getattr(bot_config, "username", None) or "Мой бот"
+                await notify_billing_user(
+                    bot_config.owner.telegram_id,
+                    f"✅ Оплата получена — бот «{display_title}» снова работает.",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Не удалось вернуть бота %s после оплаты подписки: %s",
+                    bot_config.id,
+                    exc,
+                )
+
+    await asyncio.gather(*[_process_resume_bot(b) for b in bots])
 
 
 async def retry_client_payment_fulfillments_job():
@@ -357,6 +387,9 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
                 f"⏳ Флуд-лимит у бота {bot_id} (ждать {e.retry_after} сек). Прерываем оставшиеся задачи бота."
             )
             results.append({task.id: "keep_for_retry"})
+            idx = tasks.index(task)
+            for remaining in tasks[idx + 1:]:
+                results.append({remaining.id: "keep_for_retry"})
             break
 
         except TelegramAPIError as e:

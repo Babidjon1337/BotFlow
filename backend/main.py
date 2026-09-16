@@ -97,7 +97,9 @@ async def lifespan(app: FastAPI):
     await stop_scheduler()
     from services.broadcast import close_broadcast_session
     from services.billing_notifications import close_billing_notification_session
+    from services.media_upload_session import cancel_all_upload_sessions
 
+    cancel_all_upload_sessions()
     await close_broadcast_session()
     await close_billing_notification_session()
     if app.state.session:

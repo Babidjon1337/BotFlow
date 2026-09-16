@@ -194,7 +194,7 @@ async def _send_pending_chunk(
     chunk: list,
     media_assets: list | None = None,
     keyboard: InlineKeyboardMarkup | None = None,
-) -> None:
+) -> bool:
     media_assets = media_assets or []
     sent_batch: list[int] = []
     failed_batch: list[tuple[int, str]] = []
@@ -217,6 +217,15 @@ async def _send_pending_chunk(
             else:
                 await _deliver_one(bot, recipient.telegram_id, text, keyboard=keyboard)
             sent_batch.append(recipient.id)
+        except TelegramRetryAfter as exc:
+            # Persistent flood limit on this bot: flush what's sent, keep remaining pending, and stop
+            await _flush_batches()
+            logger.warning(
+                "Рассылка %s: флуд-лимит Telegram (ждать %s с). Прерываем текущую отправку.",
+                broadcast_id,
+                exc.retry_after,
+            )
+            return False
         except Exception as exc:  # один получатель не должен остановить рассылку
             failed_batch.append((recipient.id, _friendly_error(exc)))
             logger.info(
@@ -232,6 +241,7 @@ async def _send_pending_chunk(
         await asyncio.sleep(SEND_GAP_SECONDS)
 
     await _flush_batches()
+    return True
 
 
 async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession | None = None) -> str:
@@ -281,7 +291,7 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
             chunk = await get_pending_recipients(broadcast_id, BROADCAST_CHUNK_SIZE)
             if not chunk:
                 break
-            await _send_pending_chunk(
+            chunk_ok = await _send_pending_chunk(
                 bot,
                 broadcast_id,
                 text,
@@ -289,6 +299,9 @@ async def run_broadcast_sending(broadcast_id: UUID, bot_session: AiohttpSession 
                 media_assets=media_assets,
                 keyboard=keyboard,
             )
+            if not chunk_ok:
+                logger.info("Рассылка %s временно приостановлена из-за flood limit", broadcast_id)
+                break
     finally:
         final_status = await finalize_broadcast(broadcast_id)
         logger.info("Рассылка %s завершена со статусом %s", broadcast_id, final_status)

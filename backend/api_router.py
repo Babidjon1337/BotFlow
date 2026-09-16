@@ -747,17 +747,39 @@ async def retry_admin_operation_endpoint(payment_id: UUID, request: Request):
     try:
         requeued = await requeue_client_payment_delivery(payment_id)
     except ClientPaymentDeliveryRetryError as exc:
+        event_bus.publish_user(
+            admin.telegram_id,
+            "operation_failed",
+            {"operation": "payment_delivery_retry", "targetId": str(payment_id), "error": str(exc)},
+        )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    result = await process_client_payment_fulfillment(payment_id, request.app.state.session)
-    await write_admin_audit_log(
-        actor_telegram_id=admin.telegram_id,
-        action="payment_delivery_retry",
-        target_type="client_payment",
-        target_id=str(payment_id),
-        details={**requeued, **result},
-    )
-    return {"status": "ok", **requeued, **result}
+    try:
+        result = await process_client_payment_fulfillment(payment_id, request.app.state.session)
+        await write_admin_audit_log(
+            actor_telegram_id=admin.telegram_id,
+            action="payment_delivery_retry",
+            target_type="client_payment",
+            target_id=str(payment_id),
+            details={**requeued, **result},
+        )
+        event_bus.publish_user(
+            admin.telegram_id,
+            "operation_completed",
+            {
+                "operation": "payment_delivery_retry",
+                "targetId": str(payment_id),
+                "details": {**requeued, **result},
+            },
+        )
+        return {"status": "ok", **requeued, **result}
+    except Exception as exc:
+        event_bus.publish_user(
+            admin.telegram_id,
+            "operation_failed",
+            {"operation": "payment_delivery_retry", "targetId": str(payment_id), "error": str(exc)},
+        )
+        raise
 
 
 @api_router.get("/api/admin/audit-log")

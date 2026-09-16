@@ -336,3 +336,19 @@ async def delete_task(task_id: int):
         if task:
             await session.delete(task)
             await session.commit()
+
+
+async def postpone_tasks(task_ids: list, delay_seconds: int = 180):
+    """Откладывает задачи на delay_seconds для защиты от повторных штормов."""
+    if not task_ids:
+        return
+    new_execute_at = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
+    async with async_session() as session:
+        await session.execute(
+            update(ScheduledTask)
+            .where(ScheduledTask.id.in_(task_ids))
+            .values(execute_at=new_execute_at)
+        )
+        logger.info("Отложил задачи %s на %d сек (до %s)", task_ids, delay_seconds, new_execute_at)
+        await session.commit()
+

@@ -146,6 +146,7 @@ async def set_bot_subscription_auto_renew(
 
 async def get_expired_published_bots(
     now: datetime | None = None,
+    limit: int = 50,
 ) -> list[BotConfig]:
     """Return only published bots whose dedicated subscription has ended.
 
@@ -169,6 +170,7 @@ async def get_expired_published_bots(
                     & (BotSubscription.grace_until <= effective_now),
                 ),
             )
+            .limit(limit)
         )
         return list(result.all())
 
@@ -307,7 +309,12 @@ async def delete_bot_config(bot_id: int) -> bool:
             return False
         await session.delete(bot)
         await session.commit()
-        return True
+    try:
+        from services.event_bus import event_bus
+        event_bus.invalidate_bot_owner_cache(bot_id)
+    except Exception:
+        pass
+    return True
 
 
 async def set_bot_status(bot_id: int, status: str) -> BotConfig | None:
@@ -351,6 +358,7 @@ async def assign_lifetime_license(bot_id: int) -> BotConfig | None:
 
 async def get_expired_account_subscription_bots(
     now: datetime | None = None,
+    limit: int = 50,
 ) -> list[BotConfig]:
     """Опубликованные платные боты владельцев с истёкшей подпиской аккаунта.
 
@@ -372,12 +380,14 @@ async def get_expired_account_subscription_bots(
             .join(User, User.id == BotConfig.owner_id)
             .options(joinedload(BotConfig.owner))
             .where(*conditions)
+            .limit(limit)
         )
         return list(result.all())
 
 
 async def get_subscription_paused_bots_to_resume(
     now: datetime | None = None,
+    limit: int = 50,
 ) -> list[BotConfig]:
     """Боты, остановленные из-за подписки (pause_reason='subscription'), у которых
     подписка владельца снова активна — после оплаты публикация возвращается."""
@@ -396,6 +406,7 @@ async def get_subscription_paused_bots_to_resume(
                 BotConfig.pause_reason == "subscription",
                 or_(*resume_conditions),
             )
+            .limit(limit)
         )
         return list(result.all())
 

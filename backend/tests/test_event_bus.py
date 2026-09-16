@@ -70,3 +70,50 @@ def test_event_bus_publish_bot():
         await bus.unsubscribe(777, queue)
 
     asyncio.run(_test())
+
+
+def test_event_bus_aliasing():
+    async def _test():
+        bus = EventBus()
+        queue = await bus.subscribe(888)
+
+        # Publishing colon-style should also deliver underscore-style alias
+        bus.publish_user(888, "media:upload_completed", {"sessionId": "s123"})
+        e1 = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert e1["type"] == "media:upload_completed"
+        e2 = await asyncio.wait_for(queue.get(), timeout=1.0)
+        assert e2["type"] == "media_upload_completed"
+
+        await bus.unsubscribe(888, queue)
+
+    asyncio.run(_test())
+
+
+def test_event_bus_max_queues_per_user():
+    async def _test():
+        bus = EventBus()
+        queues = []
+        for i in range(12):
+            q = await bus.subscribe(999)
+            queues.append(q)
+
+        # Maximum queues per user is 10; first 2 should have been evicted
+        assert len(bus._subscribers[999]) == 10
+        assert queues[0] not in bus._subscribers[999]
+        assert queues[1] not in bus._subscribers[999]
+        assert queues[11] in bus._subscribers[999]
+
+        for q in queues[2:]:
+            await bus.unsubscribe(999, q)
+        assert 999 not in bus._subscribers
+
+    asyncio.run(_test())
+
+
+def test_event_bus_cache_invalidation():
+    bus = EventBus()
+    bus.set_bot_owner_cache(55, 12345)
+    assert bus._bot_owner_cache.get(55) == 12345
+    bus.invalidate_bot_owner_cache(55)
+    assert bus._bot_owner_cache.get(55) is None
+

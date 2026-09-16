@@ -1,3 +1,4 @@
+from functools import lru_cache
 from cryptography.fernet import Fernet
 
 from config import ENCRYPTION_KEY
@@ -14,15 +15,19 @@ class CryptoManager:
             return b""
         return self.fernet.encrypt(data.encode())
 
+    @lru_cache(maxsize=2048)
+    def _decrypt_bytes_cached(self, data: bytes) -> str:
+        return self.fernet.decrypt(data).decode()
+
     def decrypt(self, data: bytes | str) -> str:
-        """Расшифровывает строку из базы данных в рабочий токен"""
+        """Расшифровывает строку из базы данных в рабочий токен (с LRU-кэшем для снижения CPU/crypto overhead)."""
         if not data:
             return ""
 
         if isinstance(data, str):
             data = data.encode()
 
-        return self.fernet.decrypt(data).decode()
+        return self._decrypt_bytes_cached(bytes(data))
 
 
 crypto = CryptoManager()
