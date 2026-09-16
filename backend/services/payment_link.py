@@ -363,8 +363,6 @@ async def _create_prodamus_link(
     if integration_code:
         data["sys"] = str(integration_code)
     data["signature"] = prodamus.sign(data)
-    if client_payment:
-        await set_client_payment_provider_id(client_payment.id, order_id)
 
     def _flatten(prefix, value):
         items = []
