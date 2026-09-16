@@ -354,8 +354,12 @@ async def _create_prodamus_link(
                 "type": "service",
             }
         ],
-        "demo_mode": "1",
     }
+    demo_mode_val = creds.get("demo_mode")
+    if demo_mode_val is None:
+        demo_mode_val = creds.get("is_test")
+    if demo_mode_val and str(demo_mode_val).strip().lower() in {"1", "true", "yes"}:
+        data["demo_mode"] = "1"
     if integration_code:
         data["sys"] = str(integration_code)
     data["signature"] = prodamus.sign(data)

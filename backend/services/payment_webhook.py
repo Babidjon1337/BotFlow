@@ -7,12 +7,15 @@ module have completed successfully.
 import hashlib
 import hmac
 import json
+import re
+import urllib.parse
 import uuid
 from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from typing import Any, Mapping
 
 import httpx
+from loggers import logger
 
 
 class PaymentWebhookError(ValueError):
@@ -68,23 +71,276 @@ def _value(data: Mapping[str, Any], *names: str) -> str | None:
     return None
 
 
+def _safe_headers_for_logging(headers: Mapping[str, str] | None) -> dict[str, str]:
+    if not headers:
+        return {}
+    sensitive = {"authorization", "cookie", "x-api-key", "token", "proxy-authorization"}
+    return {
+        str(k): ("***" if str(k).casefold() in sensitive else str(v))
+        for k, v in headers.items()
+    }
+
+
+def _safe_dict_for_logging(d: Mapping[str, Any] | None) -> dict[str, str]:
+    if not d:
+        return {}
+    sensitive = {"secret", "password", "api_key", "token", "key"}
+    return {
+        str(k): ("***" if any(s in str(k).casefold() for s in sensitive) else str(v))
+        for k, v in d.items()
+    }
+
+
+def _php_bracket_to_dict(items: list[tuple[str, Any]] | Mapping[str, Any]) -> dict[str, Any]:
+    """Convert PHP array bracket notation (e.g. products[0][price]) to nested dict/list."""
+    if isinstance(items, Mapping):
+        pairs = list(items.items())
+    else:
+        pairs = list(items)
+
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        key_str = str(key)
+        match = re.match(r"^([^\[]+)((?:\[[^\]]*\])*)$", key_str)
+        if not match or not match.group(2):
+            result[key_str] = value
+            continue
+
+        base = match.group(1)
+        sub_keys = re.findall(r"\[([^\]]*)\]", match.group(2))
+        path = [base] + sub_keys
+
+        curr: Any = result
+        for i, part in enumerate(path[:-1]):
+            next_part = path[i + 1]
+            is_next_digit = next_part.isdigit() or next_part == ""
+            if isinstance(curr, dict):
+                if part not in curr:
+                    curr[part] = [] if is_next_digit else {}
+                curr = curr[part]
+            elif isinstance(curr, list):
+                idx = int(part)
+                while len(curr) <= idx:
+                    curr.append([] if is_next_digit else {})
+                curr = curr[idx]
+
+        last_part = path[-1]
+        if isinstance(curr, dict):
+            curr[last_part] = value
+        elif isinstance(curr, list):
+            if last_part == "":
+                curr.append(value)
+            else:
+                idx = int(last_part)
+                while len(curr) <= idx:
+                    curr.append(None)
+                curr[idx] = value
+
+    return result
+
+
+def _normalize_prodamus_dict(data: dict[str, Any]) -> dict[str, Any]:
+    if any("[" in str(k) for k in data.keys()):
+        data = _php_bracket_to_dict(list(data.items()))
+    submit = data.get("submit")
+    if isinstance(submit, str) and submit.strip().startswith("{") and submit.strip().endswith("}"):
+        try:
+            data["submit"] = json.loads(submit)
+        except Exception:
+            pass
+    return data
+
+
+def parse_prodamus_notification(
+    payload: Mapping[str, Any] | str | bytes,
+) -> dict[str, Any]:
+    """Parse Prodamus webhook body (JSON, form-urlencoded, or multipart) into a Python dict.
+
+    Recursively converts PHP bracket-notation array keys (e.g. products[0][name]) into
+    nested dicts/lists and unpacks 'submit' if present as a JSON string.
+    """
+    if isinstance(payload, (bytes, bytearray)):
+        payload = payload.decode("utf-8", errors="replace")
+
+    if isinstance(payload, str):
+        payload_str = payload.strip()
+        if payload_str.startswith("{") and payload_str.endswith("}"):
+            try:
+                data = json.loads(payload_str)
+                if isinstance(data, Mapping):
+                    return _normalize_prodamus_dict(dict(data))
+            except Exception:
+                pass
+        try:
+            pairs = urllib.parse.parse_qsl(payload_str, keep_blank_values=True)
+            return _php_bracket_to_dict(pairs)
+        except Exception:
+            return {}
+
+    if isinstance(payload, Mapping):
+        return _normalize_prodamus_dict(dict(payload))
+
+    return {}
+
+
+def _canonicalize_for_prodamus(data: Any) -> Any:
+    """Canonicalize data for Prodamus signature: convert leaves to strings, sort keys recursively."""
+    if isinstance(data, Mapping):
+        return {
+            str(k): _canonicalize_for_prodamus(v)
+            for k, v in sorted(data.items(), key=lambda item: str(item[0]))
+            if str(k).casefold() not in {"signature", "sign"}
+        }
+    if isinstance(data, (list, tuple)):
+        return [_canonicalize_for_prodamus(item) for item in data]
+    if isinstance(data, bool):
+        return "1" if data else ""
+    if data is None:
+        return ""
+    return str(data)
+
+
+def _flatten_for_query(prefix: str, val: Any) -> list[tuple[str, str]]:
+    items: list[tuple[str, str]] = []
+    if isinstance(val, Mapping):
+        for k, v in sorted(val.items(), key=lambda x: str(x[0])):
+            p = f"{prefix}[{k}]" if prefix else str(k)
+            items.extend(_flatten_for_query(p, v))
+    elif isinstance(val, (list, tuple)):
+        for i, v in enumerate(val):
+            p = f"{prefix}[{i}]" if prefix else str(i)
+            items.extend(_flatten_for_query(p, v))
+    else:
+        items.append((prefix, str(val)))
+    return items
+
+
+def _extract_prodamus_signature(
+    headers: Mapping[str, str] | None,
+    query_params: Mapping[str, str] | None,
+    payload: Mapping[str, Any] | None,
+) -> str | None:
+    for source in (headers, query_params, payload if isinstance(payload, Mapping) else None):
+        if not source:
+            continue
+        normalized = {str(k).casefold(): str(v) for k, v in source.items()}
+        for key in ("sign", "signature", "x-signature"):
+            val = normalized.get(key)
+            if val:
+                return val
+    return None
+
+
+def verify_prodamus_signature(
+    secret: str,
+    payload: Mapping[str, Any] | str | bytes,
+    received_signature: str | None = None,
+    headers: Mapping[str, str] | None = None,
+    query_params: Mapping[str, str] | None = None,
+    raw_body: str | bytes | None = None,
+) -> bool:
+    """Verify Prodamus HMAC-SHA256 signature across all canonical serialization variants."""
+    if not secret:
+        raise PaymentWebhookError("Prodamus signature is missing")
+
+    if not received_signature:
+        received_signature = _extract_prodamus_signature(
+            headers,
+            query_params,
+            payload if isinstance(payload, Mapping) else None,
+        )
+
+    if not received_signature:
+        raise PaymentWebhookError("Prodamus signature is missing")
+
+    parsed = parse_prodamus_notification(payload)
+    canonical_nested = _canonicalize_for_prodamus(parsed)
+
+    candidate_strings: dict[str, str] = {}
+
+    # Variant 1 & 2: Canonical JSON on nested data (with and without escaped slashes)
+    nested_json = json.dumps(canonical_nested, ensure_ascii=False, separators=(",", ":"))
+    candidate_strings["json_nested_escaped_slashes"] = nested_json.replace("/", "\\/")
+    candidate_strings["json_nested_unescaped_slashes"] = nested_json
+
+    # Variant 3: 'submit' field if present
+    submit_obj = parsed.get("submit")
+    if isinstance(submit_obj, Mapping):
+        canonical_submit = _canonicalize_for_prodamus(submit_obj)
+        submit_json = json.dumps(canonical_submit, ensure_ascii=False, separators=(",", ":"))
+        candidate_strings["json_submit_escaped"] = submit_json.replace("/", "\\/")
+        candidate_strings["json_submit_unescaped"] = submit_json
+    if isinstance(payload, Mapping) and isinstance(payload.get("submit"), str):
+        candidate_strings["raw_submit_str"] = str(payload["submit"])
+
+    # Variant 4: Flat dictionary serialization (if payload arrived flat)
+    if isinstance(payload, Mapping):
+        canonical_flat = _canonicalize_for_prodamus(dict(payload))
+        flat_json = json.dumps(canonical_flat, ensure_ascii=False, separators=(",", ":"))
+        candidate_strings["json_flat_escaped"] = flat_json.replace("/", "\\/")
+        candidate_strings["json_flat_unescaped"] = flat_json
+
+    # Variant 5: Concatenation / query-string formats
+    flat_pairs = _flatten_for_query("", canonical_nested)
+    if flat_pairs:
+        candidate_strings["query_urlencode"] = urllib.parse.urlencode(flat_pairs)
+        candidate_strings["query_unquoted"] = "&".join(f"{k}={v}" for k, v in flat_pairs)
+        candidate_strings["concat_colon"] = ":".join(f"{k}={v}" for k, v in flat_pairs)
+        candidate_strings["concat_values"] = "".join(v for k, v in flat_pairs)
+        candidate_strings["concat_values_colon"] = ":".join(v for k, v in flat_pairs)
+
+    # Variant 6: Raw body if provided
+    if raw_body is not None:
+        raw_str = raw_body.decode("utf-8", errors="replace") if isinstance(raw_body, bytes) else str(raw_body)
+        candidate_strings["raw_body"] = raw_str
+
+    candidate_hashes: dict[str, str] = {}
+    matched_candidate: str | None = None
+
+    for name, s in candidate_strings.items():
+        computed = hmac.new(str(secret).encode("utf-8"), s.encode("utf-8"), hashlib.sha256).hexdigest()
+        candidate_hashes[name] = computed
+        if hmac.compare_digest(computed.casefold(), received_signature.casefold()):
+            matched_candidate = name
+            break
+
+    if matched_candidate:
+        logger.debug("Prodamus signature verified successfully using candidate '%s'", matched_candidate)
+        return True
+
+    logger.warning(
+        "Отклонён платежный webhook [prodamus]: подпись не совпадает! "
+        "Получена подпись: '%s'. "
+        "Рассчитанные кандидаты: %s. "
+        "Заголовки: %s. "
+        "Query-параметры: %s. "
+        "Ключи payload: %s",
+        received_signature,
+        candidate_hashes,
+        _safe_headers_for_logging(headers),
+        _safe_dict_for_logging(query_params),
+        list(payload.keys()) if isinstance(payload, Mapping) else type(payload).__name__,
+    )
+    return False
+
+
 def _prodamus_signature_payload(payload: Mapping[str, Any]) -> str:
     """Match Prodamus Hmac canonical JSON: sorted keys and escaped slashes."""
-    normalized = {
-        str(key): value
-        for key, value in payload.items()
-        if str(key).casefold() not in {"signature", "sign"}
-    }
+    normalized = _canonicalize_for_prodamus(dict(payload))
     return json.dumps(
         normalized,
         ensure_ascii=False,
         separators=(",", ":"),
-        sort_keys=True,
     ).replace("/", "\\/")
 
 
 async def verify_payment_notification(
-    provider: str, bot_config: Any, payload: Mapping[str, Any], headers: Mapping[str, str]
+    provider: str,
+    bot_config: Any,
+    payload: Mapping[str, Any],
+    headers: Mapping[str, str],
+    query_params: Mapping[str, str] | None = None,
+    raw_payload: Any | None = None,
 ) -> VerifiedPayment:
     """Verify a successful notification and return its trusted payment data."""
     normalized_provider = provider.casefold()
@@ -95,7 +351,14 @@ async def verify_payment_notification(
     if normalized_provider == "robokassa":
         return _verify_robokassa(credentials, payload, bot_config)
     if normalized_provider == "prodamus":
-        return _verify_prodamus(credentials, payload, headers, bot_config)
+        return _verify_prodamus(
+            credentials,
+            payload,
+            headers,
+            bot_config,
+            query_params=query_params,
+            raw_payload=raw_payload,
+        )
     raise PaymentWebhookError("Unsupported payment provider")
 
 
@@ -194,48 +457,111 @@ def _verify_robokassa(
         raise PaymentWebhookError("Robokassa payment metadata is invalid") from exc
 
 
+def _is_valid_uuid(val: Any) -> bool:
+    try:
+        uuid.UUID(str(val))
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 def _verify_prodamus(
-    credentials: Mapping[str, Any], payload: Mapping[str, Any], headers: Mapping[str, str], bot_config: Any | None = None
+    credentials: Mapping[str, Any],
+    payload: Mapping[str, Any] | str | bytes,
+    headers: Mapping[str, str] | None = None,
+    bot_config: Any | None = None,
+    query_params: Mapping[str, str] | None = None,
+    raw_payload: Any | None = None,
 ) -> VerifiedPayment:
-    if (_value(payload, "payment_status", "status") or "").casefold() != "success":
+    parsed_payload = parse_prodamus_notification(payload)
+
+    status = (
+        _value(parsed_payload, "payment_status", "status")
+        or _value(payload if isinstance(payload, Mapping) else {}, "payment_status", "status")
+        or ""
+    )
+    if status.casefold() != "success":
         raise PaymentWebhookError("Prodamus payment is not successful")
 
     secret = (
         credentials.get("webhook_secret")
         or credentials.get("secret_key")
         or credentials.get("api_key")
+        or credentials.get("secret")
     )
-    signature = (
-        _value(headers, "signature", "sign", "x-signature")
-        or _value(payload, "signature", "sign")
-    )
-    if not secret or not signature:
+    if not secret:
         raise PaymentWebhookError("Prodamus signature is missing")
 
-    serialized_payload = _prodamus_signature_payload(payload)
-    expected_signature = hmac.new(
-        str(secret).encode(), serialized_payload.encode(), hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(expected_signature.casefold(), signature.casefold()):
+    is_valid = verify_prodamus_signature(
+        secret=str(secret),
+        payload=payload,
+        headers=headers or {},
+        query_params=query_params or {},
+        raw_body=raw_payload if isinstance(raw_payload, (str, bytes)) else None,
+    )
+    if not is_valid:
         raise PaymentWebhookError("Prodamus signature is invalid")
 
-    order_id = _value(payload, "order_id", "order_num")
+    # Look for client payment UUID in order_num (where we pass client_payment.id) or order_id
+    client_payment_uuid: uuid.UUID | None = None
+    for candidate in (
+        _value(parsed_payload, "order_num"),
+        _value(parsed_payload, "order_id"),
+        _value(payload if isinstance(payload, Mapping) else {}, "order_num"),
+        _value(payload if isinstance(payload, Mapping) else {}, "order_id"),
+    ):
+        if candidate and _is_valid_uuid(candidate):
+            client_payment_uuid = uuid.UUID(str(candidate))
+            break
+
+    order_id = (
+        _value(parsed_payload, "order_id", "order_num")
+        or _value(payload if isinstance(payload, Mapping) else {}, "order_id", "order_num")
+    )
     if not order_id:
         raise PaymentWebhookError("Prodamus order ID is missing")
+
+    tg_user_id_val = (
+        _value(parsed_payload, "tg_user_id", "telegram_id", "customer_extra")
+        or _value(payload if isinstance(payload, Mapping) else {}, "tg_user_id", "telegram_id", "customer_extra")
+    )
+    telegram_id = 0
+    if tg_user_id_val:
+        try:
+            telegram_id = int(str(tg_user_id_val).strip())
+        except (ValueError, TypeError):
+            pass
+
+    if telegram_id == 0:
+        for candidate in (_value(parsed_payload, "order_num"), order_id):
+            if candidate and "_" in candidate:
+                try:
+                    telegram_id = int(candidate.split("_", 1)[0])
+                    break
+                except (ValueError, TypeError):
+                    pass
+
     if bot_config is not None:
         try:
+            sum_val = (
+                _value(parsed_payload, "sum")
+                or _value(payload if isinstance(payload, Mapping) else {}, "sum")
+                or "0"
+            )
+            amount = Decimal(str(sum_val))
+            client_uuid_final = client_payment_uuid
+            if client_uuid_final is None and order_id and _is_valid_uuid(order_id):
+                client_uuid_final = uuid.UUID(str(order_id))
+
             return VerifiedPayment(
                 "prodamus",
                 order_id,
-                int(_value(payload, "tg_user_id", "telegram_id") or "0"),
-                uuid.UUID(order_id),
-                Decimal(_value(payload, "sum") or "0"),
+                telegram_id,
+                client_uuid_final,
+                amount,
                 "RUB",
             )
         except (ValueError, InvalidOperation) as exc:
             raise PaymentWebhookError("Prodamus payment metadata is invalid") from exc
-    try:
-        telegram_id = int(order_id.split("_", maxsplit=1)[0])
-    except ValueError as exc:
-        raise PaymentWebhookError("Prodamus Telegram ID is invalid") from exc
+
     return VerifiedPayment("prodamus", order_id, telegram_id)

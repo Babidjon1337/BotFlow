@@ -25,6 +25,7 @@ from services.funnel_readiness import evaluate_funnel_readiness
 from services.payment_webhook import (
     PaymentProviderUnavailable,
     PaymentWebhookError,
+    parse_prodamus_notification,
     verify_payment_notification,
 )
 from services.saas_billing import (
@@ -239,14 +240,26 @@ async def universal_payment_webhook(
 ):
     try:
         normalized_provider = provider.casefold()
+        raw_body = None
+        raw_data = None
         if normalized_provider == "yookassa":
             data = await request.json()
-        elif (
-            normalized_provider == "prodamus"
-            and "application/json" in request.headers.get("content-type", "")
-        ):
-            data = await request.json()
-        elif normalized_provider in {"robokassa", "prodamus"}:
+        elif normalized_provider == "prodamus":
+            content_type = request.headers.get("content-type", "")
+            raw_body = await request.body()
+            if "application/json" in content_type:
+                try:
+                    raw_data = await request.json()
+                except Exception:
+                    raw_data = json.loads(raw_body.decode("utf-8", errors="replace"))
+            else:
+                try:
+                    form = await request.form()
+                    raw_data = dict(form)
+                except Exception:
+                    raw_data = raw_body.decode("utf-8", errors="replace")
+            data = parse_prodamus_notification(raw_data)
+        elif normalized_provider == "robokassa":
             data = await request.form()
         else:
             raise PaymentWebhookError("Unsupported payment provider")
@@ -259,20 +272,22 @@ async def universal_payment_webhook(
             from database.models import async_session, BotConfig, ClientPayment
             from sqlalchemy import select
             import uuid
-            order_id = (
-                data.get("order_id")
-                or data.get("order_num")
-                or data.get("shp_client_payment_id")
-            )
+            order_candidates = [
+                data.get("order_num"),
+                data.get("order_id"),
+                data.get("shp_client_payment_id"),
+            ]
             async with async_session() as session:
-                if order_id:
-                    try:
-                        order_uuid = uuid.UUID(str(order_id))
-                        client_pmt = await session.get(ClientPayment, order_uuid)
-                        if client_pmt:
-                            bot_config = await session.get(BotConfig, client_pmt.bot_id)
-                    except (ValueError, TypeError):
-                        pass
+                for cand in order_candidates:
+                    if cand:
+                        try:
+                            order_uuid = uuid.UUID(str(cand))
+                            client_pmt = await session.get(ClientPayment, order_uuid)
+                            if client_pmt:
+                                bot_config = await session.get(BotConfig, client_pmt.bot_id)
+                                break
+                        except (ValueError, TypeError):
+                            pass
                 if not bot_config:
                     bot_config = await session.scalar(
                         select(BotConfig).where(BotConfig.payment_provider == normalized_provider)
@@ -282,7 +297,12 @@ async def universal_payment_webhook(
             raise HTTPException(status_code=404, detail="Bot not found")
 
         verified_payment = await verify_payment_notification(
-            normalized_provider, bot_config, data, request.headers
+            normalized_provider,
+            bot_config,
+            data,
+            request.headers,
+            query_params=dict(request.query_params),
+            raw_payload=raw_data or raw_body,
         )
         logger.info(
             "💰 Подтверждена оплата [%s] для бота %s, пользователь %s, платеж %s",
