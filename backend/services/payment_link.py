@@ -37,7 +37,9 @@ def _clean_payment_description(description: str, max_length: int = 120) -> str:
 
 def _yookassa_description(description: str) -> str:
     """Normalize provider-facing description without losing the user-facing offer."""
-    return _clean_payment_description(description, max_length=_YOOKASSA_DESCRIPTION_MAX_LENGTH)
+    return _clean_payment_description(
+        description, max_length=_YOOKASSA_DESCRIPTION_MAX_LENGTH
+    )
 
 
 def _yookassa_credentials(creds: dict) -> tuple[str | None, str | None]:
@@ -47,7 +49,9 @@ def _yookassa_credentials(creds: dict) -> tuple[str | None, str | None]:
     )
 
 
-async def validate_payment_credentials(provider: str | None, creds: dict | None) -> tuple[bool, str]:
+async def validate_payment_credentials(
+    provider: str | None, creds: dict | None
+) -> tuple[bool, str]:
     """Check payment credentials without creating a charge."""
     if not provider:
         return False, "Выберите платёжного провайдера."
@@ -63,30 +67,47 @@ async def validate_payment_credentials(provider: str | None, creds: dict | None)
                 auth=(str(shop_id), str(secret_key)),
             )
         except httpx.HTTPError:
-            return False, "Не удалось связаться с ЮKassa. Проверьте интернет и повторите попытку."
+            return (
+                False,
+                "Не удалось связаться с ЮKassa. Проверьте интернет и повторите попытку.",
+            )
         if response.status_code == 200:
             return True, "ЮKassa подключена."
         if response.status_code in (401, 403):
-            return False, "ЮKassa отклонила реквизиты. Проверьте Shop ID и секретный ключ."
-        return False, "ЮKassa временно не подтвердила реквизиты. Попробуйте сохранить позже."
+            return (
+                False,
+                "ЮKassa отклонила реквизиты. Проверьте Shop ID и секретный ключ.",
+            )
+        return (
+            False,
+            "ЮKassa временно не подтвердила реквизиты. Попробуйте сохранить позже.",
+        )
     if normalized_provider == "robokassa":
         valid = bool(
             credentials.get("merchant_login")
             and (credentials.get("password1") or credentials.get("password_1"))
             and (credentials.get("password2") or credentials.get("password_2"))
         )
-        return (True, "Реквизиты Robokassa заполнены.") if valid else (
-            False,
-            "Укажите Merchant Login, пароль №1 и пароль №2 Robokassa.",
+        return (
+            (True, "Реквизиты Robokassa заполнены.")
+            if valid
+            else (
+                False,
+                "Укажите Merchant Login, пароль №1 и пароль №2 Robokassa.",
+            )
         )
     if normalized_provider == "prodamus":
         valid = bool(
             (credentials.get("api_key") or credentials.get("secret"))
             and (credentials.get("domain") or credentials.get("payment_page"))
         )
-        return (True, "Реквизиты Prodamus заполнены.") if valid else (
-            False,
-            "Укажите API-ключ и домен платёжной страницы Prodamus.",
+        return (
+            (True, "Реквизиты Prodamus заполнены.")
+            if valid
+            else (
+                False,
+                "Укажите API-ключ и домен платёжной страницы Prodamus.",
+            )
         )
     return False, "Этот платёжный провайдер не поддерживается."
 
@@ -119,7 +140,13 @@ async def generate_payment_link(
 
     if provider == "yookassa":
         return await _create_yookassa_link(
-            creds, amount, description, lead_telegram_id, bot_config, client_payment, installments
+            creds,
+            amount,
+            description,
+            lead_telegram_id,
+            bot_config,
+            client_payment,
+            installments,
         )
     elif provider == "robokassa":
         return await _create_robokassa_link(
@@ -138,8 +165,12 @@ async def generate_payment_link(
 # 1. ИНТЕГРАЦИЯ ЮKASSA
 # ==========================================
 async def _create_yookassa_link(
-    creds: dict, amount: float, description: str, telegram_id: int,
-    bot_config: BotConfig, client_payment: ClientPayment | None,
+    creds: dict,
+    amount: float,
+    description: str,
+    telegram_id: int,
+    bot_config: BotConfig,
+    client_payment: ClientPayment | None,
     installments: bool = False,
 ) -> Optional[str]:
     shop_id, api_key = _yookassa_credentials(creds)
@@ -150,7 +181,9 @@ async def _create_yookassa_link(
 
     url = "https://api.yookassa.ru/v3/payments"
     headers = {
-        "Idempotence-Key": client_payment.idempotence_key if client_payment else str(uuid.uuid4()),
+        "Idempotence-Key": (
+            client_payment.idempotence_key if client_payment else str(uuid.uuid4())
+        ),
         "Content-Type": "application/json",
     }
 
@@ -159,8 +192,13 @@ async def _create_yookassa_link(
     # Telegram; the provider receives a stable ASCII order reference.
     if client_payment:
         provider_description = f"Payment {client_payment.id}"
-        if len(_yookassa_description(description)) > 0 and len(description.strip()) > _YOOKASSA_DESCRIPTION_MAX_LENGTH:
-            logger.info("Для ЮKassa используется безопасный номер заказа вместо длинного описания.")
+        if (
+            len(_yookassa_description(description)) > 0
+            and len(description.strip()) > _YOOKASSA_DESCRIPTION_MAX_LENGTH
+        ):
+            logger.info(
+                "Для ЮKassa используется безопасный номер заказа вместо длинного описания."
+            )
     else:
         provider_description = "Payment"
     payload = {
@@ -168,13 +206,24 @@ async def _create_yookassa_link(
         "capture": True,
         "confirmation": {
             "type": "redirect",
-            "return_url": f"https://t.me/{bot_config.username}" if bot_config.username else "https://t.me/telegram"
+            "return_url": (
+                f"https://t.me/{bot_config.username}"
+                if bot_config.username
+                else "https://t.me/telegram"
+            ),
         },
         "description": provider_description,
         "metadata": {
             "telegram_id": str(telegram_id),
             "bot_id": str(bot_config.id),
-            **({"client_payment_id": str(client_payment.id), "tariff_id": client_payment.tariff_id} if client_payment else {}),
+            **(
+                {
+                    "client_payment_id": str(client_payment.id),
+                    "tariff_id": client_payment.tariff_id,
+                }
+                if client_payment
+                else {}
+            ),
         },
     }
     # A YooKassa shop can be connected to several client bots. The callback
@@ -212,8 +261,12 @@ async def _create_yookassa_link(
 # 2. ИНТЕГРАЦИЯ РОБОКАССЫ
 # ==========================================
 async def _create_robokassa_link(
-    creds: dict, amount: float, description: str, telegram_id: int,
-    bot_config: BotConfig, client_payment: ClientPayment | None,
+    creds: dict,
+    amount: float,
+    description: str,
+    telegram_id: int,
+    bot_config: BotConfig,
+    client_payment: ClientPayment | None,
 ) -> Optional[str]:
     merchant_login = creds.get("merchant_login")
     password_1 = creds.get("password1") or creds.get("password_1")
@@ -265,8 +318,12 @@ async def _create_robokassa_link(
 # 3. ИНТЕГРАЦИЯ PRODAMUS
 # ==========================================
 async def _create_prodamus_link(
-    creds: dict, amount: float, description: str, telegram_id: int,
-    bot_config: BotConfig, client_payment: ClientPayment | None,
+    creds: dict,
+    amount: float,
+    description: str,
+    telegram_id: int,
+    bot_config: BotConfig,
+    client_payment: ClientPayment | None,
 ) -> Optional[str]:
     payment_page = creds.get("payment_page") or creds.get("domain", "")
     if payment_page and not payment_page.startswith("http"):
@@ -280,7 +337,9 @@ async def _create_prodamus_link(
         return None
 
     prodamus = ProdamusPy(api_key)
-    order_id = str(client_payment.id) if client_payment else f"{telegram_id}_{uuid.uuid4()}"
+    order_id = (
+        str(client_payment.id) if client_payment else f"{telegram_id}_{uuid.uuid4()}"
+    )
 
     data = {
         "do": "link",
@@ -295,6 +354,7 @@ async def _create_prodamus_link(
                 "type": "service",
             }
         ],
+        "demo_mode": "1",
     }
     if integration_code:
         data["sys"] = str(integration_code)
@@ -364,26 +424,51 @@ async def send_success_message(
         if isinstance(funnel_schema, dict):
             nodes = funnel_schema.get("nodes")
             if isinstance(nodes, list):
-                configured_success = next((n for n in nodes if n.get("id") in ["success", "delivery", "node_success"]), None)
+                configured_success = next(
+                    (
+                        n
+                        for n in nodes
+                        if n.get("id") in ["success", "delivery", "node_success"]
+                    ),
+                    None,
+                )
                 if tariff_snapshot:
                     tariff = tariff_snapshot
-                    has_delivery = tariff.get("has_delivery", tariff.get("hasDelivery", True))
-                    action_type = tariff.get("action_type") or tariff.get("actionType", "text")
-                    action_data = tariff.get("action_data") or tariff.get("actionData", "")
+                    has_delivery = tariff.get(
+                        "has_delivery", tariff.get("hasDelivery", True)
+                    )
+                    action_type = tariff.get("action_type") or tariff.get(
+                        "actionType", "text"
+                    )
+                    action_data = tariff.get("action_data") or tariff.get(
+                        "actionData", ""
+                    )
                     if has_delivery and not str(action_data).strip():
-                        logger.error("The paid tariff delivery is empty for bot %s, payment %s", bot_config.id, client_payment.id)
+                        logger.error(
+                            "The paid tariff delivery is empty for bot %s, payment %s",
+                            bot_config.id,
+                            client_payment.id,
+                        )
                         try:
-                            from services.billing_notifications import notify_billing_user
+                            from services.billing_notifications import (
+                                notify_billing_user,
+                            )
+
                             await notify_billing_user(
                                 bot_config.owner.telegram_id,
-                                "⚠️ Оплата от пользователя получена, но в настройках тарифа не указано, что именно нужно выдать (пустое поле). Свяжитесь с клиентом вручную."
+                                "⚠️ Оплата от пользователя получена, но в настройках тарифа не указано, что именно нужно выдать (пустое поле). Свяжитесь с клиентом вручную.",
                             )
                         except Exception:
                             pass
                         node_success = {
                             "content": "✅ <b>Оплата успешно получена!</b>\n\nК сожалению, произошла заминка: в системе не настроена автоматическая выдача для этого тарифа. Администратор уже уведомлен об этом и свяжется с вами в ближайшее время."
                         }
-                    if has_delivery and not node_success and action_type == "group" and client_payment:
+                    if (
+                        has_delivery
+                        and not node_success
+                        and action_type == "group"
+                        and client_payment
+                    ):
                         from services.chat_access import (
                             ChatAccessError,
                             chat_delivery_success_text_multi,
@@ -391,7 +476,11 @@ async def send_success_message(
                         )
 
                         try:
-                            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                            from aiogram.types import (
+                                InlineKeyboardMarkup,
+                                InlineKeyboardButton,
+                            )
+
                             invite_links = await issue_paid_chat_invites(
                                 bot_config=bot_config,
                                 payment=client_payment,
@@ -400,13 +489,29 @@ async def send_success_message(
                             )
                             # Create buttons instead of just text links
                             buttons = [
-                                [InlineKeyboardButton(text=f"Вступить в чат {i + 1}" if len(invite_links) > 1 else "Вступить в закрытый чат", url=lnk)]
+                                [
+                                    InlineKeyboardButton(
+                                        text=(
+                                            f"Вступить в чат {i + 1}"
+                                            if len(invite_links) > 1
+                                            else "Вступить в закрытый чат"
+                                        ),
+                                        url=lnk,
+                                    )
+                                ]
                                 for i, lnk in enumerate(invite_links)
                             ]
                             title = str(tariff.get("name", "Тариф"))
                             node_success = {
-                                "content": f"✅ <b>Оплата получена!</b>\n\nДоступ к «{title}» активирован.\n" + ("Ссылки персональные и каждая сработает только один раз." if len(invite_links) > 1 else "Ссылка персональная и сработает только для одного вступления."),
-                                "reply_markup": InlineKeyboardMarkup(inline_keyboard=buttons)
+                                "content": f"✅ <b>Оплата получена!</b>\n\nДоступ к «{title}» активирован.\n"
+                                + (
+                                    "Ссылки персональные и каждая сработает только один раз."
+                                    if len(invite_links) > 1
+                                    else "Ссылка персональная и сработает только для одного вступления."
+                                ),
+                                "reply_markup": InlineKeyboardMarkup(
+                                    inline_keyboard=buttons
+                                ),
                             }
                         except ChatAccessError as exc:
                             logger.error(
@@ -416,41 +521,72 @@ async def send_success_message(
                                 exc,
                             )
                             try:
-                                from services.billing_notifications import notify_billing_user
+                                from services.billing_notifications import (
+                                    notify_billing_user,
+                                )
 
                                 await notify_billing_user(
                                     bot_config.owner.telegram_id,
                                     f"⚠️ Оплата от пользователя получена, но не удалось создать инвайт в закрытый чат.\nОшибка: {exc}\nСвяжитесь с клиентом вручную, чтобы выдать доступ.",
                                 )
                             except Exception as notification_error:
-                                logger.warning("Не удалось уведомить владельца о выдаче чата: %s", notification_error)
-                            
+                                logger.warning(
+                                    "Не удалось уведомить владельца о выдаче чата: %s",
+                                    notification_error,
+                                )
+
                             # Fallback message for the user so they are not left in the dark
                             node_success = {
                                 "content": "✅ <b>Оплата успешно получена!</b>\n\nК сожалению, произошла небольшая заминка при генерации вашей персональной ссылки на чат. Администратор уже уведомлен об этом и пришлёт вам доступ в ближайшее время. Пожалуйста, подождите немного!"
                             }
                     if has_delivery and not node_success:
                         node_success = {
-                            "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text"] else "✅ <b>Оплата успешно получена!</b>",
-                            "media_file_id": action_data if action_type == "file" else None,
+                            "content": (
+                                f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
+                                if action_type in ["link", "text"]
+                                else "✅ <b>Оплата успешно получена!</b>"
+                            ),
+                            "media_file_id": (
+                                action_data if action_type == "file" else None
+                            ),
                             "media_type": "document" if action_type == "file" else None,
                         }
                 if not node_success:
                     node_success = configured_success
                 if not node_success:
-                    payment_node = next((n for n in nodes if n.get("id") == "payment"), None)
+                    payment_node = next(
+                        (n for n in nodes if n.get("id") == "payment"), None
+                    )
                     if payment_node and payment_node.get("tariffs"):
                         tariff = payment_node["tariffs"][0]
-                        if tariff.get("has_delivery", True) or tariff.get("hasDelivery", True):
-                            action_type = tariff.get("action_type") or tariff.get("actionType", "text")
-                            action_data = tariff.get("action_data") or tariff.get("actionData", "")
+                        if tariff.get("has_delivery", True) or tariff.get(
+                            "hasDelivery", True
+                        ):
+                            action_type = tariff.get("action_type") or tariff.get(
+                                "actionType", "text"
+                            )
+                            action_data = tariff.get("action_data") or tariff.get(
+                                "actionData", ""
+                            )
                             node_success = {
-                                "content": f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}" if action_type in ["link", "text"] else "✅ <b>Оплата успешно получена!</b>",
-                                "media_file_id": action_data if action_type == "file" else None,
-                                "media_type": "document" if action_type == "file" else None
+                                "content": (
+                                    f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
+                                    if action_type in ["link", "text"]
+                                    else "✅ <b>Оплата успешно получена!</b>"
+                                ),
+                                "media_file_id": (
+                                    action_data if action_type == "file" else None
+                                ),
+                                "media_type": (
+                                    "document" if action_type == "file" else None
+                                ),
                             }
             elif isinstance(nodes, dict):
-                node_success = nodes.get("node_success") or nodes.get("success") or nodes.get("delivery")
+                node_success = (
+                    nodes.get("node_success")
+                    or nodes.get("success")
+                    or nodes.get("delivery")
+                )
 
         if node_success:
             bot = Bot(
@@ -459,8 +595,14 @@ async def send_success_message(
                 default=DefaultBotProperties(parse_mode="HTML"),
             )
             await send_funnel_node_message(
-                bot=bot, chat_id=telegram_id, node=node_success,
-                reply_markup=node_success.get("reply_markup") if isinstance(node_success, dict) else None
+                bot=bot,
+                chat_id=telegram_id,
+                node=node_success,
+                reply_markup=(
+                    node_success.get("reply_markup")
+                    if isinstance(node_success, dict)
+                    else None
+                ),
             )
             logger.info(f"✅ Сообщение об успехе отправлено {telegram_id}")
             return
