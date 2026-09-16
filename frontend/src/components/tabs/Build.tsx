@@ -1,4 +1,4 @@
-import { useState, useEffect, useId } from "react";
+import { useState, useEffect, useId, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   RotateCcw,
@@ -262,6 +262,16 @@ export const Build = () => {
   const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const { showAlert, showConfirm } = useAlert();
+  const activeUploadSessionCleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (activeUploadSessionCleanupRef.current) {
+        activeUploadSessionCleanupRef.current();
+        activeUploadSessionCleanupRef.current = null;
+      }
+    };
+  }, []);
 
   // Auto-sync emulator: when selectedBlockId changes, switch preview screen
   useEffect(() => {
@@ -359,6 +369,13 @@ export const Build = () => {
 
   const handleOpenLargeMediaUpload = async (nodeId: string) => {
     if (!appState.activeBot) return;
+
+    // Clean up any previously active polling session
+    if (activeUploadSessionCleanupRef.current) {
+      activeUploadSessionCleanupRef.current();
+      activeUploadSessionCleanupRef.current = null;
+    }
+
     try {
       const { apiService } = await import("../../services/api");
       const session = await apiService.createMediaUploadSession(appState.activeBot.id, nodeId);
@@ -373,15 +390,30 @@ export const Build = () => {
       setToastType("success");
       setToastMessage("Открываем Telegram для загрузки большого видео…");
 
-      let pollCount = 0;
-      const pollTimer = setInterval(async () => {
-        pollCount++;
-        if (pollCount > 90) {
-          clearInterval(pollTimer);
-          return;
+      let isCancelled = false;
+      let nextTimeoutId: ReturnType<typeof setTimeout> | null = null;
+      let checkAttempts = 0;
+      const MAX_VISIBLE_CHECKS = 8;
+      // Progressive intervals for visible tab checks: 2.5s, 4s, 7s, 10s, 15s, 20s
+      const BACKOFF_INTERVALS = [2500, 4000, 7000, 10000, 15000, 20000];
+
+      const cleanup = () => {
+        isCancelled = true;
+        if (nextTimeoutId) {
+          clearTimeout(nextTimeoutId);
+          nextTimeoutId = null;
         }
+        document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+        window.removeEventListener("focus", handleVisibilityOrFocus);
+      };
+      activeUploadSessionCleanupRef.current = cleanup;
+
+      const checkSession = async (): Promise<boolean> => {
+        if (isCancelled || !appState.activeBot) return true;
         try {
-          const res = await apiService.getMediaUploadSession(appState.activeBot!.id, session.sessionId);
+          const res = await apiService.getMediaUploadSession(appState.activeBot.id, session.sessionId);
+          if (isCancelled) return true;
+
           if (res.mediaAssets && res.mediaAssets.length > 0) {
             const node = getBlock(nodeId);
             const currentAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
@@ -402,15 +434,63 @@ export const Build = () => {
               });
               setToastType("success");
               setToastMessage("Медиа получено из Telegram!");
+              cleanup();
+              return true;
             }
           }
+
           if (res.isCompleted || res.isCancelled) {
-            clearInterval(pollTimer);
+            cleanup();
+            return true;
           }
         } catch {
-          clearInterval(pollTimer);
+          cleanup();
+          return true;
         }
-      }, 2000);
+        return false;
+      };
+
+      const scheduleNextCheck = () => {
+        if (isCancelled) return;
+        // Do not query when document is hidden (user is in Telegram app).
+        // It will immediately check when user returns to the Mini App.
+        if (document.hidden) {
+          return;
+        }
+        if (checkAttempts >= MAX_VISIBLE_CHECKS) {
+          return;
+        }
+        const delay = BACKOFF_INTERVALS[Math.min(checkAttempts, BACKOFF_INTERVALS.length - 1)];
+        checkAttempts++;
+        nextTimeoutId = setTimeout(async () => {
+          const done = await checkSession();
+          if (!done && !document.hidden) {
+            scheduleNextCheck();
+          }
+        }, delay);
+      };
+
+      const handleVisibilityOrFocus = async () => {
+        if (isCancelled) return;
+        // User returned to Mini App!
+        if (!document.hidden) {
+          if (nextTimeoutId) {
+            clearTimeout(nextTimeoutId);
+            nextTimeoutId = null;
+          }
+          const done = await checkSession();
+          if (!done) {
+            checkAttempts = 0;
+            scheduleNextCheck();
+          }
+        }
+      };
+
+      document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.addEventListener("focus", handleVisibilityOrFocus);
+
+      // Start initial scheduling (if user stays visible e.g. split screen)
+      scheduleNextCheck();
     } catch (err) {
       showAlert({
         title: "Не удалось открыть Telegram",

@@ -12,4 +12,14 @@ logging.getLogger("apscheduler.scheduler").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
+# Фильтруем рутинные 200 OK polling-запросы проверки статуса сессий загрузки медиа
+class PollingEndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "media-upload-session" in msg and "200 OK" in msg:
+            return False
+        return True
+
+logging.getLogger("uvicorn.access").addFilter(PollingEndpointFilter())
+
 logger = logging.getLogger(__name__)
