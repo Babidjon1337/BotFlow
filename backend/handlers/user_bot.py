@@ -448,10 +448,18 @@ async def _send_tariff_invoice(
     )
     if not payment_url:
         error_text = "Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку."
-        if edit_message:
-            await callback.message.edit_text(error_text)
-        else:
-            await callback.message.answer(error_text)
+        try:
+            if edit_message and getattr(callback.message, "text", None) is not None:
+                await callback.message.edit_text(error_text)
+            elif edit_message and getattr(callback.message, "caption", None) is not None:
+                await callback.message.edit_caption(caption=error_text)
+            else:
+                await callback.message.answer(error_text)
+        except TelegramBadRequest:
+            try:
+                await callback.message.answer(error_text)
+            except Exception:
+                pass
         try:
             from services.billing_notifications import notify_billing_user
 

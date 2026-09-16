@@ -1,3 +1,4 @@
+import html
 import json
 import re
 import hashlib
@@ -22,19 +23,21 @@ class PaymentDeliveryError(RuntimeError):
     """Paid access could not be delivered and must be retried."""
 
 
-def _yookassa_description(description: str) -> str:
-    """Normalize provider-facing description without losing the user-facing offer."""
-    normalized = re.sub(r"\s+", " ", description).strip()
+def _clean_payment_description(description: str, max_length: int = 120) -> str:
+    """Strip HTML tags, unescape entities, collapse whitespace, and truncate safely."""
+    text = re.sub(r"<[^>]+>", " ", description)
+    text = html.unescape(text)
+    normalized = re.sub(r"\s+", " ", text).strip()
     if not normalized:
         return "Оплата доступа"
-    if len(normalized) <= _YOOKASSA_DESCRIPTION_MAX_LENGTH:
+    if len(normalized) <= max_length:
         return normalized
-    logger.info(
-        "Описание платежа ЮKassa сокращено с %s до %s символов.",
-        len(normalized),
-        _YOOKASSA_DESCRIPTION_MAX_LENGTH,
-    )
-    return f"{normalized[:_YOOKASSA_DESCRIPTION_MAX_LENGTH - 1].rstrip()}…"
+    return f"{normalized[:max_length - 1].rstrip()}…"
+
+
+def _yookassa_description(description: str) -> str:
+    """Normalize provider-facing description without losing the user-facing offer."""
+    return _clean_payment_description(description, max_length=_YOOKASSA_DESCRIPTION_MAX_LENGTH)
 
 
 def _yookassa_credentials(creds: dict) -> tuple[str | None, str | None]:
@@ -286,7 +289,7 @@ async def _create_prodamus_link(
         "customer_extra": str(telegram_id),
         "products": [
             {
-                "name": description,
+                "name": _clean_payment_description(description, max_length=120),
                 "price": f"{amount:.2f}",
                 "quantity": "1",
                 "type": "service",
