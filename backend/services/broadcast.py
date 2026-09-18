@@ -166,6 +166,11 @@ async def _broadcast_keyboard(broadcast, bot_config) -> InlineKeyboardMarkup | N
                     inline_keyboard=[[InlineKeyboardButton(text=label[:64], url=url[:256])]]
                 )
         if button.get("type") == "tariffs":
+            schema = getattr(bot_config, "funnel_schema", {}) or {}
+            nodes = schema.get("nodes") or []
+            payment_node = next((n for n in nodes if isinstance(n, dict) and (n.get("kind") == "payment" or n.get("type") == "payment")), None)
+            if payment_node and payment_node.get("payment_mode") == "application":
+                return None
             selected = _selected_broadcast_tariffs(broadcast, bot_config)
             if not selected:
                 return None

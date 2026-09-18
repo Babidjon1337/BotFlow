@@ -246,7 +246,7 @@ async def save_funnel(bot_id: int, funnel: FunnelSchema, request: Request):
 async def main_bot_webhook(request: Request):
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_KEY:
         logger.warning("Попытка несанкционированного доступа к вебхуку главного бота")
-        raise HTTPException(status_code=403, detail="Invalid secret token")
+        raise HTTPException(status_code=403, detail="Недействительный секретный токен.")
 
     update_data = await request.json()
     update = Update(**update_data)
@@ -261,11 +261,11 @@ async def main_bot_webhook(request: Request):
 @limiter.exempt
 async def client_bots_webhook(bot_db_id: int, request: Request):
     if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != SECRET_KEY:
-        raise HTTPException(status_code=403, detail="Invalid secret token")
+        raise HTTPException(status_code=403, detail="Недействительный секретный токен.")
 
     bot_config = await get_bot_by_id(bot_db_id)
     if not bot_config:
-        raise HTTPException(status_code=404, detail="Bot not found")
+        raise HTTPException(status_code=404, detail="Бот не найден.")
 
     try:
         token = crypto.decrypt(bot_config.bot_token_enc)
@@ -359,7 +359,7 @@ async def universal_payment_webhook(
                     )
 
         if not bot_config:
-            raise HTTPException(status_code=404, detail="Bot not found")
+            raise HTTPException(status_code=404, detail="Бот не найден.")
 
         verified_payment = await verify_payment_notification(
             normalized_provider,
@@ -384,7 +384,7 @@ async def universal_payment_webhook(
             or verified_payment.amount is None
             or not verified_payment.currency
         ):
-            raise PaymentWebhookError("Payment is not linked to a client order")
+            raise PaymentWebhookError("Платёж не связан с заказом клиента.")
         try:
             payment, newly_paid = await mark_client_payment_succeeded(
                 payment_id=verified_payment.client_payment_id,
@@ -416,12 +416,12 @@ async def universal_payment_webhook(
     except PaymentWebhookError as exc:
         logger.warning("Отклонён платежный webhook [%s]: %s", provider, exc)
         raise HTTPException(
-            status_code=403, detail="Invalid payment notification"
+            status_code=403, detail="Недействительное уведомление об оплате."
         ) from exc
     except PaymentProviderUnavailable as exc:
         logger.warning("Провайдер платежей недоступен [%s]: %s", provider, exc)
         raise HTTPException(
-            status_code=503, detail="Payment verification unavailable"
+            status_code=503, detail="Проверка платежа временно недоступна."
         ) from exc
 
 
@@ -435,12 +435,12 @@ async def saas_yookassa_webhook(request: Request):
     except BillingProviderUnavailable as exc:
         logger.warning("Верификация SaaS-платежа временно недоступна: %s", exc)
         raise HTTPException(
-            status_code=503, detail="Payment verification unavailable"
+            status_code=503, detail="Проверка платежа временно недоступна."
         ) from exc
     except BillingError as exc:
         logger.warning("Отклонён SaaS webhook YooKassa: %s", exc)
         raise HTTPException(
-            status_code=403, detail="Invalid billing notification"
+            status_code=403, detail="Недействительное уведомление биллинга."
         ) from exc
 
     if was_applied and user:

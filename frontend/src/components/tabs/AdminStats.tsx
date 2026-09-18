@@ -1895,6 +1895,8 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
   const [vipPreset, setVipPreset] = useState<"30" | "90" | "180" | "365" | "permanent" | "custom">("30");
   const [customDays, setCustomDays] = useState("30");
   const [freeBotsCount, setFreeBotsCount] = useState("1");
+  const [freeBotsDuration, setFreeBotsDuration] = useState<"permanent" | "30" | "90" | "180" | "365" | "custom">("permanent");
+  const [customFreeBotsDays, setCustomFreeBotsDays] = useState("30");
   const [people, setPeople] = useState("1");
   const [linkDays, setLinkDays] = useState("7");
   const [note, setNote] = useState("");
@@ -1911,6 +1913,12 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
     return Number(vipPreset) || 30;
   }, [vipPreset, customDays]);
 
+  const effectiveFreeBotsDays = useMemo(() => {
+    if (freeBotsDuration === "permanent") return undefined;
+    if (freeBotsDuration === "custom") return Math.max(1, Number(customFreeBotsDays) || 30);
+    return Number(freeBotsDuration) || 30;
+  }, [freeBotsDuration, customFreeBotsDays]);
+
   const create = async () => {
     if (creating) return;
     setCreating(true);
@@ -1918,6 +1926,7 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
       const validDays = Number(linkDays);
       const isVip = category === "vip";
       const isPermanent = isVip && vipPreset === "permanent";
+      const isFreeBotsPermanent = freeBotsDuration === "permanent";
       const body: Parameters<typeof apiService.createAccessLink>[0] = {
         kind: isVip ? "vip" : "free_bots",
         note,
@@ -1926,7 +1935,13 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
           ? { validUntil: new Date(Date.now() + validDays * 86_400_000).toISOString() }
           : {}),
         ...(isVip ? { isPermanent, days: isPermanent ? undefined : effectiveDays } : {}),
-        ...(!isVip ? { freeBotsCount: Math.max(1, Number(freeBotsCount) || 1) } : {}),
+        ...(!isVip
+          ? {
+              freeBotsCount: Math.max(1, Number(freeBotsCount) || 1),
+              isPermanent: isFreeBotsPermanent,
+              days: isFreeBotsPermanent ? undefined : effectiveFreeBotsDays,
+            }
+          : {}),
       };
       const created = await apiService.createAccessLink(body);
       setLastLink(created);
@@ -1982,7 +1997,11 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
     }
     if (link.kind === "free_bots") {
       const count = link.freeBotsCount || 1;
-      return `${count} ${count === 1 ? "бот" : count < 5 ? "бота" : "ботов"} бесплатно навсегда`;
+      const word = count === 1 ? "бот" : count < 5 ? "бота" : "ботов";
+      if (link.isPermanent) {
+        return `${count} ${word} навсегда (слоты)`;
+      }
+      return `${count} ${word} на ${link.days || 30} дн.`;
     }
     if (link.kind === "one_bot") {
       return "1 бот навсегда бесплатно";
@@ -2086,34 +2105,80 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
               )}
             </div>
           ) : (
-            <div>
-              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Количество бесплатных ботов (слотов)</span>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {["1", "2", "3", "5", "10"].map((cnt) => (
-                  <button
-                    key={cnt}
-                    type="button"
-                    onClick={() => setFreeBotsCount(cnt)}
-                    className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
-                      freeBotsCount === cnt
-                        ? "bg-[var(--color-primary)] text-white shadow-sm"
-                        : "border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-surface)]"
-                    }`}
-                  >
-                    {cnt} {cnt === "1" ? "бот" : Number(cnt) < 5 ? "бота" : "ботов"}
-                  </button>
-                ))}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--color-foreground-secondary)]">или:</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={freeBotsCount}
-                    onChange={(e) => setFreeBotsCount(e.target.value.replace(/\D/g, ""))}
-                    className="h-10 w-24 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-center text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
-                  />
+            <div className="space-y-4">
+              <div>
+                <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Количество бесплатных ботов (слотов)</span>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {["1", "2", "3", "5", "10"].map((cnt) => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => setFreeBotsCount(cnt)}
+                      className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                        freeBotsCount === cnt
+                          ? "bg-[var(--color-primary)] text-white shadow-sm"
+                          : "border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-surface)]"
+                      }`}
+                    >
+                      {cnt} {cnt === "1" ? "бот" : Number(cnt) < 5 ? "бота" : "ботов"}
+                    </button>
+                  ))}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[var(--color-foreground-secondary)]">или:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={1000}
+                      value={freeBotsCount}
+                      onChange={(e) => setFreeBotsCount(e.target.value.replace(/\D/g, ""))}
+                      className="h-10 w-24 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-center text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                    />
+                  </div>
                 </div>
+              </div>
+
+              <div>
+                <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Срок бесплатного доступа</span>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[
+                    ["permanent", "Бессрочно навсегда"],
+                    ["30", "1 мес (30 дн.)"],
+                    ["90", "3 мес (90 дн.)"],
+                    ["180", "6 мес (180 дн.)"],
+                    ["365", "1 год (365 дн.)"],
+                    ["custom", "Своё число дней"],
+                  ].map(([preset, label]) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setFreeBotsDuration(preset as typeof freeBotsDuration)}
+                      className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                        freeBotsDuration === preset
+                          ? preset === "permanent"
+                            ? "bg-emerald-600 text-white shadow-sm"
+                            : "bg-[var(--color-primary)] text-white shadow-sm"
+                          : "border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-surface)]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {freeBotsDuration === "custom" && (
+                  <div className="mt-2 max-w-xs">
+                    <label className="block text-xs text-[var(--color-foreground-secondary)]">
+                      Число дней доступа:
+                      <input
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={customFreeBotsDays}
+                        onChange={(e) => setCustomFreeBotsDays(e.target.value.replace(/\D/g, ""))}
+                        className="mt-1 h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2146,7 +2211,7 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
               ? "Создаём…"
               : category === "vip"
                 ? `Создать VIP-ссылку (${vipPreset === "permanent" ? "Бессрочно" : `${effectiveDays} дн.`})`
-                : `Создать ссылку (${freeBotsCount} ${freeBotsCount === "1" ? "бот" : "ботов"} бесплатно)`}
+                : `Создать ссылку (${freeBotsCount} ${freeBotsCount === "1" ? "бот" : Number(freeBotsCount) < 5 ? "бота" : "ботов"} · ${freeBotsDuration === "permanent" ? "Бессрочно" : `${effectiveFreeBotsDays} дн.`})`}
           </button>
         </div>
 

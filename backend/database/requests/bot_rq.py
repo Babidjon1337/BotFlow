@@ -1,5 +1,5 @@
 from typing import Optional, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import or_, select, delete, update
 from sqlalchemy.orm import joinedload, selectinload
@@ -158,11 +158,14 @@ async def get_expired_published_bots(
         result = await session.scalars(
             select(BotConfig)
             .join(BotSubscription, BotSubscription.bot_id == BotConfig.id)
+            .join(User, User.id == BotConfig.owner_id)
             .where(
                 BotConfig.status == "active",
                 BotSubscription.status == "active",
                 BotSubscription.ends_at.is_not(None),
                 BotSubscription.ends_at <= effective_now,
+                User.is_vip_permanent.is_(False),
+                or_(User.subscription_ends_at.is_(None), User.subscription_ends_at <= effective_now),
                 or_(
                     BotSubscription.auto_renew.is_(False),
                     BotSubscription.retry_count >= 3,
@@ -356,6 +359,53 @@ async def assign_lifetime_license(bot_id: int) -> BotConfig | None:
         return bot
 
 
+async def apply_available_free_slot_to_bot(
+    user_telegram_id: int, bot_id: int
+) -> BotConfig | None:
+    """Применяет свободный слот к боту: если спецссылка была со сроком, активирует BotSubscription, иначе has_lifetime_license."""
+    from database.models import AccessLink, AccessLinkActivation
+    async with async_session() as session:
+        bot = await session.get(BotConfig, bot_id)
+        if not bot:
+            return None
+        latest_activation = await session.scalar(
+            select(AccessLink)
+            .join(AccessLinkActivation, AccessLinkActivation.link_id == AccessLink.id)
+            .where(
+                AccessLinkActivation.telegram_id == user_telegram_id,
+                AccessLink.kind.in_(("free_bots", "one_bot")),
+            )
+            .order_by(AccessLinkActivation.activated_at.desc())
+        )
+        if latest_activation and not latest_activation.is_permanent and latest_activation.days:
+            now_utc = datetime.now(timezone.utc)
+            sub = await session.scalar(
+                select(BotSubscription).where(BotSubscription.bot_id == bot.id)
+            )
+            if not sub:
+                sub = BotSubscription(
+                    bot_id=bot.id,
+                    status="active",
+                    starts_at=now_utc,
+                    ends_at=now_utc + timedelta(days=latest_activation.days),
+                    product_code=f"link_{latest_activation.days}d",
+                    amount_rub=0,
+                    auto_renew=False,
+                )
+                session.add(sub)
+            else:
+                sub.status = "active"
+                sub.ends_at = now_utc + timedelta(days=latest_activation.days)
+                sub.auto_renew = False
+            await session.commit()
+            return bot
+
+        bot.has_lifetime_license = True
+        await session.commit()
+        await session.refresh(bot)
+        return bot
+
+
 async def get_expired_account_subscription_bots(
     now: datetime | None = None,
     limit: int = 50,
@@ -368,8 +418,15 @@ async def get_expired_account_subscription_bots(
     conditions = [
         BotConfig.status == "active",
         BotConfig.has_lifetime_license.is_(False),
+        User.is_vip_permanent.is_(False),
         User.subscription_ends_at.is_not(None),
         User.subscription_ends_at <= effective_now,
+        ~BotConfig.id.in_(
+            select(BotSubscription.bot_id).where(
+                BotSubscription.status == "active",
+                or_(BotSubscription.ends_at.is_(None), BotSubscription.ends_at > effective_now),
+            )
+        ),
     ]
     if ADMIN_TELEGRAM_IDS:
         conditions.append(~User.telegram_id.in_(ADMIN_TELEGRAM_IDS))
@@ -392,7 +449,16 @@ async def get_subscription_paused_bots_to_resume(
     """Боты, остановленные из-за подписки (pause_reason='subscription'), у которых
     подписка владельца снова активна — после оплаты публикация возвращается."""
     effective_now = now or datetime.now(timezone.utc)
-    resume_conditions = [User.subscription_ends_at > effective_now]
+    resume_conditions = [
+        User.is_vip_permanent.is_(True),
+        User.subscription_ends_at > effective_now,
+        BotConfig.id.in_(
+            select(BotSubscription.bot_id).where(
+                BotSubscription.status == "active",
+                or_(BotSubscription.ends_at.is_(None), BotSubscription.ends_at > effective_now),
+            )
+        ),
+    ]
     if ADMIN_TELEGRAM_IDS:
         resume_conditions.append(User.telegram_id.in_(ADMIN_TELEGRAM_IDS))
 

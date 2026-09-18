@@ -416,7 +416,7 @@ async def send_success_message(
 
     bot_config = await get_bot_by_tg_id(tg_bot_id)
     if not bot_config or not bot_config.funnel_schema:
-        raise PaymentDeliveryError("Bot or funnel configuration is unavailable")
+        raise PaymentDeliveryError("Конфигурация бота или воронки недоступна.")
 
     try:
         token = crypto.decrypt(bot_config.bot_token_enc)
@@ -608,7 +608,7 @@ async def send_success_message(
             )
             logger.info(f"✅ Сообщение об успехе отправлено {telegram_id}")
             return
-        raise PaymentDeliveryError("The paid tariff has no delivery content")
+        raise PaymentDeliveryError("В оплаченном тарифе нет контента для выдачи.")
 
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения пользователю {telegram_id}: {e}")

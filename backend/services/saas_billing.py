@@ -47,7 +47,7 @@ PRODUCTS = {
 
 def _credentials() -> tuple[str, str]:
     if not SAAS_YOOKASSA_SHOP_ID or not SAAS_YOOKASSA_SECRET_KEY:
-        raise BillingError("SaaS YooKassa credentials are not configured")
+        raise BillingError("Платёжные реквизиты YooKassa для сервиса не настроены.")
     return SAAS_YOOKASSA_SHOP_ID, SAAS_YOOKASSA_SECRET_KEY
 
 
@@ -66,7 +66,7 @@ async def create_checkout(
     try:
         product, base_amount, description = PRODUCTS[product_key]
     except KeyError as exc:
-        raise BillingError("Unknown billing product") from exc
+        raise BillingError("Неизвестный тариф или продукт.") from exc
 
     amount = int(amount_rub) if amount_rub else base_amount
     if amount < SAAS_BOT_BASE_PRICE_RUB:
@@ -115,9 +115,9 @@ async def create_checkout(
                 headers={"Idempotence-Key": payment.idempotence_key},
             )
     except httpx.HTTPError as exc:
-        raise BillingError("YooKassa is unavailable") from exc
+        raise BillingError("Платёжный сервис YooKassa временно недоступен. Попробуйте позже.") from exc
     if response.status_code != 200:
-        raise BillingError("YooKassa could not create a payment")
+        raise BillingError("Не удалось создать платёж в YooKassa. Попробуйте позже.")
 
     data = response.json()
     try:
@@ -127,14 +127,14 @@ async def create_checkout(
             "confirmationUrl": data["confirmation"]["confirmation_url"],
         }
     except (KeyError, TypeError) as exc:
-        raise BillingError("YooKassa returned an invalid payment") from exc
+        raise BillingError("YooKassa вернула некорректные данные платежа.") from exc
 
 
 async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, Any | None]:
     """Verify YooKassa state, then apply the corresponding SaaS entitlement."""
     payment_id = payload.get("object", {}).get("id")
     if not payment_id:
-        raise BillingError("YooKassa payment ID is missing")
+        raise BillingError("Отсутствует идентификатор платежа YooKassa.")
     shop_id, secret_key = _credentials()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -144,12 +144,12 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
             )
     except httpx.HTTPError as exc:
         raise BillingProviderUnavailable(
-            "YooKassa verification is unavailable"
+            "Проверка платежа в YooKassa временно недоступна."
         ) from exc
     if response.status_code >= 500:
-        raise BillingProviderUnavailable("YooKassa verification is unavailable")
+        raise BillingProviderUnavailable("Проверка платежа в YooKassa временно недоступна.")
     if response.status_code != 200:
-        raise BillingError("YooKassa payment was not found")
+        raise BillingError("Платёж не найден в системе YooKassa.")
 
     payment = response.json()
     metadata = payment.get("metadata") or {}
@@ -160,7 +160,7 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
         amount = Decimal(str(payment["amount"]["value"]))
         currency = str(payment["amount"]["currency"])
     except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
-        raise BillingError("Payment does not belong to BotFlow billing") from exc
+        raise BillingError("Платёж не относится к биллингу BotFlow.") from exc
 
     try:
         if payment.get("status") == "canceled":
@@ -174,7 +174,7 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
             )
             return False, user
         if payment.get("status") != "succeeded" or payment.get("paid") is not True:
-            raise BillingError("YooKassa payment is not successful")
+            raise BillingError("Платёж в YooKassa не был успешно завершён.")
 
         method = payment.get("payment_method") or {}
         method_id = method.get("id") if method.get("saved") else None
@@ -189,7 +189,7 @@ async def verify_billing_notification(payload: dict[str, Any]) -> tuple[bool, An
             payment_method_enc=method_enc,
         )
     except SaasPaymentInvariantError as exc:
-        raise BillingError("Verified payment does not match the local order") from exc
+        raise BillingError("Подтверждённый платёж не совпадает с заказом системы.") from exc
 
 
 async def create_recurring_payment(
@@ -206,7 +206,7 @@ async def create_recurring_payment(
     bot_id — продление per-bot подписки (сумма = цена этого бота).
     """
     if not user.subscription_payment_method_enc:
-        raise BillingError("Saved payment method is missing")
+        raise BillingError("Сохранённый способ оплаты не найден.")
     shop_id, secret_key = _credentials()
     amount = int(amount_rub) if amount_rub else await get_last_paid_amount(user.id)
     payment = await create_saas_payment(
@@ -241,15 +241,15 @@ async def create_recurring_payment(
             )
     except httpx.HTTPError as exc:
         await mark_saas_payment_failed_by_id(payment.id)
-        raise BillingError("YooKassa renewal request failed") from exc
+        raise BillingError("Ошибка при отправке запроса на продление в YooKassa.") from exc
     if response.status_code != 200:
         await mark_saas_payment_failed_by_id(payment.id)
-        raise BillingError("YooKassa renewal request failed")
+        raise BillingError("Запрос на продление в YooKassa отклонён.")
     data = response.json()
     await set_saas_payment_provider_id(payment.id, data["id"])
     if data.get("status") == "canceled":
         await verify_billing_notification({"object": {"id": data["id"]}})
-        raise BillingError("YooKassa renewal was declined")
+        raise BillingError("Платёж за продление был отклонён банком или YooKassa.")
     if data.get("status") == "succeeded" and data.get("paid") is True:
         return await verify_billing_notification({"object": {"id": data["id"]}})
     await defer_subscription_retry(user.id)

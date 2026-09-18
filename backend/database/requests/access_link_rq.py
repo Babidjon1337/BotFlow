@@ -19,6 +19,7 @@ from database.models import (
     AccessLink,
     AccessLinkActivation,
     BotConfig,
+    BotSubscription,
     User,
     async_session,
 )
@@ -49,21 +50,26 @@ async def create_access_link(
     if kind == "vip":
         if not is_permanent and days is None and expires_at is None:
             raise ValueError("Укажите срок VIP-доступа или выберите бессрочный доступ")
+    elif kind == "free_bots":
+        if free_bots_count < 1:
+            raise ValueError("Количество бесплатных ботов должно быть не менее 1")
+        if not is_permanent and days is None and expires_at is None:
+            raise ValueError("Укажите срок бесплатного доступа или выберите бессрочный доступ")
     elif kind == "period" and days is None and expires_at is None:
         raise ValueError("Укажите срок доступа")
-    elif kind in ("free_bots", "one_bot"):
+    elif kind == "one_bot":
         if free_bots_count < 1:
             raise ValueError("Количество бесплатных ботов должно быть не менее 1")
     if max_activations < 1 or max_activations > 10_000:
         raise ValueError("Количество активаций — от 1 до 10 000")
     async with async_session() as session:
-        effective_permanent = is_permanent or (kind == "permanent")
+        effective_permanent = is_permanent or (kind in ("permanent", "one_bot"))
         link = AccessLink(
             token=_generate_token(),
             note=(note or "").strip() or None,
             kind=kind,
-            days=days if (kind in ("period", "vip") and not effective_permanent) else None,
-            expires_at=expires_at if (kind in ("period", "vip") and not effective_permanent) else None,
+            days=days if (kind in ("period", "vip", "free_bots") and not effective_permanent) else None,
+            expires_at=expires_at if (kind in ("period", "vip", "free_bots") and not effective_permanent) else None,
             max_activations=max_activations,
             valid_until=valid_until,
             free_bots_count=free_bots_count if kind in ("free_bots", "one_bot") else 1,
@@ -150,30 +156,68 @@ async def redeem_access_link(token: str, telegram_id: int) -> tuple[bool, str]:
         elif link.kind in ("free_bots", "one_bot"):
             count = link.free_bots_count if link.kind == "free_bots" else 1
             user.lifetime_slots = (user.lifetime_slots or 0) + count
-            unlicensed_bots = list((await session.scalars(
-                select(BotConfig)
-                .where(BotConfig.owner_id == user.id, BotConfig.has_lifetime_license.is_(False))
-                .order_by(BotConfig.id)
-                .limit(count)
-            )).all())
-            for first_bot in unlicensed_bots:
-                first_bot.has_lifetime_license = True
-            if count == 1:
-                if unlicensed_bots:
-                    message = (
-                        "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
-                        f"Лицензия применена к боту «{unlicensed_bots[0].display_name}». "
-                        "Его публикация не требует подписки."
-                    )
+            if link.is_permanent or link.kind == "one_bot":
+                unlicensed_bots = list((await session.scalars(
+                    select(BotConfig)
+                    .where(BotConfig.owner_id == user.id, BotConfig.has_lifetime_license.is_(False))
+                    .order_by(BotConfig.id)
+                    .limit(count)
+                )).all())
+                for first_bot in unlicensed_bots:
+                    first_bot.has_lifetime_license = True
+                if count == 1:
+                    if unlicensed_bots:
+                        message = (
+                            "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
+                            f"Лицензия применена к боту «{unlicensed_bots[0].display_name}». "
+                            "Его публикация не требует подписки."
+                        )
+                    else:
+                        message = (
+                            "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
+                            "Создайте бота в BotFlow — лицензия применится к нему автоматически."
+                        )
                 else:
                     message = (
-                        "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
-                        "Создайте бота в BotFlow — лицензия применится к нему автоматически."
+                        f"🎉 <b>Бесплатные боты ({count} шт.) активированы!</b>\n\n"
+                        f"Вам начислено {count} свободных слотов для ботов навсегда."
                     )
             else:
+                days = link.days or 30
+                existing_bots = list((await session.scalars(
+                    select(BotConfig)
+                    .where(BotConfig.owner_id == user.id)
+                    .order_by(BotConfig.id)
+                    .limit(count)
+                )).all())
+                for bot_item in existing_bots:
+                    sub = await session.scalar(
+                        select(BotSubscription).where(BotSubscription.bot_id == bot_item.id)
+                    )
+                    sub_ends = sub.ends_at if sub and sub.ends_at else None
+                    if sub_ends and sub_ends.tzinfo is None:
+                        sub_ends = sub_ends.replace(tzinfo=timezone.utc)
+                    sub_start = max(sub_ends, now) if sub_ends else now
+                    next_ends = sub_start + timedelta(days=days)
+                    if sub is None:
+                        sub = BotSubscription(
+                            bot_id=bot_item.id,
+                            status="active",
+                            starts_at=now,
+                            ends_at=next_ends,
+                            product_code=f"link_{days}d",
+                            amount_rub=0,
+                            auto_renew=False,
+                        )
+                        session.add(sub)
+                    else:
+                        sub.status = "active"
+                        sub.ends_at = next_ends
+                        sub.auto_renew = False
+                slots_word = "бота" if count < 5 else "ботов"
                 message = (
-                    f"🎉 <b>Бесплатные боты ({count} шт.) активированы!</b>\n\n"
-                    f"Вам начислено {count} свободных слотов для ботов навсегда."
+                    f"🎉 <b>Бесплатный доступ на {count} {slots_word} активирован!</b>\n\n"
+                    f"Срок действия бесплатного доступа: {days} дн."
                 )
         else:
             expires_at = _effective_expires_at(link)

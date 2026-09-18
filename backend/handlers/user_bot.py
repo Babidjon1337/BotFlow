@@ -925,6 +925,11 @@ async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
     funnel = await get_funnel_by_bot_id(callback.bot.id)
     if not broadcast or not bot_config or not funnel:
         return None
+    mode = _payment_mode(funnel)
+    if mode == "application":
+        return None
+    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
+        return None
     node_checkout = _get_payment_node(funnel)
     tariff_ids = [str(t) for t in (broadcast.button or {}).get("tariffIds") or []]
     by_id = {str(t.id): t for t in (getattr(node_checkout, "tariffs", []) or [])}

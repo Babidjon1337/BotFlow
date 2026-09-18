@@ -1,8 +1,9 @@
 import asyncio
 import json
 import io
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
+from sqlalchemy import select
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -33,6 +34,7 @@ from database.requests.bot_rq import (
     set_bot_status,
     set_bot_lifecycle_state,
     assign_lifetime_license,
+    apply_available_free_slot_to_bot,
     update_bot_funnel,
     set_media_sync_done,
 )
@@ -104,7 +106,7 @@ from schemas.api_schemas import (
     BroadcastListResponse,
 )
 from services.saas_billing import BillingError, PRODUCTS, create_checkout
-from services.entitlements import available_lifetime_licenses, is_pro_active
+from services.entitlements import available_lifetime_licenses, is_pro_active, is_user_vip
 from services.funnel_readiness import evaluate_funnel_readiness
 from services.bot_lifecycle import BotLifecycleService
 from services.bot_entitlement import BotEntitlementService
@@ -117,6 +119,16 @@ from services.bot_pricing import (
 from services.payment_link import validate_payment_credentials
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.chat_access import ChatAccessError, verify_chat_delivery
+
+AUTH_ERROR_TRANSLATIONS = {
+    "Telegram init data is required": "Требуется авторизация через Telegram.",
+    "Server Telegram token is not configured": "Сервер Telegram временно не настроен.",
+    "Telegram init data signature is missing": "Подпись данных Telegram отсутствует.",
+    "Telegram init data signature is invalid": "Недействительная подпись данных Telegram.",
+    "Telegram init data auth date is invalid": "Некорректное время авторизации Telegram.",
+    "Telegram init data has expired": "Сессия авторизации Telegram истекла. Откройте приложение заново.",
+    "Telegram user data is invalid": "Некорректные данные пользователя Telegram.",
+}
 
 api_router = APIRouter()
 
@@ -238,32 +250,30 @@ async def _toggle_client_bot(
         await get_bot_subscription(bot.id) if new_status == "active" else None
     )
 
-    if dedicated_subscription is not None:
-        if not (
-            bot_entitlement_service.can_publish(dedicated_subscription)
-            or allow_admin_entitlement_bypass
-        ):
-            raise HTTPException(
-                status_code=403,
-                detail="Подписка этого бота неактивна или закончилась.",
-            )
-    elif new_status == "active" and not (
-        is_pro_active(bot.owner) or allow_admin_entitlement_bypass
-    ):
-        # Bots that predate BotSubscription retain the legacy account-level
-        # checkout semantics until their subscription is explicitly migrated.
-        owner_bots = await get_user_bots(bot.owner_id)
-        if not bot.has_lifetime_license:
-            available = available_lifetime_licenses(bot.owner, owner_bots)
-            if available <= 0:
+    if new_status == "active":
+        is_vip = is_pro_active(bot.owner)
+        if is_vip or allow_admin_entitlement_bypass:
+            # VIP owners and platform admins can publish any bot without per-bot payment
+            pass
+        elif dedicated_subscription is not None:
+            if not bot_entitlement_service.can_publish(dedicated_subscription):
                 raise HTTPException(
                     status_code=403,
-                    detail="Чтобы запустить этого бота, оплатите его подписку или используйте бесплатный доступ.",
+                    detail="Подписка этого бота неактивна или закончилась.",
                 )
-            bot = await assign_lifetime_license(bot.id) or bot
-        for owner_bot in owner_bots:
-            if owner_bot.id != bot.id and owner_bot.status == "active":
-                await set_bot_lifecycle_state(owner_bot.id, "paused", "subscription")
+        else:
+            owner_bots = await get_user_bots(bot.owner_id)
+            if not bot.has_lifetime_license:
+                available = available_lifetime_licenses(bot.owner, owner_bots)
+                if available <= 0:
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Чтобы запустить этого бота, оплатите его подписку или используйте бесплатный доступ.",
+                    )
+                bot = await assign_lifetime_license(bot.id) or bot
+            for owner_bot in owner_bots:
+                if owner_bot.id != bot.id and owner_bot.status == "active":
+                    await set_bot_lifecycle_state(owner_bot.id, "paused", "subscription")
 
     try:
         if new_status == "active":
@@ -389,7 +399,8 @@ async def get_current_user(request: Request) -> TelegramUser:
         try:
             telegram_user = validate_init_data(init_data)
         except TelegramAuthError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
+            msg = AUTH_ERROR_TRANSLATIONS.get(str(exc), "Ошибка авторизации через Telegram. Откройте приложение заново.")
+            raise HTTPException(status_code=401, detail=msg) from exc
         await _ensure_account_is_active(telegram_user.telegram_id, request=request)
         if state is not None:
             state.current_user = telegram_user
@@ -452,13 +463,14 @@ async def auth_user(request: Request, body: dict = None):
         try:
             telegram_user = validate_init_data(init_data)
         except TelegramAuthError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
+            msg = AUTH_ERROR_TRANSLATIONS.get(str(exc), "Ошибка авторизации через Telegram. Откройте приложение заново.")
+            raise HTTPException(status_code=401, detail=msg) from exc
     else:
         development_user = _get_development_user(request)
         if not development_user:
             raise HTTPException(
                 status_code=401,
-                detail="Telegram authorization is required. Open the app from Telegram.",
+                detail="Требуется авторизация через Telegram. Откройте приложение из Telegram.",
             )
         telegram_user = development_user
 
@@ -1082,8 +1094,23 @@ async def list_bots(request: Request):
 async def create_bot(request: Request, body: BotCreateApiRequest):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    user_bots = await get_user_bots(owner_id=user.id)
+    is_vip, _, _ = is_user_vip(user)
+    is_admin = current_user.telegram_id in ADMIN_TELEGRAM_IDS
+    if not is_vip and not is_admin:
+        allowed_slots = max(1, getattr(user, "lifetime_slots", 0) or 0)
+        active_paid_count = 0
+        for b in user_bots:
+            sub = await get_bot_subscription(b.id)
+            if sub and sub.status == "active" and (sub.ends_at is None or sub.ends_at > datetime.now(timezone.utc)):
+                active_paid_count += 1
+        if len(user_bots) >= allowed_slots + active_paid_count:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Достигнут лимит ботов ({len(user_bots)} из {allowed_slots + active_paid_count}). Оплатите подписку или используйте специальную ссылку для создания нового бота.",
+            )
+
     if not body.display_name or not body.display_name.strip():
-        user_bots = await get_user_bots(owner_id=user.id)
         bot_count = len(user_bots)
         body.display_name = "Мой бот" if bot_count == 0 else f"Мой бот {bot_count + 1}"
 
@@ -1141,6 +1168,12 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
         offer_url=body.offer_url,
         offer_installments=body.offer_installments,
     )
+
+    available_slots = (getattr(user, "lifetime_slots", 0) or 0) - sum(
+        1 for b in user_bots if getattr(b, "has_lifetime_license", False)
+    )
+    if available_slots > 0 and not is_vip and getattr(bot, "id", None):
+        await apply_available_free_slot_to_bot(user.telegram_id, bot.id)
     if not body.token:
         resp = BotApiResponse.from_orm_bot(bot, TG_WEBHOOK_URL, WEBHOOK_URL)
         return resp.model_dump(by_alias=True)

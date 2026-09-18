@@ -532,7 +532,10 @@ async def extend_admin_user_pro(
             )
             if not user:
                 raise AdminMutationError("Пользователь не найден.")
-            starts_from = max(user.subscription_ends_at or now, now)
+            sub_ends = user.subscription_ends_at
+            if sub_ends and sub_ends.tzinfo is None:
+                sub_ends = sub_ends.replace(tzinfo=timezone.utc)
+            starts_from = max(sub_ends, now) if sub_ends else now
             user.subscription_ends_at = starts_from + timedelta(days=days)
             _append_audit_entry(
                 session,
@@ -556,7 +559,7 @@ async def grant_admin_user_vip(
     is_permanent: bool = False,
     actor_telegram_id: int,
 ) -> dict[str, Any]:
-    """Grant VIP status: permanent or for N days."""
+    """Grant VIP access (either permanent or period-based) to an account."""
     now = datetime.now(timezone.utc)
     async with async_session() as session:
         async with session.begin():
@@ -573,7 +576,10 @@ async def grant_admin_user_vip(
                 if not days or days <= 0:
                     raise AdminMutationError("Укажите положительное количество дней для VIP.")
                 user.is_vip_permanent = False
-                starts_from = max(user.subscription_ends_at or now, now)
+                sub_ends = user.subscription_ends_at
+                if sub_ends and sub_ends.tzinfo is None:
+                    sub_ends = sub_ends.replace(tzinfo=timezone.utc)
+                starts_from = max(sub_ends, now) if sub_ends else now
                 user.subscription_ends_at = starts_from + timedelta(days=days)
 
             _append_audit_entry(

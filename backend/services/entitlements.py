@@ -30,8 +30,9 @@ def is_pro_active(user, now: datetime | None = None) -> bool:
 
 
 def available_lifetime_licenses(user, bots) -> int:
-    used_licenses = sum(1 for bot in bots if bot.has_lifetime_license)
-    return max(user.lifetime_slots - used_licenses, 0)
+    used_licenses = sum(1 for bot in bots if getattr(bot, "has_lifetime_license", False))
+    slots = getattr(user, "lifetime_slots", 0) or 0
+    return max(slots - used_licenses, 0)
 
 
 def can_start_bot(user, bot, bots) -> bool:
