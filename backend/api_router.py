@@ -290,7 +290,11 @@ async def _toggle_client_bot(
         if "Bot is not ready for this lifecycle transition: " in msg:
             raw_reasons = msg.split("Bot is not ready for this lifecycle transition: ", 1)[1]
             reasons = [r.strip() for r in raw_reasons.split(";") if r.strip()]
-            user_msg = "Нельзя запустить бота. " + " ".join(reasons)
+            if len(reasons) == 1:
+                user_msg = f"Нельзя запустить бота:\n• {reasons[0]}"
+            else:
+                bullet_list = "\n• ".join(reasons)
+                user_msg = f"Нельзя запустить бота:\n• {bullet_list}"
         elif "Cannot transition archived or incompatible bot" in msg:
             if "archived" in msg:
                 user_msg = "Нельзя запустить архивированного бота."
