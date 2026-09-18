@@ -38,7 +38,12 @@ from database.requests.bot_rq import (
     update_bot_funnel,
     set_media_sync_done,
 )
-from database.requests.user_rq import archive_leads_by_bot_id, get_lead, get_leads_by_bot_id
+from database.requests.user_rq import (
+    archive_leads_by_bot_id,
+    get_lead,
+    get_leads_by_bot_id,
+    update_user_notification_settings,
+)
 from database.requests.broadcast_rq import (
     cancel_broadcast,
     create_broadcast,
