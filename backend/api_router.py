@@ -286,6 +286,13 @@ async def _toggle_client_bot(
             raw_reasons = msg.split("Bot is not ready for this lifecycle transition: ", 1)[1]
             reasons = [r.strip() for r in raw_reasons.split(";") if r.strip()]
             user_msg = "Нельзя запустить бота. " + " ".join(reasons)
+        elif "Cannot transition archived or incompatible bot" in msg:
+            if "archived" in msg:
+                user_msg = "Нельзя запустить архивированного бота."
+            else:
+                user_msg = "Заполните сценарий перед запуском бота."
+        elif "Unknown lifecycle status" in msg:
+            user_msg = "Некорректный статус бота."
         else:
             user_msg = "Нельзя запустить бота: " + msg
         raise HTTPException(status_code=422, detail=user_msg) from exc

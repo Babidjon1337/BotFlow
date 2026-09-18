@@ -26,7 +26,7 @@ LEGACY_STATUS_BY_LIFECYCLE = {
     "archived": "archived",
 }
 ALLOWED_TRANSITIONS = {
-    "draft": frozenset({"ready", "paused", "archived"}),
+    "draft": frozenset({"ready", "published", "paused", "archived"}),
     "ready": frozenset({"draft", "published", "paused", "archived"}),
     "published": frozenset({"paused", "archived"}),
     "paused": frozenset({"draft", "ready", "published", "archived"}),
