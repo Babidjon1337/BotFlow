@@ -73,6 +73,8 @@ from database.requests.admin_rq import (
     grant_admin_bot_subscription,
     revoke_admin_bot_subscription,
     grant_admin_user_bot_subscription,
+    grant_admin_user_vip,
+    revoke_admin_user_vip,
 )
 from schemas.api_schemas import (
     BotCreateApiRequest,
@@ -85,6 +87,7 @@ from schemas.api_schemas import (
     NotificationSettingsRequest,
     AdminLifetimeLicenseRequest,
     AdminProExtensionRequest,
+    AdminUserVipRequest,
     AdminUserAccessRequest,
     AdminBotActionRequest,
     AdminBotSubscriptionRequest,
@@ -268,7 +271,14 @@ async def _toggle_client_bot(
         else:
             await bot_lifecycle_service.transition(bot, "paused", reason="manual")
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Бот нельзя запустить: " + str(exc)) from exc
+        msg = str(exc)
+        if "Bot is not ready for this lifecycle transition: " in msg:
+            raw_reasons = msg.split("Bot is not ready for this lifecycle transition: ", 1)[1]
+            reasons = [r.strip() for r in raw_reasons.split(";") if r.strip()]
+            user_msg = "Нельзя запустить бота. " + " ".join(reasons)
+        else:
+            user_msg = "Нельзя запустить бота: " + msg
+        raise HTTPException(status_code=422, detail=user_msg) from exc
 
     if new_status == "active":
         await _install_client_bot_webhook(bot, request)
@@ -392,7 +402,7 @@ async def get_current_user(request: Request) -> TelegramUser:
             state.current_user = development_user
         return development_user
 
-    raise HTTPException(status_code=401, detail="Telegram authorization is required")
+    raise HTTPException(status_code=401, detail="Требуется авторизация через Telegram.")
 
 
 async def _ensure_account_is_active(telegram_id: int, request: Request | None = None) -> None:
@@ -413,7 +423,7 @@ async def get_current_admin(request: Request) -> TelegramUser:
     """Resolve a Telegram identity and enforce the server-side admin allowlist."""
     current_user = await get_current_user(request)
     if current_user.telegram_id not in ADMIN_TELEGRAM_IDS:
-        raise HTTPException(status_code=403, detail="Administrative access is required")
+        raise HTTPException(status_code=403, detail="Требуются права администратора платформы.")
     return current_user
 
 
@@ -567,6 +577,29 @@ async def extend_admin_user_pro_endpoint(
             days=body.days,
             actor_telegram_id=admin.telegram_id,
         )
+    except AdminMutationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@api_router.post("/api/admin/users/{user_id}/vip")
+async def update_admin_user_vip_endpoint(
+    user_id: int, request: Request, body: AdminUserVipRequest
+):
+    """Grant or revoke global VIP status for an owner."""
+    admin = await get_current_admin(request)
+    try:
+        if body.action == "revoke":
+            return await revoke_admin_user_vip(
+                user_id=user_id,
+                actor_telegram_id=admin.telegram_id,
+            )
+        else:
+            return await grant_admin_user_vip(
+                user_id=user_id,
+                days=body.days,
+                is_permanent=body.is_permanent,
+                actor_telegram_id=admin.telegram_id,
+            )
     except AdminMutationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -818,6 +851,8 @@ def _access_link_payload(link) -> dict:
         "maxActivations": link.max_activations,
         "activationsCount": link.activations_count,
         "validUntil": link.valid_until.isoformat() if link.valid_until else None,
+        "freeBotsCount": getattr(link, "free_bots_count", 1),
+        "isPermanent": getattr(link, "is_permanent", False),
         "isActive": link.is_active,
         "activatedBy": link.activated_by,
         "activatedAt": link.activated_at.isoformat() if link.activated_at else None,
@@ -851,6 +886,8 @@ async def create_access_link_endpoint(request: Request, body: dict):
     kind = str(body.get("kind") or "period")
     days = body.get("days")
     max_activations = body.get("maxActivations") or 1
+    free_bots_count = body.get("freeBotsCount") or 1
+    is_permanent = bool(body.get("isPermanent", False))
     try:
         link = await create_access_link(
             kind=kind,
@@ -859,6 +896,8 @@ async def create_access_link_endpoint(request: Request, body: dict):
             note=str(body.get("note") or "") or None,
             max_activations=int(max_activations),
             valid_until=_parse_iso_datetime(body.get("validUntil"), "срок жизни ссылки"),
+            free_bots_count=int(free_bots_count),
+            is_permanent=is_permanent,
         )
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

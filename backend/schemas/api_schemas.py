@@ -78,6 +78,14 @@ class AdminProExtensionRequest(BaseModel):
     days: int = Field(..., ge=1, le=365)
 
 
+class AdminUserVipRequest(BaseModel):
+    action: Literal["grant", "revoke"] = "grant"
+    days: Optional[int] = Field(None, ge=1, le=3650)
+    is_permanent: bool = Field(default=False, alias="isPermanent")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AdminBotSubscriptionRequest(BaseModel):
     days: Optional[int] = Field(None, ge=1, le=3650)
     is_lifetime: bool = Field(default=False, alias="isLifetime")

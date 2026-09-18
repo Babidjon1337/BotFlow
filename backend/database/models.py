@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -45,6 +46,9 @@ class User(Base):
     # Подписка на SaaS и юридическое согласие
     subscription_ends_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), index=True
+    )
+    is_vip_permanent: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
     )
     lifetime_slots: Mapped[int] = mapped_column(Integer, default=0)
     agreed_to_tos_at: Mapped[Optional[datetime]] = mapped_column(
@@ -529,6 +533,11 @@ class AccessLink(Base):
     # До какого момента ссылку можно активировать (жизнь самой ссылки).
     valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
+    # Для kind="free_bots": сколько бесплатных ботов даёт ссылка.
+    free_bots_count: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
+    # Для kind="vip" или kind="free_bots": доступ навсегда без срока истечения.
+    is_permanent: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     activated_by: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
     activated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
@@ -558,12 +567,18 @@ class AccessLinkActivation(Base):
 engine = create_async_engine(url=DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 async def init_models():
-    """Verify database connectivity; schema changes are handled by Alembic."""
+    """Verify database connectivity; ensure compatible schema columns."""
     async with engine.begin() as conn:
         from sqlalchemy import text as sa_text
+        try:
+            await conn.execute(sa_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_vip_permanent BOOLEAN DEFAULT FALSE"))
+            await conn.execute(sa_text("ALTER TABLE access_links ADD COLUMN IF NOT EXISTS free_bots_count INTEGER DEFAULT 1"))
+            await conn.execute(sa_text("ALTER TABLE access_links ADD COLUMN IF NOT EXISTS is_permanent BOOLEAN DEFAULT FALSE"))
+        except Exception as exc:
+            logger.debug("Схема уже актуальна или alter не требуется: %s", exc)
 
         await conn.execute(sa_text("SELECT 1"))
-        logger.info("✅ Подключение к БД успешно. Схема управляется Alembic.")
+        logger.info("✅ Подключение к БД успешно. Схема проверена.")
 
 
 if __name__ == "__main__":

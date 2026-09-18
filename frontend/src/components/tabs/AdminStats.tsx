@@ -12,8 +12,10 @@ import {
   CreditCard,
   Crown,
   Gift,
+  Layers,
   Link2,
   MoreHorizontal,
+  Plus,
   RefreshCw,
   ScanSearch,
   Search,
@@ -455,6 +457,90 @@ export function AdminStats() {
     [loadUserProfile, refreshSection, selectedUser, setToastMessage, setToastType, showConfirm]
   );
 
+  const handleManageVip = useCallback(
+    async (action: "grant" | "revoke", days?: number, isPermanent?: boolean) => {
+      if (!selectedUser) return;
+      const user = selectedUser.user;
+      if (action === "revoke") {
+        showConfirm({
+          title: "Отозвать VIP-статус?",
+          message: `VIP-статус пользователя ID ${user.telegram_id} будет отключен. Публикация ботов потребует отдельных подписок или свободных слотов.`,
+          type: "danger",
+          confirmText: "Отозвать VIP",
+          cancelText: "Отмена",
+          onConfirm: () => {
+            void (async () => {
+              try {
+                const res = await apiService.changeUserVip(user.id, { action: "revoke" });
+                setToastType("success");
+                setToastMessage(res.message || "VIP-статус отозван");
+                await loadUserProfile(user.id);
+                await refreshSection();
+              } catch (err) {
+                setToastType("error");
+                setToastMessage(err instanceof Error ? err.message : "Не удалось отозвать VIP");
+              }
+            })();
+          },
+        });
+      } else {
+        try {
+          const res = await apiService.changeUserVip(user.id, { action: "grant", days, isPermanent });
+          setToastType("success");
+          setToastMessage(res.message || "VIP-статус выдан");
+          await loadUserProfile(user.id);
+          await refreshSection();
+        } catch (err) {
+          setToastType("error");
+          setToastMessage(err instanceof Error ? err.message : "Не удалось выдать VIP");
+        }
+      }
+    },
+    [selectedUser, loadUserProfile, refreshSection, setToastMessage, setToastType, showConfirm]
+  );
+
+  const handleManageFreeSlots = useCallback(
+    async (direction: "grant" | "revoke", quantity: number) => {
+      if (!selectedUser) return;
+      const user = selectedUser.user;
+      if (direction === "revoke") {
+        showConfirm({
+          title: "Отозвать свободный слот?",
+          message: `Количество бесплатных слотов пользователя будет уменьшено на ${quantity}.`,
+          type: "warning",
+          confirmText: "Отозвать",
+          cancelText: "Отмена",
+          onConfirm: () => {
+            void (async () => {
+              try {
+                await apiService.changeUserFreeSlots(user.id, { direction: "revoke", quantity });
+                setToastType("success");
+                setToastMessage("Слот отозван");
+                await loadUserProfile(user.id);
+                await refreshSection();
+              } catch (err) {
+                setToastType("error");
+                setToastMessage(err instanceof Error ? err.message : "Не удалось отозвать слот");
+              }
+            })();
+          },
+        });
+      } else {
+        try {
+          await apiService.changeUserFreeSlots(user.id, { direction: "grant", quantity });
+          setToastType("success");
+          setToastMessage(`Начислено слотов: ${quantity}`);
+          await loadUserProfile(user.id);
+          await refreshSection();
+        } catch (err) {
+          setToastType("error");
+          setToastMessage(err instanceof Error ? err.message : "Не удалось начислить слоты");
+        }
+      }
+    },
+    [selectedUser, loadUserProfile, refreshSection, setToastMessage, setToastType, showConfirm]
+  );
+
   return (
     <section className="w-full pb-16" aria-labelledby="admin-title">
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
@@ -528,6 +614,8 @@ export function AdminStats() {
             onOpenGrantUser={(user: AdminUser, bots: AdminBot[]) => setGrantTarget({ type: "user", user, bots })}
             onRevokeSubscription={revokeSubscription}
             onEditFunnel={handleEditFunnel}
+            onManageVip={handleManageVip}
+            onManageFreeSlots={handleManageFreeSlots}
           />
         ) : (
           <UsersSection
@@ -833,6 +921,8 @@ function UserProfileScreen({
   onOpenGrantUser,
   onRevokeSubscription,
   onEditFunnel,
+  onManageVip,
+  onManageFreeSlots,
 }: {
   detail: AdminUserDetail;
   state: LoadState;
@@ -848,6 +938,8 @@ function UserProfileScreen({
   onOpenGrantUser: (user: AdminUser, bots: AdminBot[]) => void;
   onRevokeSubscription: (bot: AdminBot) => void;
   onEditFunnel: (bot: AdminBot) => void;
+  onManageVip: (action: "grant" | "revoke", days?: number, isPermanent?: boolean) => void;
+  onManageFreeSlots: (direction: "grant" | "revoke", quantity: number) => void;
 }) {
   const { user, bots } = detail;
 
@@ -986,35 +1078,124 @@ function UserProfileScreen({
             />
           </section>
 
-          {/* 2. Hero-карточка: Выдача бесплатного периода на бота */}
-          <section className="relative overflow-hidden rounded-2xl border border-[var(--color-primary)]/30 bg-gradient-to-br from-[var(--color-primary-soft)]/40 via-[var(--color-surface)] to-[var(--color-surface)] p-6 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* 2. Карточка: VIP-статус аккаунта */}
+          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary)] text-white shadow-md">
-                  <Gift size={24} aria-hidden="true" />
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-500/15 text-amber-500 shadow-sm">
+                  <Crown size={24} aria-hidden="true" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base font-bold text-[var(--color-foreground)]">
-                      Бесплатный период на бота
+                      VIP-статус аккаунта
                     </h3>
-                    <span className="rounded-md bg-[var(--color-primary)] px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-white">
-                      Акция 90 дн.
-                    </span>
+                    {user.is_vip_permanent ? (
+                      <StatusBadge tone="success">Бессрочно (Навсегда)</StatusBadge>
+                    ) : user.is_vip ? (
+                      <StatusBadge tone="success">
+                        Активен до {formatDate(user.vip_ends_at || user.subscription_ends_at)}
+                      </StatusBadge>
+                    ) : (
+                      <StatusBadge tone="neutral">Не активен</StatusBadge>
+                    )}
                   </div>
                   <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
-                    Начислите 3 месяца бесплатно или бессрочный доступ на любого бота пользователя. Привязка карты не требуется.
+                    При активном VIP публикация всех ботов пользователя бесплатна, без ограничений по слотам.
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onOpenGrantUser(user, bots)}
-                className="inline-flex h-11 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-5 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-              >
-                <Gift size={16} aria-hidden="true" />
-                Выдать бесплатный период
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onManageVip("grant", 30, false)}
+                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
+                >
+                  +30 дн
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onManageVip("grant", 90, false)}
+                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
+                >
+                  +90 дн
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onManageVip("grant", 365, false)}
+                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
+                >
+                  +1 год
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onManageVip("grant", undefined, true)}
+                  className="h-9 rounded-xl bg-amber-500/20 px-3 text-xs font-bold text-amber-500 transition-opacity hover:opacity-90"
+                >
+                  Бессрочно навсегда
+                </button>
+                {(user.is_vip || user.is_vip_permanent) && (
+                  <button
+                    type="button"
+                    onClick={() => onManageVip("revoke")}
+                    className="h-9 rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-xs font-semibold text-red-500 transition-colors hover:bg-red-500/20"
+                  >
+                    Отозвать VIP
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          {/* 3. Карточка: Слоты бесплатных ботов */}
+          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-4">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] shadow-sm">
+                  <Layers size={24} aria-hidden="true" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold text-[var(--color-foreground)]">
+                      Слоты бесплатных ботов
+                    </h3>
+                    <span className="rounded-md bg-[var(--color-primary)] px-2 py-0.5 text-xs font-bold text-white">
+                      {user.free_slots_total ?? user.lifetime_slots ?? 0} шт.
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+                    Использовано ботами: <strong>{user.free_slots_used ?? bots.filter((b) => b.has_lifetime_license).length}</strong> · Доступно для новых ботов: <strong>{user.free_slots_available ?? Math.max(0, (user.lifetime_slots || 0) - bots.filter((b) => b.has_lifetime_license).length)}</strong>
+                  </p>
+                  <p className="text-xs text-[var(--color-foreground-tertiary)]">
+                    1 слот = 1 бот навсегда бесплатно. Слот привязывается к конкретному боту и не дублируется.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onManageFreeSlots("grant", 1)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+                >
+                  <Plus size={14} /> 1 слот
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onManageFreeSlots("grant", 5)}
+                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
+                >
+                  +5 слотов
+                </button>
+                {(user.free_slots_available ?? ((user.lifetime_slots || 0) - bots.filter((b) => b.has_lifetime_license).length)) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onManageFreeSlots("revoke", 1)}
+                    className="h-9 rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-xs font-semibold text-red-500 transition-colors hover:bg-red-500/20"
+                  >
+                    -1 свободный слот
+                  </button>
+                )}
+              </div>
             </div>
           </section>
 
@@ -1067,6 +1248,7 @@ function UserProfileScreen({
                     bot={bot}
                     busy={busyBotId === bot.id}
                     showOwner={false}
+                    userIsVip={Boolean(user.is_vip_permanent || user.is_vip)}
                     onAction={onAction}
                     onCheckReadiness={onCheckReadiness}
                     onArchiveLeads={onArchiveLeads}
@@ -1504,6 +1686,7 @@ function AdminBotRow({
   bot,
   busy,
   showOwner = true,
+  userIsVip = false,
   onAction,
   onCheckReadiness,
   onArchiveLeads,
@@ -1514,6 +1697,7 @@ function AdminBotRow({
   bot: AdminBot;
   busy: boolean;
   showOwner?: boolean;
+  userIsVip?: boolean;
   onAction: (bot: AdminBot, action: AdminBotAction) => void;
   onCheckReadiness: (bot: AdminBot) => void;
   onArchiveLeads: (bot: AdminBot) => void;
@@ -1541,7 +1725,12 @@ function AdminBotRow({
             <StatusBadge tone={isActive ? "success" : bot.status === "archived" ? "danger" : "neutral"}>
               {isActive ? "Работает" : bot.status === "archived" ? "Архив" : "Черновик"}
             </StatusBadge>
-            {isSubLifetime ? (
+            {userIsVip ? (
+              <StatusBadge tone="success">
+                <Crown size={12} className="mr-1 inline" aria-hidden="true" />
+                Бесплатно (VIP)
+              </StatusBadge>
+            ) : isSubLifetime ? (
               <StatusBadge tone="success">
                 <ShieldCheck size={12} className="mr-1 inline" aria-hidden="true" />
                 Бессрочно
@@ -1702,8 +1891,10 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
   const safeLinks = Array.isArray(links) ? links : [];
   const { setToastMessage, setToastType } = useAppState();
   const { showConfirm } = useAlert();
-  const [kind, setKind] = useState<"one_bot" | "period" | "permanent">("one_bot");
-  const [days, setDays] = useState("30");
+  const [category, setCategory] = useState<"vip" | "free_bots">("vip");
+  const [vipPreset, setVipPreset] = useState<"30" | "90" | "180" | "365" | "permanent" | "custom">("30");
+  const [customDays, setCustomDays] = useState("30");
+  const [freeBotsCount, setFreeBotsCount] = useState("1");
   const [people, setPeople] = useState("1");
   const [linkDays, setLinkDays] = useState("7");
   const [note, setNote] = useState("");
@@ -1714,19 +1905,28 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
   const botUsername = import.meta.env.VITE_MAIN_BOT_USERNAME ?? "BotFlowru_bot";
   const linkUrl = (token: string) => `https://t.me/${botUsername}?start=gl_${token}`;
 
+  const effectiveDays = useMemo(() => {
+    if (vipPreset === "permanent") return undefined;
+    if (vipPreset === "custom") return Math.max(1, Number(customDays) || 30);
+    return Number(vipPreset) || 30;
+  }, [vipPreset, customDays]);
+
   const create = async () => {
     if (creating) return;
     setCreating(true);
     try {
       const validDays = Number(linkDays);
+      const isVip = category === "vip";
+      const isPermanent = isVip && vipPreset === "permanent";
       const body: Parameters<typeof apiService.createAccessLink>[0] = {
-        kind,
+        kind: isVip ? "vip" : "free_bots",
         note,
         maxActivations: Math.max(1, Number(people) || 1),
         ...(validDays > 0
           ? { validUntil: new Date(Date.now() + validDays * 86_400_000).toISOString() }
           : {}),
-        ...(kind === "period" ? { days: Number(days) || undefined } : {}),
+        ...(isVip ? { isPermanent, days: isPermanent ? undefined : effectiveDays } : {}),
+        ...(!isVip ? { freeBotsCount: Math.max(1, Number(freeBotsCount) || 1) } : {}),
       };
       const created = await apiService.createAccessLink(body);
       setLastLink(created);
@@ -1776,73 +1976,151 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
     });
   };
 
-  const kindLabel = (link: AccessLink) =>
-    link.kind === "one_bot"
-      ? "1 бот навсегда бесплатно"
-      : link.kind === "permanent"
-        ? "Бессрочный доступ ко всему"
-        : link.days
-          ? `Подписка на ${link.days} дн.`
-          : "Подписка до даты";
+  const kindLabel = (link: AccessLink) => {
+    if (link.kind === "vip") {
+      return link.isPermanent ? "VIP навсегда (все боты)" : `VIP на ${link.days || 30} дн.`;
+    }
+    if (link.kind === "free_bots") {
+      const count = link.freeBotsCount || 1;
+      return `${count} ${count === 1 ? "бот" : count < 5 ? "бота" : "ботов"} бесплатно навсегда`;
+    }
+    if (link.kind === "one_bot") {
+      return "1 бот навсегда бесплатно";
+    }
+    if (link.kind === "permanent") {
+      return "Бессрочный VIP-доступ (все боты)";
+    }
+    return link.days ? `VIP на ${link.days} дн.` : "VIP-подписка до даты";
+  };
 
   return (
     <div className="space-y-6">
       <Section title="Создать спец-ссылку" description="Человек открывает ссылку, жмёт START у главного бота BotFlow — и получает доступ. Ссылку можно выдать нескольким людям и ограничить срок её жизни.">
         <div className="space-y-4">
           <div>
-            <p className="mb-2 text-xs font-semibold text-[var(--color-foreground-secondary)]">Что выдаём</p>
-            <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Тип доступа">
-              {([
-                ["one_bot", "1 бот бесплатно", "Навсегда, без подписки"],
-                ["period", "Подписка на срок", "Все боты на N дней"],
-                ["permanent", "Бессрочно всё", "Полный доступ навсегда"],
-              ] as const).map(([value, label, hint]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={kind === value}
-                  onClick={() => setKind(value)}
-                  className={`rounded-xl border p-3 text-left transition-all ${
-                    kind === value
-                      ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)]"
-                      : "border-[var(--color-border)] hover:border-[var(--color-primary)]/40"
-                  }`}
-                >
-                  <span className="block text-sm font-bold text-[var(--color-foreground)]">{label}</span>
-                  <span className="mt-0.5 block text-xs text-[var(--color-foreground-secondary)]">{hint}</span>
-                </button>
-              ))}
+            <p className="mb-2 text-xs font-semibold text-[var(--color-foreground-secondary)]">Категория доступа</p>
+            <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Категория доступа">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={category === "vip"}
+                onClick={() => setCategory("vip")}
+                className={`rounded-xl border p-4 text-left transition-all ${
+                  category === "vip"
+                    ? "border-amber-500 bg-amber-500/10 shadow-sm"
+                    : "border-[var(--color-border)] hover:border-amber-500/40"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Crown size={18} className="text-amber-500" />
+                  <span className="text-sm font-bold text-[var(--color-foreground)]">VIP-доступ к аккаунту</span>
+                </div>
+                <span className="mt-1 block text-xs text-[var(--color-foreground-secondary)]">
+                  Все боты пользователя бесплатны, пока действует VIP (на срок или бессрочно).
+                </span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={category === "free_bots"}
+                onClick={() => setCategory("free_bots")}
+                className={`rounded-xl border p-4 text-left transition-all ${
+                  category === "free_bots"
+                    ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] shadow-sm"
+                    : "border-[var(--color-border)] hover:border-[var(--color-primary)]/40"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Layers size={18} className="text-[var(--color-primary)]" />
+                  <span className="text-sm font-bold text-[var(--color-foreground)]">Бесплатные боты (слоты)</span>
+                </div>
+                <span className="mt-1 block text-xs text-[var(--color-foreground-secondary)]">
+                  Начисляет конкретное количество слотов навсегда. 1 слот = 1 бот бесплатно без подписки.
+                </span>
+              </button>
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {kind === "period" ? (
-              <div className="block">
-                <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Доступ, дней</span>
-                <input type="number" min={1} max={3650} value={days}
-                  onChange={(event) => setDays(event.target.value.replace(/\D/g, ""))}
-                  className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {[["30", "1 мес"], ["90", "3 мес"], ["180", "6 мес"], ["365", "1 год"]].map(([d, l]) => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => setDays(d)}
-                      className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold transition-colors ${
-                        days === d
-                          ? "bg-[var(--color-primary)] text-white"
-                          : "bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] hover:bg-[var(--color-border)]"
-                      }`}
-                    >
-                      {l}
-                    </button>
-                  ))}
+          {category === "vip" ? (
+            <div>
+              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Срок VIP-доступа</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {[
+                  ["30", "1 мес (30 дн.)"],
+                  ["90", "3 мес (90 дн.)"],
+                  ["180", "6 мес (180 дн.)"],
+                  ["365", "1 год (365 дн.)"],
+                  ["permanent", "Бессрочно навсегда"],
+                  ["custom", "Своё число дней"],
+                ].map(([preset, label]) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setVipPreset(preset as typeof vipPreset)}
+                    className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                      vipPreset === preset
+                        ? preset === "permanent"
+                          ? "bg-amber-500 text-black shadow-sm"
+                          : "bg-[var(--color-primary)] text-white shadow-sm"
+                        : "border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-surface)]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {vipPreset === "custom" && (
+                <div className="mt-2 max-w-xs">
+                  <label className="block text-xs text-[var(--color-foreground-secondary)]">
+                    Число дней VIP:
+                    <input
+                      type="number"
+                      min={1}
+                      max={3650}
+                      value={customDays}
+                      onChange={(e) => setCustomDays(e.target.value.replace(/\D/g, ""))}
+                      className="mt-1 h-10 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Количество бесплатных ботов (слотов)</span>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {["1", "2", "3", "5", "10"].map((cnt) => (
+                  <button
+                    key={cnt}
+                    type="button"
+                    onClick={() => setFreeBotsCount(cnt)}
+                    className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors ${
+                      freeBotsCount === cnt
+                        ? "bg-[var(--color-primary)] text-white shadow-sm"
+                        : "border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-foreground)] hover:bg-[var(--color-surface)]"
+                    }`}
+                  >
+                    {cnt} {cnt === "1" ? "бот" : Number(cnt) < 5 ? "бота" : "ботов"}
+                  </button>
+                ))}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[var(--color-foreground-secondary)]">или:</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    value={freeBotsCount}
+                    onChange={(e) => setFreeBotsCount(e.target.value.replace(/\D/g, ""))}
+                    className="h-10 w-24 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-center text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
+                  />
                 </div>
               </div>
-            ) : null}
+            </div>
+          )}
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block">
-              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Сколько людей</span>
+              <span className="block text-xs font-semibold text-[var(--color-foreground-secondary)]">Сколько людей (активаций)</span>
               <input type="number" min={1} max={10000} value={people}
                 onChange={(event) => setPeople(event.target.value.replace(/\D/g, ""))}
                 className="mt-1 h-11 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-sm font-semibold text-[var(--color-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]" />
@@ -1864,7 +2142,11 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
 
           <button type="button" onClick={() => void create()} disabled={creating}
             className="h-11 w-full rounded-xl bg-[var(--color-primary)] px-5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60 sm:w-auto">
-            {creating ? "Создаём…" : "Создать ссылку"}
+            {creating
+              ? "Создаём…"
+              : category === "vip"
+                ? `Создать VIP-ссылку (${vipPreset === "permanent" ? "Бессрочно" : `${effectiveDays} дн.`})`
+                : `Создать ссылку (${freeBotsCount} ${freeBotsCount === "1" ? "бот" : "ботов"} бесплатно)`}
           </button>
         </div>
 

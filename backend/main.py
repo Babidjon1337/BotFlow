@@ -124,9 +124,60 @@ app.add_middleware(
 )
 
 from limiter import limiter
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if isinstance(exc.detail, dict):
+        code = exc.detail.get("code", "error")
+        message = exc.detail.get("message") or exc.detail.get("detail", "Произошла ошибка")
+        detail = exc.detail.get("detail", message)
+    else:
+        code = "error"
+        message = str(exc.detail) if exc.detail else "Произошла ошибка"
+        detail = message
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": code, "message": message, "detail": detail},
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    first_err = errors[0] if errors else {}
+    loc = " -> ".join(str(l) for l in first_err.get("loc", []) if l != "body")
+    msg = first_err.get("msg", "Некорректные данные")
+    user_msg = f"Ошибка в поле '{loc}': некорректное значение." if loc else "Некорректные данные запроса."
+    return JSONResponse(
+        status_code=422,
+        content={
+            "code": "validation_error",
+            "message": user_msg,
+            "detail": f"{loc}: {msg}" if loc else msg,
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("Необработанная ошибка сервера при обработке %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "code": "internal_server_error",
+            "message": "Внутренняя ошибка сервера. Пожалуйста, повторите попытку позже.",
+            "detail": "Сервер временно не может обработать запрос.",
+        },
+    )
+
 
 app.include_router(api_router)
 
@@ -154,10 +205,13 @@ async def save_funnel(bot_id: int, funnel: FunnelSchema, request: Request):
     """Deprecated compatibility endpoint with the canonical launch checks."""
     bot = await get_owned_bot(bot_id, request)
     schema = funnel.model_dump(by_alias=True)
+    from database.requests.connected_chat_rq import list_connected_chats
+    connected_chats = await list_connected_chats(bot_id)
     readiness = evaluate_funnel_readiness(
         schema,
         has_payment_provider=bool(bot.payment_provider),
         has_payment_credentials=bool(bot.payment_creds_enc),
+        connected_chat_ids={chat.chat_id for chat in connected_chats},
     )
     saved_bot = await update_bot_funnel(
         bot_id,

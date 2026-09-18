@@ -810,6 +810,30 @@ async def process_payment_button(callback: CallbackQuery):
             raise
 
     funnel = await get_funnel_by_bot_id(tg_bot_id)
+    if not funnel:
+        return
+
+    mode = _payment_mode(funnel)
+    if mode == "application":
+        try:
+            await callback.answer(
+                "Этот бот работает по заявкам. Нажмите кнопку связи с менеджером.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+
+    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
+        try:
+            await callback.answer(
+                "Платёжная система бота временно не настроена. Обратитесь к администратору.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+
     node_checkout = _get_payment_node(funnel)
     tariffs = list(getattr(node_checkout, "tariffs", []) or [])
     if not tariffs:
@@ -827,14 +851,32 @@ async def process_payment_button(callback: CallbackQuery):
 
 @user_bot_router.callback_query(F.data.startswith("payment_tariff:"))
 async def process_tariff_choice(callback: CallbackQuery):
-    # We skip callback.answer() here because it is answered in _send_tariff_invoice with the alert
-    # try:
-    #     await callback.answer()
-    # except TelegramBadRequest:
-    #     pass
-
     bot_config = await get_bot_by_tg_id(callback.bot.id)
     funnel = await get_funnel_by_bot_id(callback.bot.id)
+    if not bot_config or not funnel:
+        return
+
+    mode = _payment_mode(funnel)
+    if mode == "application":
+        try:
+            await callback.answer(
+                "Этот бот работает по заявкам. Нажмите кнопку связи с менеджером.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+
+    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
+        try:
+            await callback.answer(
+                "Платёжная система бота временно не настроена. Обратитесь к администратору.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+
     node_checkout = _get_payment_node(funnel)
     tariff_id = callback.data.split(":", 1)[1]
     tariff = next(
@@ -845,10 +887,14 @@ async def process_tariff_choice(callback: CallbackQuery):
         ),
         None,
     )
-    if not bot_config or not funnel or not tariff:
-        await callback.message.answer(
-            "Тариф больше недоступен. Откройте меню оплаты заново."
-        )
+    if not tariff:
+        try:
+            await callback.answer(
+                "Тариф больше недоступен или принадлежит другому боту.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
         return
     await _send_tariff_invoice(callback, bot_config, funnel, tariff)
 

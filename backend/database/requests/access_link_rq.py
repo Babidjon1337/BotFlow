@@ -26,6 +26,7 @@ from loggers import logger
 
 TOKEN_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
 LINK_KINDS = ("period", "permanent", "one_bot")
+SUPPORTED_LINK_KINDS = ("period", "permanent", "one_bot", "vip", "free_bots")
 
 
 def _generate_token() -> str:
@@ -35,27 +36,38 @@ def _generate_token() -> str:
 async def create_access_link(
     *,
     kind: str,
-    days: Optional[int],
-    expires_at: Optional[datetime],
-    note: Optional[str],
+    days: Optional[int] = None,
+    expires_at: Optional[datetime] = None,
+    note: Optional[str] = None,
     max_activations: int = 1,
     valid_until: Optional[datetime] = None,
+    free_bots_count: int = 1,
+    is_permanent: bool = False,
 ) -> AccessLink:
-    if kind not in LINK_KINDS:
+    if kind not in SUPPORTED_LINK_KINDS:
         raise ValueError("Неизвестный тип ссылки")
-    if kind == "period" and days is None and expires_at is None:
+    if kind == "vip":
+        if not is_permanent and days is None and expires_at is None:
+            raise ValueError("Укажите срок VIP-доступа или выберите бессрочный доступ")
+    elif kind == "period" and days is None and expires_at is None:
         raise ValueError("Укажите срок доступа")
+    elif kind in ("free_bots", "one_bot"):
+        if free_bots_count < 1:
+            raise ValueError("Количество бесплатных ботов должно быть не менее 1")
     if max_activations < 1 or max_activations > 10_000:
         raise ValueError("Количество активаций — от 1 до 10 000")
     async with async_session() as session:
+        effective_permanent = is_permanent or (kind == "permanent")
         link = AccessLink(
             token=_generate_token(),
             note=(note or "").strip() or None,
             kind=kind,
-            days=days if kind == "period" else None,
-            expires_at=expires_at if kind == "period" else None,
+            days=days if (kind in ("period", "vip") and not effective_permanent) else None,
+            expires_at=expires_at if (kind in ("period", "vip") and not effective_permanent) else None,
             max_activations=max_activations,
             valid_until=valid_until,
+            free_bots_count=free_bots_count if kind in ("free_bots", "one_bot") else 1,
+            is_permanent=effective_permanent,
         )
         session.add(link)
         await session.commit()
@@ -85,7 +97,9 @@ async def deactivate_access_link(link_id: uuid.UUID) -> bool:
 
 
 def _effective_expires_at(link: AccessLink) -> Optional[datetime]:
-    if link.kind != "period":
+    if link.kind not in ("period", "vip"):
+        return None
+    if getattr(link, "is_permanent", False):
         return None
     if link.expires_at is not None:
         return link.expires_at
@@ -126,33 +140,40 @@ async def redeem_access_link(token: str, telegram_id: int) -> tuple[bool, str]:
         if user is None:
             return False, "Сначала откройте BotFlow Mini App, затем отправьте ссылку снова."
 
-        if link.kind == "permanent":
-            user.subscription_ends_at = None
+        if (link.kind == "permanent") or (link.kind == "vip" and link.is_permanent):
+            user.is_vip_permanent = True
             user.subscription_auto_renew = False
             message = (
-                "🎉 <b>Бессрочный доступ к BotFlow активирован!</b>\n\n"
-                "Публикация ваших ботов — бесплатна."
+                "🎉 <b>Бессрочный VIP-доступ к BotFlow активирован!</b>\n\n"
+                "Публикация всех ваших ботов бесплатна навсегда."
             )
-        elif link.kind == "one_bot":
-            user.lifetime_slots = (user.lifetime_slots or 0) + 1
-            # Если бот уже есть — сразу привязываем бесплатную лицензию к нему.
-            first_bot = await session.scalar(
+        elif link.kind in ("free_bots", "one_bot"):
+            count = link.free_bots_count if link.kind == "free_bots" else 1
+            user.lifetime_slots = (user.lifetime_slots or 0) + count
+            unlicensed_bots = list((await session.scalars(
                 select(BotConfig)
                 .where(BotConfig.owner_id == user.id, BotConfig.has_lifetime_license.is_(False))
                 .order_by(BotConfig.id)
-                .limit(1)
-            )
-            if first_bot is not None:
+                .limit(count)
+            )).all())
+            for first_bot in unlicensed_bots:
                 first_bot.has_lifetime_license = True
-                message = (
-                    "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
-                    f"Лицензия применена к боту «{first_bot.display_name}». "
-                    "Его публикация не требует подписки."
-                )
+            if count == 1:
+                if unlicensed_bots:
+                    message = (
+                        "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
+                        f"Лицензия применена к боту «{unlicensed_bots[0].display_name}». "
+                        "Его публикация не требует подписки."
+                    )
+                else:
+                    message = (
+                        "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
+                        "Создайте бота в BotFlow — лицензия применится к нему автоматически."
+                    )
             else:
                 message = (
-                    "🎉 <b>Один бот навсегда бесплатно!</b>\n\n"
-                    "Создайте бота в BotFlow — лицензия применится к нему автоматически."
+                    f"🎉 <b>Бесплатные боты ({count} шт.) активированы!</b>\n\n"
+                    f"Вам начислено {count} свободных слотов для ботов навсегда."
                 )
         else:
             expires_at = _effective_expires_at(link)
@@ -163,9 +184,9 @@ async def redeem_access_link(token: str, telegram_id: int) -> tuple[bool, str]:
                 expires_at = current
             user.subscription_ends_at = expires_at
             message = (
-                "🎉 <b>Бесплатный доступ активирован!</b>\n\n"
+                "🎉 <b>VIP-доступ к BotFlow активирован!</b>\n\n"
                 f"Действует до {expires_at.strftime('%d.%m.%Y')}. "
-                "Публикация ботов в этот период — бесплатна."
+                "Публикация всех ботов в этот период — бесплатна."
             )
 
         session.add(AccessLinkActivation(link_id=link.id, telegram_id=telegram_id))

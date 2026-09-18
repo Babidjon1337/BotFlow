@@ -25,8 +25,25 @@ def _paginate(page: int, limit: int) -> tuple[int, int]:
     return normalized_page, normalized_limit
 
 
-def _admin_user_payload(user: User, bots_count: int, *, is_platform_admin: bool = False) -> dict[str, Any]:
+def _admin_user_payload(
+    user: User,
+    bots_count: int,
+    *,
+    is_platform_admin: bool = False,
+    used_slots: int = 0,
+) -> dict[str, Any]:
     """Serialize a support-safe owner record without credentials or payment data."""
+    from services.entitlements import is_user_vip
+
+    now = datetime.now(timezone.utc)
+    is_vip, vip_type, ends_at = is_user_vip(user, now=now)
+    is_vip_permanent = (vip_type == "permanent")
+    vip_ends_at = _iso(ends_at) if ends_at else None
+
+    total_slots = int(user.lifetime_slots or 0)
+    slots_used = int(used_slots or 0)
+    slots_avail = max(0, total_slots - slots_used)
+
     return {
         "id": user.id,
         "telegram_id": user.telegram_id,
@@ -35,10 +52,17 @@ def _admin_user_payload(user: User, bots_count: int, *, is_platform_admin: bool 
         "lifetime_slots": user.lifetime_slots,
         "subscription_ends_at": _iso(user.subscription_ends_at),
         "subscription_auto_renew": user.subscription_auto_renew,
-        "subscription_retry_count": user.subscription_retry_count,
+        "subscription_retry_count": getattr(user, "subscription_retry_count", 0),
         "is_disabled": user.is_disabled,
         "is_platform_admin": is_platform_admin,
         "created_at": _iso(user.created_at),
+        "is_vip": is_vip,
+        "is_vip_permanent": is_vip_permanent,
+        "vip_type": vip_type,
+        "vip_ends_at": vip_ends_at,
+        "free_slots_total": total_slots,
+        "free_slots_used": slots_used,
+        "free_slots_available": slots_avail,
     }
 
 
@@ -136,6 +160,12 @@ async def list_admin_users(
         .correlate(User)
         .scalar_subquery()
     )
+    used_slots_subquery = (
+        select(func.count(BotConfig.id))
+        .where(BotConfig.owner_id == User.id, BotConfig.has_lifetime_license.is_(True))
+        .correlate(User)
+        .scalar_subquery()
+    )
     filters = []
     if query:
         normalized_query = query.strip().lstrip("@")
@@ -153,7 +183,7 @@ async def list_admin_users(
         base = select(User).where(*filters)
         total = await session.scalar(select(func.count()).select_from(base.subquery()))
         rows = await session.execute(
-            select(User, bot_count.label("bots_count"))
+            select(User, bot_count.label("bots_count"), used_slots_subquery.label("used_slots"))
             .where(*filters)
             .order_by(User.created_at.desc(), User.id.desc())
             .offset((page - 1) * limit)
@@ -165,8 +195,9 @@ async def list_admin_users(
             user,
             bots_count,
             is_platform_admin=user.telegram_id in protected_admin_telegram_ids,
+            used_slots=int(used_slots or 0),
         )
-        for user, bots_count in rows
+        for user, bots_count, used_slots in rows
     ]
     return users, int(total or 0)
 
@@ -220,12 +251,14 @@ async def get_admin_user_detail(
             .order_by(BotConfig.created_at.desc(), BotConfig.id.desc())
         )
         owner_bots = list(rows.all())
+        used_slots = sum(1 for bot, _ in owner_bots if bot.has_lifetime_license)
 
     return {
         "user": _admin_user_payload(
             user,
             len(owner_bots),
             is_platform_admin=user.telegram_id in protected_admin_telegram_ids,
+            used_slots=used_slots,
         ),
         "bots": [_admin_bot_payload(bot, user.telegram_id, sub) for bot, sub in owner_bots],
     }
@@ -514,6 +547,89 @@ async def extend_admin_user_pro(
                 },
             )
         return {"user_id": user.id, "subscription_ends_at": _iso(user.subscription_ends_at)}
+
+
+async def grant_admin_user_vip(
+    *,
+    user_id: int,
+    days: int | None = None,
+    is_permanent: bool = False,
+    actor_telegram_id: int,
+) -> dict[str, Any]:
+    """Grant VIP status: permanent or for N days."""
+    now = datetime.now(timezone.utc)
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.scalar(
+                select(User).where(User.id == user_id).with_for_update()
+            )
+            if not user:
+                raise AdminMutationError("Пользователь не найден.")
+            if is_permanent:
+                user.is_vip_permanent = True
+                user.subscription_ends_at = None
+                user.subscription_auto_renew = False
+            else:
+                if not days or days <= 0:
+                    raise AdminMutationError("Укажите положительное количество дней для VIP.")
+                user.is_vip_permanent = False
+                starts_from = max(user.subscription_ends_at or now, now)
+                user.subscription_ends_at = starts_from + timedelta(days=days)
+
+            _append_audit_entry(
+                session,
+                actor_telegram_id=actor_telegram_id,
+                action="vip_granted",
+                target_type="user",
+                target_id=user.id,
+                details={
+                    "telegram_id": user.telegram_id,
+                    "is_permanent": is_permanent,
+                    "days": days,
+                    "subscription_ends_at": _iso(user.subscription_ends_at),
+                },
+            )
+        return {
+            "user_id": user.id,
+            "is_vip": True,
+            "is_vip_permanent": user.is_vip_permanent,
+            "subscription_ends_at": _iso(user.subscription_ends_at),
+            "message": "Бессрочный VIP-доступ выдан." if is_permanent else f"VIP-доступ выдан на {days} дн.",
+        }
+
+
+async def revoke_admin_user_vip(
+    *,
+    user_id: int,
+    actor_telegram_id: int,
+) -> dict[str, Any]:
+    """Revoke VIP status completely (both permanent and period)."""
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.scalar(
+                select(User).where(User.id == user_id).with_for_update()
+            )
+            if not user:
+                raise AdminMutationError("Пользователь не найден.")
+            user.is_vip_permanent = False
+            user.subscription_ends_at = None
+            user.subscription_auto_renew = False
+
+            _append_audit_entry(
+                session,
+                actor_telegram_id=actor_telegram_id,
+                action="vip_revoked",
+                target_type="user",
+                target_id=user.id,
+                details={"telegram_id": user.telegram_id},
+            )
+        return {
+            "user_id": user.id,
+            "is_vip": False,
+            "is_vip_permanent": False,
+            "subscription_ends_at": None,
+            "message": "VIP-статус пользователя отозван.",
+        }
 
 
 async def disable_admin_user_auto_renew(

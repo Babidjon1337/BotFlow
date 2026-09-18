@@ -101,6 +101,13 @@ export interface AdminUser {
   is_disabled: boolean;
   is_platform_admin?: boolean;
   created_at: string | null;
+  is_vip?: boolean;
+  is_vip_permanent?: boolean;
+  vip_type?: "none" | "period" | "permanent";
+  vip_ends_at?: string | null;
+  free_slots_total?: number;
+  free_slots_used?: number;
+  free_slots_available?: number;
 }
 
 export interface AdminUserDetail {
@@ -198,12 +205,14 @@ export interface AccessLink {
   id: string;
   token: string;
   note: string | null;
-  kind: "period" | "permanent" | "one_bot";
+  kind: "vip" | "free_bots" | "period" | "permanent" | "one_bot";
   days: number | null;
   expiresAt: string | null;
   maxActivations: number;
   activationsCount: number;
   validUntil: string | null;
+  freeBotsCount?: number;
+  isPermanent?: boolean;
   isActive: boolean;
   activatedBy: number | null;
   activatedAt: string | null;
@@ -244,13 +253,26 @@ async function fetchApi<T>(
 
     try {
       const payload: unknown = JSON.parse(responseBody);
-      if (payload && typeof payload === "object" && "detail" in payload) {
-        const detail = (payload as { detail?: unknown }).detail;
-        return typeof detail === "string" ? detail : null;
+      if (payload && typeof payload === "object") {
+        const obj = payload as Record<string, unknown>;
+        if (typeof obj.message === "string" && obj.message.trim()) {
+          return obj.message.trim();
+        }
+        if (typeof obj.detail === "string" && obj.detail.trim()) {
+          return obj.detail.trim();
+        }
+        if (obj.detail && typeof obj.detail === "object") {
+          const det = obj.detail as Record<string, unknown>;
+          if (typeof det.message === "string" && det.message.trim()) {
+            return det.message.trim();
+          }
+          if (typeof det.detail === "string" && det.detail.trim()) {
+            return det.detail.trim();
+          }
+        }
       }
     } catch {
-      // The response is marked as JSON but is malformed. A useful generic
-      // error is shown below instead of leaking the raw response.
+      // The response is marked as JSON but is malformed.
     }
 
     return null;
@@ -435,12 +457,14 @@ export const apiService = {
   },
 
   async createAccessLink(body: {
-    kind: "period" | "permanent" | "one_bot";
+    kind: "vip" | "free_bots" | "period" | "permanent" | "one_bot";
     days?: number;
     expiresAt?: string;
     note?: string;
     maxActivations?: number;
     validUntil?: string;
+    freeBotsCount?: number;
+    isPermanent?: boolean;
   }) {
     return fetchApi<AccessLink>("/api/admin/access-links", {
       method: "POST",
@@ -452,6 +476,27 @@ export const apiService = {
     return fetchApi<{ status: string }>(
       `/api/admin/access-links/${linkId}/deactivate`,
       { method: "POST", body: JSON.stringify({}) }
+    );
+  },
+
+  async changeUserVip(userId: number, body: { action: "grant" | "revoke"; days?: number; isPermanent?: boolean }) {
+    return fetchApi<{ user_id: number; is_vip: boolean; is_vip_permanent: boolean; message: string }>(
+      `/api/admin/users/${userId}/vip`,
+      { method: "POST", body: JSON.stringify(body) }
+    );
+  },
+
+  async changeUserFreeSlots(userId: number, body: { direction: "grant" | "revoke"; quantity: number }) {
+    return fetchApi<{ user_id: number; lifetime_slots: number; used_lifetime_licenses: number }>(
+      `/api/admin/users/${userId}/lifetime-licenses`,
+      { method: "POST", body: JSON.stringify(body) }
+    );
+  },
+
+  async revokeBotSubscription(botId: number) {
+    return fetchApi<{ status: string; message: string }>(
+      `/api/admin/bots/${botId}/subscription`,
+      { method: "DELETE" }
     );
   },
 
