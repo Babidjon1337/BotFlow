@@ -617,12 +617,10 @@ export const Build = () => {
       
       if (savedFunnel.stopped) {
         setToastType("error");
-        setToastMessage("Бот принудительно остановлен! Воронка больше не заполнена.");
+        setToastMessage("Бот остановлен: воронка не заполнена");
       } else {
         setToastType("success");
-        setToastMessage(savedFunnel.funnelComplete
-          ? "Воронка успешно сохранена"
-          : (savedFunnel.readinessSummary || `Воронка сохранена: ${savedFunnel.readinessReasons[0] || 'завершите настройку перед запуском'}`));
+        setToastMessage("Воронка сохранена");
       }
     } catch (error) {
       setIsSaving(false);

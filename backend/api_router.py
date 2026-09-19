@@ -1537,10 +1537,10 @@ async def save_bot_funnel_endpoint(
     )
     return {
         "status": "ok",
-        "message": "Воронка успешно сохранена",
+        "message": "Воронка сохранена",
         "funnelComplete": readiness.is_ready,
         "readinessReasons": list(readiness.reasons),
-        "readinessSummary": format_readiness_errors(readiness.reasons, header="Воронка сохранена. До запуска:") if not readiness.is_ready else "Воронка готова к запуску.",
+        "readinessSummary": "Воронка сохранена",
         "botStatus": "draft" if stopped else getattr(saved_bot, "status", bot.status),
         "stopped": stopped,
     }

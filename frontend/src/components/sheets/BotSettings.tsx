@@ -207,9 +207,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
       });
       setToastMessage(savedFunnel.stopped
         ? "Настройки сохранены: бот остановлен"
-        : savedFunnel.funnelComplete
-          ? "Настройки сохранены"
-          : (savedFunnel.readinessSummary || `Настройки сохранены: ${savedFunnel.readinessReasons[0] || 'завершите воронку'}`));
+        : "Настройки сохранены");
       onSave();
       onClose();
     } catch (error) {
