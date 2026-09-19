@@ -3,12 +3,13 @@ import { BASE_URL, getInitData } from "./api";
 export type EventCallback<T = unknown> = (data: T) => void;
 
 class ServerEventStream {
-  private eventSource: EventSource | null = null;
+  private abortController: AbortController | null = null;
   private listeners: Map<string, Set<EventCallback<unknown>>> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private isExplicitlyClosed = false;
+  private isConnected = false;
 
   constructor() {
     if (typeof document !== "undefined") {
@@ -19,7 +20,7 @@ class ServerEventStream {
   private handleVisibilityChange = () => {
     if (document.hidden) {
       // Pause connection while tab is hidden to save battery & backend resources
-      this.closeEventSource();
+      this.closeStream();
     } else {
       // Immediately resume when tab becomes visible if there are active listeners
       if (this.getTotalListenersCount() > 0) {
@@ -45,14 +46,11 @@ class ServerEventStream {
 
     if (!this.listeners.has(eventType)) {
       this.listeners.set(eventType, new Set());
-      if (this.eventSource) {
-        this.attachEventListener(eventType);
-      }
     }
 
     this.listeners.get(eventType)!.add(callback as EventCallback<unknown>);
 
-    if (!this.eventSource && !document.hidden) {
+    if (!this.isConnected && !this.abortController && (typeof document === "undefined" || !document.hidden)) {
       this.connect();
     }
 
@@ -84,7 +82,7 @@ class ServerEventStream {
   }
 
   public connect() {
-    if (this.eventSource) {
+    if (this.abortController || this.isConnected) {
       return;
     }
     if (typeof document !== "undefined" && document.hidden) {
@@ -98,56 +96,106 @@ class ServerEventStream {
     }
 
     const initData = getInitData();
-    let streamUrl = `${BASE_URL}/api/events`;
-    if (initData) {
-      const separator = streamUrl.includes("?") ? "&" : "?";
-      streamUrl += `${separator}init_data=${encodeURIComponent(initData)}`;
-    }
+    const abortController = new AbortController();
+    this.abortController = abortController;
 
+    void this.startStream(initData, abortController);
+  }
+
+  private async startStream(initData: string, controller: AbortController) {
+    const { signal } = controller;
     try {
-      this.eventSource = new EventSource(streamUrl);
+      const response = await fetch(`${BASE_URL}/api/events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Init-Data": initData,
+        },
+        body: JSON.stringify({ init_data: initData }),
+        signal,
+      });
 
-      this.eventSource.onopen = () => {
-        this.reconnectAttempts = 0;
-      };
-
-      this.eventSource.onerror = () => {
-        this.closeEventSource();
-        this.scheduleReconnect();
-      };
-
-      // Attach all currently registered custom event types
-      for (const eventType of this.listeners.keys()) {
-        this.attachEventListener(eventType);
+      if (!response.ok) {
+        throw new Error(`SSE request failed with status ${response.status}`);
       }
-    } catch (err) {
-      console.warn("SSE connection initiation failed:", err);
-      this.scheduleReconnect();
+      if (!response.body) {
+        throw new Error("ReadableStream not supported on response body");
+      }
+
+      this.isConnected = true;
+      this.reconnectAttempts = 0;
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (!signal.aborted) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split by SSE event boundaries (\n\n or \r\n\r\n)
+        const parts = buffer.split(/\r?\n\r?\n/);
+        buffer = parts.pop() ?? "";
+
+        for (const block of parts) {
+          if (!block.trim()) continue;
+          let eventType = "message";
+          const dataLines: string[] = [];
+
+          for (const line of block.split(/\r?\n/)) {
+            if (line.startsWith(":")) {
+              // Comment / keep-alive, ignore
+              continue;
+            }
+            if (line.startsWith("event:")) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+              dataLines.push(line.slice(5).trim());
+            }
+          }
+
+          if (dataLines.length > 0) {
+            const rawData = dataLines.join("\n");
+            let parsedData: unknown = null;
+            try {
+              parsedData = JSON.parse(rawData);
+            } catch {
+              parsedData = rawData;
+            }
+            this.dispatchEvent(eventType, parsedData);
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (signal.aborted) {
+        // Closed intentionally, do not log or reconnect
+        return;
+      }
+      console.warn("SSE stream connection failed or interrupted:", err);
+    } finally {
+      this.isConnected = false;
+      if (this.abortController === controller) {
+        this.abortController = null;
+      }
+      if (!signal.aborted) {
+        this.scheduleReconnect();
+      }
     }
   }
 
-  private attachEventListener(eventType: string) {
-    if (!this.eventSource) return;
-
-    this.eventSource.addEventListener(eventType, (event: MessageEvent) => {
-      let data: unknown = null;
-      try {
-        data = event.data ? JSON.parse(event.data) : null;
-      } catch {
-        data = event.data;
-      }
-
-      const callbacks = this.listeners.get(eventType);
-      if (callbacks) {
-        callbacks.forEach((cb) => {
-          try {
-            cb(data);
-          } catch (callbackError) {
-            console.error(`Error in SSE listener for "${eventType}":`, callbackError);
-          }
-        });
-      }
-    });
+  private dispatchEvent(eventType: string, data: unknown) {
+    const callbacks = this.listeners.get(eventType);
+    if (callbacks) {
+      callbacks.forEach((cb) => {
+        try {
+          cb(data);
+        } catch (callbackError) {
+          console.error(`Error in SSE listener for "${eventType}":`, callbackError);
+        }
+      });
+    }
   }
 
   private scheduleReconnect() {
@@ -171,10 +219,11 @@ class ServerEventStream {
     }, delay);
   }
 
-  private closeEventSource() {
-    if (this.eventSource) {
-      this.eventSource.close();
-      this.eventSource = null;
+  private closeStream() {
+    this.isConnected = false;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
     }
   }
 
@@ -188,7 +237,7 @@ class ServerEventStream {
       clearTimeout(this.disconnectTimer);
       this.disconnectTimer = null;
     }
-    this.closeEventSource();
+    this.closeStream();
   }
 }
 

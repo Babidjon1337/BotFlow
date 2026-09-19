@@ -408,6 +408,13 @@ async def get_current_user(request: Request) -> TelegramUser:
         or request.query_params.get("init_data")
         or request.query_params.get("initData")
     )
+    if not init_data and request.method in ("POST", "PUT", "PATCH"):
+        try:
+            body = await request.json()
+            if isinstance(body, dict):
+                init_data = body.get("init_data") or body.get("initData")
+        except Exception:
+            pass
     if init_data:
         try:
             telegram_user = validate_init_data(init_data)
@@ -2097,7 +2104,7 @@ async def cancel_broadcast_endpoint(broadcast_id: UUID, request: Request):
     return BroadcastApiResponse.from_orm_broadcast(updated).model_dump(by_alias=True)
 
 
-@api_router.get("/api/events")
+@api_router.api_route("/api/events", methods=["GET", "POST"])
 async def sse_events_endpoint(request: Request):
     """Server-Sent Events stream for real-time notifications (upload completion, media sync, broadcasts)."""
     current_user = await get_current_user(request)
