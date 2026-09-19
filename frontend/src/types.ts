@@ -48,7 +48,7 @@ export interface FunnelNode {
   mediaAssets?: NodeMediaAsset[] | null;
 }
 
-export type TabType = 'home' | 'build' | 'flow' | 'profile' | 'subscription' | 'manage' | 'admin_stats';
+export type TabType = 'home' | 'build' | 'flow' | 'integrations' | 'profile' | 'subscription' | 'manage' | 'admin_stats';
 export type SheetType = 'bot_switcher' | 'bot_settings' | 'bot_create' | null;
 export type PaymentProvider = 'yookassa' | 'robokassa' | 'prodamus';
 export type DeliveryType = 'link' | 'invite' | 'file';

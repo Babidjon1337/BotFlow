@@ -27,6 +27,8 @@ interface AppContextType {
   updateBlockFields: (id: string, updates: Partial<FunnelNode>) => void;
   handleCreateBotClick: () => void;
   handlePurchaseSuccess: (plan: 'basic' | 'pro') => void;
+  adminOrigin: boolean;
+  setAdminOrigin: React.Dispatch<React.SetStateAction<boolean>>;
   isAdmin: boolean;
   authError: string | null;
   funnelLoadState: FunnelLoadState;
@@ -120,21 +122,53 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return (localStorage.getItem('bot_father_theme') as 'light' | 'dark') || 'light';
   });
 
+  const [adminOrigin, setAdminOrigin] = useState<boolean>(() => {
+    return localStorage.getItem('bot_father_adminOrigin') === 'true';
+  });
+
+  useEffect(() => {
+    if (adminOrigin) {
+      localStorage.setItem('bot_father_adminOrigin', 'true');
+    } else {
+      localStorage.removeItem('bot_father_adminOrigin');
+    }
+  }, [adminOrigin]);
+
   const isAdmin = appState.isAdmin === true;
 
   useEffect(() => {
     let cancelled = false;
-    void import('../services/api').then(({ apiService }) => apiService.auth()).then(res => {
+    void import('../services/api').then(({ apiService }) => apiService.auth()).then(async res => {
       if (!cancelled) {
         const mappedBots = res.bots.map(mapApiBot);
         
         const savedBotId = localStorage.getItem('bot_father_activeBotId');
-        const restoredBot = mappedBots.find(b => b.id === savedBotId) || (mappedBots.length > 0 ? mappedBots[0] : null);
+        let restoredBot = mappedBots.find(b => b.id === savedBotId);
+
+        // If savedBotId is not in user's own bots, but the user is an admin, fetch the bot!
+        if (!restoredBot && savedBotId && res.user.is_admin) {
+          try {
+            const { apiService } = await import('../services/api');
+            const apiBot = await apiService.getBot(savedBotId);
+            if (apiBot) {
+              restoredBot = mapApiBot(apiBot);
+              if (!mappedBots.some(b => b.id === restoredBot!.id)) {
+                mappedBots.push(restoredBot);
+              }
+            }
+          } catch (e) {
+            console.warn('Could not restore admin managed bot:', e);
+          }
+        }
+
+        if (!restoredBot && mappedBots.length > 0) {
+          restoredBot = mappedBots[0];
+        }
         
         setAppState(prev => ({
           ...prev,
           bots: mappedBots,
-          activeBot: restoredBot,
+          activeBot: restoredBot || null,
           subscriptionStatus: res.user.subscription_status,
           subscriptionUntil: res.user.subscription_until,
           slotsBought: res.user.slots_bought,
@@ -234,7 +268,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     discardDirty = false,
   ): Promise<BotSelectionResult> => {
     const currentBotId = appState.activeBot?.id;
-    if (currentBotId === botId) return { status: 'same' };
+    if (currentBotId === botId) {
+      if (discardDirty || funnelLoadState.botId !== botId || funnelLoadState.status !== 'ready') {
+        await loadActiveBotFunnel(botId);
+      }
+      return { status: 'selected' };
+    }
     if (appState.isDirty && !discardDirty) return { status: 'dirty' };
     if (funnelLoadState.botId === currentBotId && funnelLoadState.status === 'loading') {
       return { status: 'busy' };
@@ -428,6 +467,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         updateBlockFields,
         handleCreateBotClick,
         handlePurchaseSuccess,
+        adminOrigin,
+        setAdminOrigin,
         isAdmin,
         authError,
         funnelLoadState,

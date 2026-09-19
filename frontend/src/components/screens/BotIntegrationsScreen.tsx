@@ -9,6 +9,8 @@ import { PlatformGlyph } from '../common/platform';
 
 import type { IntegrationTarget } from '../../lib/integrationNav';
 import { INTEGRATION_TARGET_KEY } from '../../lib/integrationNav';
+import { useAppState } from '../../providers/AppStateProvider';
+import { mapApiBot } from '../../services/botMapper';
 
 const PROVIDERS: {
   id: PaymentProvider;
@@ -70,6 +72,7 @@ function TelegramGlyph({ active }: { active: boolean }) {
  * 4. Оферта.
  */
 export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
+  const { setAppState, setToastMessage, setToastType } = useAppState();
   const hasToken = Boolean(bot.username && bot.username !== '@unknown');
   const hasCashier = Boolean(bot.hasPaymentCredentials);
   const cashierName = bot.paymentProvider
@@ -110,6 +113,10 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
   const [isSavingOffer, setIsSavingOffer] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
   const [offerSaved, setOfferSaved] = useState(false);
+
+  useEffect(() => {
+    setOfferUrl(bot.offerUrl ?? '');
+  }, [bot.offerUrl]);
 
   const activeProvider = PROVIDERS.find((p) => p.id === selectedProvider);
   const allFilled = activeProvider ? activeProvider.fields.every((f) => (keys[f.key] || '').trim()) : false;
@@ -198,10 +205,20 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     setTokenError(null);
     try {
       const { apiService: api } = await import('../../services/api');
-      await api.updateBot(bot.id, { token: token.trim() });
-      window.location.reload();
+      const updatedApiBot = await api.updateBot(bot.id, { token: token.trim() });
+      const mapped = mapApiBot(updatedApiBot);
+      setAppState((prev) => ({
+        ...prev,
+        bots: prev.bots.map((b) => (b.id === mapped.id ? mapped : b)),
+        activeBot: prev.activeBot?.id === mapped.id ? mapped : prev.activeBot,
+      }));
+      setTokenFormOpen(false);
+      setToken('');
+      setToastType('success');
+      setToastMessage('Токен Telegram успешно сохранён');
     } catch (error) {
       setTokenError(error instanceof Error ? error.message : 'Не удалось сохранить токен.');
+    } finally {
       setIsSavingToken(false);
     }
   };
@@ -230,9 +247,17 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     setOfferError(null);
     try {
       const { apiService: api } = await import('../../services/api');
-      await api.updateBot(bot.id, { offerUrl: value });
+      const updatedApiBot = await api.updateBot(bot.id, { offerUrl: value });
+      const mapped = mapApiBot(updatedApiBot);
+      setAppState((prev) => ({
+        ...prev,
+        bots: prev.bots.map((b) => (b.id === mapped.id ? mapped : b)),
+        activeBot: prev.activeBot?.id === mapped.id ? mapped : prev.activeBot,
+      }));
       setOfferSaved(true);
-      window.setTimeout(() => window.location.reload(), 700);
+      setToastType('success');
+      setToastMessage('Ссылка на оферту сохранена');
+      window.setTimeout(() => setOfferSaved(false), 2500);
     } catch (error) {
       setOfferError(error instanceof Error ? error.message : 'Не удалось сохранить ссылку.');
     } finally {
@@ -246,11 +271,19 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     setCashierError(null);
     try {
       const { apiService: api } = await import('../../services/api');
-      await api.updateBot(bot.id, { paymentProvider: activeProvider.id, paymentCreds: keys });
+      const updatedApiBot = await api.updateBot(bot.id, { paymentProvider: activeProvider.id, paymentCreds: keys });
+      const mapped = mapApiBot(updatedApiBot);
+      setAppState((prev) => ({
+        ...prev,
+        bots: prev.bots.map((b) => (b.id === mapped.id ? mapped : b)),
+        activeBot: prev.activeBot?.id === mapped.id ? mapped : prev.activeBot,
+      }));
       setCashierSaved(true);
       setSelectedProvider(null);
       setKeys({});
-      window.setTimeout(() => window.location.reload(), 900);
+      setToastType('success');
+      setToastMessage(`Касса «${activeProvider.name}» успешно подключена`);
+      window.setTimeout(() => setCashierSaved(false), 2500);
     } catch (error) {
       setCashierError(error instanceof Error ? error.message : 'Не удалось сохранить ключи.');
     } finally {

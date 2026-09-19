@@ -27,6 +27,7 @@ interface AppShellProps {
   onOpenBotSettings: () => void;
   onOpenBotSwitcher: () => void;
   activeBot: BotConfig | null;
+  adminOrigin?: boolean;
   isAdmin: boolean;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
@@ -43,6 +44,7 @@ export function AppShell({
   onOpenBotSettings,
   onOpenBotSwitcher,
   activeBot,
+  adminOrigin,
   isAdmin,
   theme,
   toggleTheme,
@@ -67,8 +69,9 @@ export function AppShell({
           <TopBar
             route={route}
             activeBot={activeBot}
+            adminOrigin={adminOrigin}
             onBackToBots={onBackToBots}
-              onOpenBotSettings={onOpenBotSettings}
+            onOpenBotSettings={onOpenBotSettings}
             onOpenBotSwitcher={onOpenBotSwitcher}
           />
         )}

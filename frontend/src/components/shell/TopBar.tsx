@@ -7,6 +7,7 @@ import { formatBotUsername } from './navModel';
 interface TopBarProps {
   route: AppRoute;
   activeBot: BotConfig | null;
+  adminOrigin?: boolean;
   onBackToBots: () => void;
   onOpenBotSettings: () => void;
   onOpenBotSwitcher: () => void;
@@ -31,6 +32,7 @@ function BotStatusBadge({ status }: { status: BotConfig['status'] }) {
 export function TopBar({
   route,
   activeBot,
+  adminOrigin,
   onBackToBots,
   onOpenBotSettings,
   onOpenBotSwitcher,
@@ -47,7 +49,8 @@ export function TopBar({
           <button
             type="button"
             onClick={onBackToBots}
-            aria-label="К списку ботов"
+            aria-label={adminOrigin ? "Вернуться в админку" : "К списку ботов"}
+            title={adminOrigin ? "Вернуться в админку" : "К списку ботов"}
             className="-ml-2 flex size-9 cursor-pointer items-center justify-center rounded-md text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
           >
             <ChevronLeft className="size-5" />
@@ -59,9 +62,16 @@ export function TopBar({
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left transition-colors hover:bg-muted"
           >
             <span className="min-w-0 flex-1">
-            <p className="truncate text-title font-semibold leading-tight">
-              {activeBot?.name ?? 'Бот'}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="truncate text-title font-semibold leading-tight">
+                {activeBot?.name ?? 'Бот'}
+              </p>
+              {adminOrigin && (
+                <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                  Режим админа
+                </span>
+              )}
+            </div>
             <p className="truncate text-meta text-fg-tertiary">
               {formatBotUsername(activeBot?.username)}
             </p>
@@ -69,6 +79,16 @@ export function TopBar({
             <ChevronsUpDown className="size-4 shrink-0 text-fg-tertiary" />
           </button>
           {activeBot && <BotStatusBadge status={activeBot.status} />}
+          {adminOrigin && (
+            <button
+              type="button"
+              onClick={onBackToBots}
+              className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
+              title="Вернуться в админку"
+            >
+              В админку
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpenBotSettings}

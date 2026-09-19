@@ -113,7 +113,7 @@ function auditSummary(entry: AdminAuditEntry): string | null {
 }
 
 export function AdminStats() {
-  const { setToastMessage, setToastType, setActiveTab, selectBot, setSheet } = useAppState();
+  const { setToastMessage, setToastType, setActiveTab, selectBot, setSheet, setAdminOrigin } = useAppState();
   const { showConfirm } = useAlert();
   const [section, setSection] = useState<AdminSection>("overview");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -145,7 +145,8 @@ export function AdminStats() {
   const handleEditFunnel = useCallback(
     async (bot: AdminBot) => {
       try {
-        const result = await selectBot(String(bot.id));
+        setAdminOrigin(true);
+        const result = await selectBot(String(bot.id), true);
         if (result.status === "error") {
           setToastType("error");
           setToastMessage(result.message || "Не удалось открыть воронку бота.");
@@ -154,19 +155,64 @@ export function AdminStats() {
         setSelectedUser(null);
         setActiveTab("build");
         setToastType("success");
-        setToastMessage(`Открыта воронка бота «${bot.display_name}».`);
+        setToastMessage(`Открыт сценарий бота «${bot.display_name}».`);
       } catch {
         setToastType("error");
-        setToastMessage("Не удалось открыть воронку бота.");
+        setToastMessage("Не удалось открыть сценарий бота.");
       }
     },
-    [selectBot, setActiveTab, setToastMessage, setToastType]
+    [selectBot, setActiveTab, setAdminOrigin, setToastMessage, setToastType]
+  );
+
+  const handleOpenBotIntegrations = useCallback(
+    async (bot: AdminBot) => {
+      try {
+        setAdminOrigin(true);
+        const result = await selectBot(String(bot.id), true);
+        if (result.status === "error") {
+          setToastType("error");
+          setToastMessage(result.message || "Не удалось открыть интеграции бота.");
+          return;
+        }
+        setSelectedUser(null);
+        setActiveTab("integrations");
+        setToastType("success");
+        setToastMessage(`Открыты интеграции и касса бота «${bot.display_name}».`);
+      } catch {
+        setToastType("error");
+        setToastMessage("Не удалось открыть интеграции бота.");
+      }
+    },
+    [selectBot, setActiveTab, setAdminOrigin, setToastMessage, setToastType]
+  );
+
+  const handleOpenBotWorkspace = useCallback(
+    async (bot: AdminBot) => {
+      try {
+        setAdminOrigin(true);
+        const result = await selectBot(String(bot.id), true);
+        if (result.status === "error") {
+          setToastType("error");
+          setToastMessage(result.message || "Не удалось открыть воркспейс бота.");
+          return;
+        }
+        setSelectedUser(null);
+        setActiveTab("home");
+        setToastType("success");
+        setToastMessage(`Открыт воркспейс бота «${bot.display_name}».`);
+      } catch {
+        setToastType("error");
+        setToastMessage("Не удалось открыть воркспейс бота.");
+      }
+    },
+    [selectBot, setActiveTab, setAdminOrigin, setToastMessage, setToastType]
   );
 
   const handleOpenBotSettings = useCallback(
     async (bot: AdminBot) => {
       try {
-        const result = await selectBot(String(bot.id));
+        setAdminOrigin(true);
+        const result = await selectBot(String(bot.id), true);
         if (result.status === "error") {
           setToastType("error");
           setToastMessage(result.message || "Не удалось открыть настройки бота.");
@@ -180,7 +226,7 @@ export function AdminStats() {
         setToastMessage("Не удалось открыть настройки бота.");
       }
     },
-    [selectBot, setActiveTab, setSheet, setToastMessage, setToastType]
+    [selectBot, setActiveTab, setAdminOrigin, setSheet, setToastMessage, setToastType]
   );
 
   const refreshSection = useCallback(async () => {
@@ -642,6 +688,8 @@ export function AdminStats() {
             onOpenGrantUser={(user: AdminUser, bots: AdminBot[]) => setGrantTarget({ type: "user", user, bots })}
             onRevokeSubscription={revokeSubscription}
             onEditFunnel={handleEditFunnel}
+            onOpenIntegrations={handleOpenBotIntegrations}
+            onOpenWorkspace={handleOpenBotWorkspace}
             onOpenSettings={handleOpenBotSettings}
             onAddBot={() => setIsCreateBotForUserOpen(true)}
             onManageVip={handleManageVip}
@@ -975,6 +1023,8 @@ function UserProfileScreen({
   onOpenGrantUser,
   onRevokeSubscription,
   onEditFunnel,
+  onOpenIntegrations,
+  onOpenWorkspace,
   onOpenSettings,
   onAddBot,
   onManageVip,
@@ -994,6 +1044,8 @@ function UserProfileScreen({
   onOpenGrantUser: (user: AdminUser, bots: AdminBot[]) => void;
   onRevokeSubscription: (bot: AdminBot) => void;
   onEditFunnel: (bot: AdminBot) => void;
+  onOpenIntegrations?: (bot: AdminBot) => void;
+  onOpenWorkspace?: (bot: AdminBot) => void;
   onOpenSettings?: (bot: AdminBot) => void;
   onAddBot?: () => void;
   onManageVip: (action: "grant" | "revoke", days?: number, isPermanent?: boolean) => void;
@@ -1322,6 +1374,8 @@ function UserProfileScreen({
                     onOpenGrant={onOpenGrantBot}
                     onRevokeSubscription={onRevokeSubscription}
                     onEditFunnel={onEditFunnel}
+                    onOpenIntegrations={onOpenIntegrations}
+                    onOpenWorkspace={onOpenWorkspace}
                     onOpenSettings={onOpenSettings}
                   />
                 ))}
@@ -1761,6 +1815,8 @@ function AdminBotRow({
   onOpenGrant,
   onRevokeSubscription,
   onEditFunnel,
+  onOpenIntegrations,
+  onOpenWorkspace,
   onOpenSettings,
 }: {
   bot: AdminBot;
@@ -1773,6 +1829,8 @@ function AdminBotRow({
   onOpenGrant?: (bot: AdminBot) => void;
   onRevokeSubscription?: (bot: AdminBot) => void;
   onEditFunnel?: (bot: AdminBot) => void;
+  onOpenIntegrations?: (bot: AdminBot) => void;
+  onOpenWorkspace?: (bot: AdminBot) => void;
   onOpenSettings?: (bot: AdminBot) => void;
 }) {
   const isActive = bot.status === "active";
@@ -1839,10 +1897,38 @@ function AdminBotRow({
               onClick={() => onEditFunnel(bot)}
               disabled={busy}
               className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary-soft)] px-3 text-xs font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-              title="Открыть конструктор и заполнить воронку этого бота"
+              title="Открыть конструктор и настроить сценарий этого бота"
             >
               <Workflow size={15} aria-hidden="true" />
               Заполнить воронку
+            </button>
+          ) : null}
+
+          {/* Кнопка перехода в платёжки и токен */}
+          {onOpenIntegrations ? (
+            <button
+              type="button"
+              onClick={() => onOpenIntegrations(bot)}
+              disabled={busy}
+              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-600 dark:text-emerald-400 transition-colors hover:bg-emerald-500 hover:text-white disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+              title="Подключить токен бота и платёжную систему (ЮKassa / Robokassa / Prodamus)"
+            >
+              <CreditCard size={15} aria-hidden="true" />
+              Платёжка и токен
+            </button>
+          ) : null}
+
+          {/* Кнопка открытия воркспейса бота */}
+          {onOpenWorkspace ? (
+            <button
+              type="button"
+              onClick={() => onOpenWorkspace(bot)}
+              disabled={busy}
+              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              title="Открыть полный воркспейс бота (обзор, CRM, статистика)"
+            >
+              <Bot size={15} aria-hidden="true" />
+              Воркспейс
             </button>
           ) : null}
 
@@ -1851,8 +1937,8 @@ function AdminBotRow({
               type="button"
               onClick={() => onOpenSettings(bot)}
               disabled={busy}
-              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-              title="Настройки бота (токен от @BotFather, платёжка, реквизиты)"
+              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-foreground)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              title="Быстрые настройки бота в модальном окне"
             >
               <Settings size={15} aria-hidden="true" />
               Настройки

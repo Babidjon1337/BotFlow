@@ -76,6 +76,8 @@ export default function App() {
     getFunnelWorkspaceGeneration,
     activeTab,
     setActiveTab,
+    adminOrigin,
+    setAdminOrigin,
   } = useAppState();
   const { toggleBot } = useBotToggle();
   const { requestBotSelection } = useBotSelectionGuard();
@@ -91,8 +93,20 @@ export default function App() {
   const previousLegacyTab = useRef(activeTab);
   const routeDrivenLegacyTab = useRef<typeof activeTab | null>(null);
 
-  const goAccountTab = (tab: AccountTab) => setRoute({ level: 'account', tab });
-  const goBackToBots = () => setRoute({ level: 'account', tab: 'bots' });
+  const goAccountTab = (tab: AccountTab) => {
+    if (tab !== 'admin') setAdminOrigin(false);
+    setRoute({ level: 'account', tab });
+  };
+  const goBackFromBot = () => {
+    if (adminOrigin && appState.isAdmin) {
+      setRoute({ level: 'account', tab: 'admin' });
+      setActiveTab('admin_stats');
+      setAdminOrigin(false);
+    } else {
+      setRoute({ level: 'account', tab: 'bots' });
+      setActiveTab('manage');
+    }
+  };
 
   useEffect(() => {
     if (!appState.isLoading) persistRoute(resolvedRoute);
@@ -110,6 +124,7 @@ export default function App() {
       home: { level: 'bot', view: 'overview' },
       build: { level: 'bot', view: 'scenario' },
       flow: { level: 'bot', view: 'scenario' },
+      integrations: { level: 'bot', view: 'integrations' },
       profile: { level: 'account', tab: 'profile' },
       subscription: { level: 'account', tab: 'billing' },
       manage: { level: 'account', tab: 'bots' },
@@ -121,7 +136,7 @@ export default function App() {
   useEffect(() => {
     const legacyTab = resolvedRoute.level === 'account'
       ? ({ bots: 'manage', billing: 'subscription', profile: 'profile', admin: 'admin_stats' } as const)[resolvedRoute.tab as 'bots' | 'billing' | 'profile' | 'admin']
-      : ({ overview: 'home', scenario: 'build' } as const)[resolvedRoute.view as 'overview' | 'scenario'];
+      : ({ overview: 'home', scenario: 'build', integrations: 'integrations' } as const)[resolvedRoute.view as 'overview' | 'scenario' | 'integrations'];
     if (!legacyTab || legacyTab === activeTab) return;
     routeDrivenLegacyTab.current = legacyTab;
     setActiveTab(legacyTab);
@@ -235,7 +250,7 @@ export default function App() {
 
     if (resolvedRoute.level === 'bot') {
       backButton.show();
-      const handleBack = goBackToBots;
+      const handleBack = goBackFromBot;
       backButton.onClick(handleBack);
       return () => {
         backButton.offClick(handleBack);
@@ -243,7 +258,7 @@ export default function App() {
     }
 
     backButton.hide();
-  }, [appState.activeSheet, appState.activeBot, setSheet, resolvedRoute, switchingBotId, isBotCreating]);
+  }, [appState.activeSheet, appState.activeBot, setSheet, resolvedRoute, switchingBotId, isBotCreating, adminOrigin]);
 
   // Listen for real-time bot media sync completion via SSE
   useServerEvent<{ botId: number; mediaSyncDone: boolean }>(
@@ -370,7 +385,8 @@ export default function App() {
         route={resolvedRoute}
         onAccountTab={goAccountTab}
         onBotView={(view) => setRoute({ level: 'bot', view })}
-        onBackToBots={goBackToBots}
+        onBackToBots={goBackFromBot}
+        adminOrigin={adminOrigin && Boolean(appState.isAdmin)}
         onOpenBotSettings={() => setSheet('bot_settings')}
         onOpenBotSwitcher={() => setSheet('bot_switcher')}
         activeBot={appState.activeBot}
