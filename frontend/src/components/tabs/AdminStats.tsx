@@ -24,9 +24,11 @@ import {
   Workflow,
   X,
   Users,
+  Settings,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useAlert } from "../AlertProvider";
+import { BotCreateSheet } from "../sheets/BotCreateSheet";
 import {
   apiService,
   type AdminAuditEntry,
@@ -111,7 +113,7 @@ function auditSummary(entry: AdminAuditEntry): string | null {
 }
 
 export function AdminStats() {
-  const { setToastMessage, setToastType, setActiveTab, selectBot } = useAppState();
+  const { setToastMessage, setToastType, setActiveTab, selectBot, setSheet } = useAppState();
   const { showConfirm } = useAlert();
   const [section, setSection] = useState<AdminSection>("overview");
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -138,11 +140,17 @@ export function AdminStats() {
   >(null);
   const [grantBusy, setGrantBusy] = useState(false);
   const [quickGrantUserId, setQuickGrantUserId] = useState<number | null>(null);
+  const [isCreateBotForUserOpen, setIsCreateBotForUserOpen] = useState(false);
 
   const handleEditFunnel = useCallback(
     async (bot: AdminBot) => {
       try {
-        await selectBot(String(bot.id));
+        const result = await selectBot(String(bot.id));
+        if (result.status === "error") {
+          setToastType("error");
+          setToastMessage(result.message || "Не удалось открыть воронку бота.");
+          return;
+        }
         setSelectedUser(null);
         setActiveTab("build");
         setToastType("success");
@@ -153,6 +161,26 @@ export function AdminStats() {
       }
     },
     [selectBot, setActiveTab, setToastMessage, setToastType]
+  );
+
+  const handleOpenBotSettings = useCallback(
+    async (bot: AdminBot) => {
+      try {
+        const result = await selectBot(String(bot.id));
+        if (result.status === "error") {
+          setToastType("error");
+          setToastMessage(result.message || "Не удалось открыть настройки бота.");
+          return;
+        }
+        setSelectedUser(null);
+        setActiveTab("build");
+        setSheet("bot_settings");
+      } catch {
+        setToastType("error");
+        setToastMessage("Не удалось открыть настройки бота.");
+      }
+    },
+    [selectBot, setActiveTab, setSheet, setToastMessage, setToastType]
   );
 
   const refreshSection = useCallback(async () => {
@@ -297,7 +325,7 @@ export function AdminStats() {
     try {
       const result = await apiService.getAdminBotReadiness(bot.id);
       setToastType(result.isReady ? "success" : "error");
-      setToastMessage(result.isReady ? "Воронка готова к запуску." : `Бот пока нельзя запустить: ${result.reasons.join(" ")}`);
+      setToastMessage(result.isReady ? "Воронка готова к запуску." : (result.summary || `Бот пока нельзя запустить:\n• ${result.reasons.join("\n• ")}`));
     } catch (requestError) {
       setToastType("error");
       setToastMessage(requestError instanceof Error ? requestError.message : "Не удалось проверить готовность.");
@@ -614,6 +642,8 @@ export function AdminStats() {
             onOpenGrantUser={(user: AdminUser, bots: AdminBot[]) => setGrantTarget({ type: "user", user, bots })}
             onRevokeSubscription={revokeSubscription}
             onEditFunnel={handleEditFunnel}
+            onOpenSettings={handleOpenBotSettings}
+            onAddBot={() => setIsCreateBotForUserOpen(true)}
             onManageVip={handleManageVip}
             onManageFreeSlots={handleManageFreeSlots}
           />
@@ -644,6 +674,30 @@ export function AdminStats() {
           onNavigateToLinks={() => {
             setGrantTarget(null);
             setSection("access-links");
+          }}
+        />
+      ) : null}
+      {isCreateBotForUserOpen && selectedUser ? (
+        <BotCreateSheet
+          onClose={() => setIsCreateBotForUserOpen(false)}
+          onCreate={async (botData) => {
+            try {
+              const newBot = await apiService.createBot({
+                displayName: botData.displayName,
+                token: botData.token,
+                paymentProvider: botData.paymentProvider,
+                paymentCreds: botData.paymentCreds,
+                offerUrl: botData.offerUrl,
+                ownerUserId: selectedUser.user.id,
+              });
+              setIsCreateBotForUserOpen(false);
+              setToastType("success");
+              setToastMessage(`Бот «${newBot.displayName}» успешно создан для пользователя.`);
+              await loadUserProfile(selectedUser.user.id);
+            } catch (err) {
+              setToastType("error");
+              setToastMessage(err instanceof Error ? err.message : "Не удалось создать бота.");
+            }
           }}
         />
       ) : null}
@@ -921,6 +975,8 @@ function UserProfileScreen({
   onOpenGrantUser,
   onRevokeSubscription,
   onEditFunnel,
+  onOpenSettings,
+  onAddBot,
   onManageVip,
   onManageFreeSlots,
 }: {
@@ -938,6 +994,8 @@ function UserProfileScreen({
   onOpenGrantUser: (user: AdminUser, bots: AdminBot[]) => void;
   onRevokeSubscription: (bot: AdminBot) => void;
   onEditFunnel: (bot: AdminBot) => void;
+  onOpenSettings?: (bot: AdminBot) => void;
+  onAddBot?: () => void;
   onManageVip: (action: "grant" | "revoke", days?: number, isPermanent?: boolean) => void;
   onManageFreeSlots: (direction: "grant" | "revoke", quantity: number) => void;
 }) {
@@ -1229,7 +1287,7 @@ function UserProfileScreen({
 
           {/* 4. Карточка: Боты пользователя с прямым переходом в воронку */}
           <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-            <header className="mb-5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <header className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-lg font-bold text-[var(--color-foreground)]">
                   Боты пользователя · {bots.length}
@@ -1238,6 +1296,15 @@ function UserProfileScreen({
                   1 опубликованный бот = 1 подписка на него. Открывайте и настраивайте воронку любого бота прямо отсюда.
                 </p>
               </div>
+              {onAddBot ? (
+                <button
+                  type="button"
+                  onClick={onAddBot}
+                  className="inline-flex h-9 items-center gap-1.5 self-start sm:self-auto rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+                >
+                  <Plus size={14} /> Добавить бота
+                </button>
+              ) : null}
             </header>
 
             {bots.length ? (
@@ -1255,6 +1322,7 @@ function UserProfileScreen({
                     onOpenGrant={onOpenGrantBot}
                     onRevokeSubscription={onRevokeSubscription}
                     onEditFunnel={onEditFunnel}
+                    onOpenSettings={onOpenSettings}
                   />
                 ))}
               </div>
@@ -1693,6 +1761,7 @@ function AdminBotRow({
   onOpenGrant,
   onRevokeSubscription,
   onEditFunnel,
+  onOpenSettings,
 }: {
   bot: AdminBot;
   busy: boolean;
@@ -1704,6 +1773,7 @@ function AdminBotRow({
   onOpenGrant?: (bot: AdminBot) => void;
   onRevokeSubscription?: (bot: AdminBot) => void;
   onEditFunnel?: (bot: AdminBot) => void;
+  onOpenSettings?: (bot: AdminBot) => void;
 }) {
   const isActive = bot.status === "active";
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1773,6 +1843,19 @@ function AdminBotRow({
             >
               <Workflow size={15} aria-hidden="true" />
               Заполнить воронку
+            </button>
+          ) : null}
+
+          {onOpenSettings ? (
+            <button
+              type="button"
+              onClick={() => onOpenSettings(bot)}
+              disabled={busy}
+              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              title="Настройки бота (токен от @BotFather, платёжка, реквизиты)"
+            >
+              <Settings size={15} aria-hidden="true" />
+              Настройки
             </button>
           ) : null}
 

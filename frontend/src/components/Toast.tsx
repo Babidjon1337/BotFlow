@@ -25,13 +25,34 @@ export const Toast = ({ message, type = 'success', duration = 3000, onClose }: T
     return () => clearTimeout(t);
   }, [effectiveDuration, onClose]);
 
-  // Render message lines, supporting \n and bullet points
+  // Render message lines, supporting \n and bullet points with styled categories
   const renderedMessage = useMemo(() => {
-    const lines = message.split('\n');
-    if (lines.length === 1) return <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-foreground)', minWidth: 0 }}>{message}</span>;
+    const lines = message.split('\n').filter(l => l.trim().length > 0);
+    if (lines.length <= 1) {
+      return <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-foreground)', minWidth: 0 }}>{message}</span>;
+    }
     return (
-      <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-foreground)', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <span style={{ fontSize: '14px', fontWeight: 400, color: 'var(--color-foreground)', minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
         {lines.map((line, i) => {
+          if (i === 0) {
+            return (
+              <span key={i} style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: 'var(--color-foreground)', marginBottom: '2px' }}>
+                {line}
+              </span>
+            );
+          }
+
+          const bulletMatch = line.match(/^(\s*•\s*)([^:]+:)(.*)$/);
+          if (bulletMatch) {
+            return (
+              <span key={i} style={{ display: 'block', paddingLeft: '4px', fontSize: '13px', lineHeight: 1.45 }}>
+                <span style={{ opacity: 0.7, marginRight: '4px' }}>•</span>
+                <strong style={{ fontWeight: 600, color: 'var(--color-foreground)' }}>{bulletMatch[2]}</strong>
+                <span style={{ opacity: 0.9 }}>{bulletMatch[3]}</span>
+              </span>
+            );
+          }
+
           const isBullet = line.trimStart().startsWith('•');
           return (
             <span key={i} style={{
@@ -39,6 +60,7 @@ export const Toast = ({ message, type = 'success', duration = 3000, onClose }: T
               paddingLeft: isBullet ? '4px' : undefined,
               fontSize: isBullet ? '13px' : '14px',
               opacity: isBullet ? 0.9 : 1,
+              lineHeight: 1.4,
             }}>
               {line}
             </span>

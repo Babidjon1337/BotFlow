@@ -406,7 +406,7 @@ export const apiService = {
   },
 
   async getAdminBotReadiness(botId: number) {
-    return fetchApi<{ isReady: boolean; reasons: string[] }>(
+    return fetchApi<{ isReady: boolean; reasons: string[]; summary?: string }>(
       `/api/admin/bots/${botId}/readiness`,
     );
   },
@@ -540,11 +540,16 @@ export const apiService = {
     paymentCreds?: Record<string, unknown>;
     offerUrl?: string;
     offerInstallments?: boolean;
+    ownerUserId?: number;
   }) {
     return fetchApi<ApiBot>("/api/bots", {
       method: "POST",
       body: JSON.stringify(data),
     });
+  },
+
+  async getBot(botId: string | number) {
+    return fetchApi<ApiBot>(`/api/bots/${botId}`);
   },
 
   async updateBot(
@@ -598,7 +603,7 @@ export const apiService = {
   },
 
   async getBotReadiness(botId: string | number) {
-    return fetchApi<{ isReady: boolean; reasons: string[] }>(
+    return fetchApi<{ isReady: boolean; reasons: string[]; summary?: string }>(
       `/api/bots/${botId}/readiness`
     );
   },
@@ -643,6 +648,7 @@ export const apiService = {
       message: string;
       funnelComplete: boolean;
       readinessReasons: string[];
+      readinessSummary?: string;
       botStatus: "active" | "draft";
       stopped: boolean;
     }>(`/api/bots/${botId}/funnel`, {

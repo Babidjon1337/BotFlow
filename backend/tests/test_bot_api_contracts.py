@@ -79,6 +79,7 @@ def test_readiness_endpoint_keeps_machine_shape_for_legacy_bot(monkeypatch):
                 "message": "Заполните текст блока «Старт». ",
             }
         ],
+        "summary": "Нельзя запустить бота:\n• Сценарий: заполните «Старт».",
     }
 
 

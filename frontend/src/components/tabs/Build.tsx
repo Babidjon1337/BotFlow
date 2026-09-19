@@ -622,7 +622,7 @@ export const Build = () => {
         setToastType("success");
         setToastMessage(savedFunnel.funnelComplete
           ? "Воронка успешно сохранена"
-          : `Воронка сохранена: ${savedFunnel.readinessReasons[0] || 'завершите настройку перед запуском'}`);
+          : (savedFunnel.readinessSummary || `Воронка сохранена: ${savedFunnel.readinessReasons[0] || 'завершите настройку перед запуском'}`));
       }
     } catch (error) {
       setIsSaving(false);

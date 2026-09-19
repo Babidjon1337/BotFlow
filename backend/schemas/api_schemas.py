@@ -133,6 +133,7 @@ class BotCreateApiRequest(BaseModel):
     offer_installments: bool = Field(default=False, alias="offerInstallments")
     payment_provider: Optional[str] = Field(None, alias="paymentProvider")
     payment_creds: Optional[Dict[str, Any]] = Field(default=None, alias="paymentCreds")
+    owner_user_id: Optional[int] = Field(None, alias="ownerUserId")
 
     model_config = ConfigDict(populate_by_name=True)
 

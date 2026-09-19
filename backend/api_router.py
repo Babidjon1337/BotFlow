@@ -23,6 +23,7 @@ from database.requests.bot_rq import (
     get_bot_by_id,
     get_bot_by_tg_id,
     create_user_if_not_exists,
+    get_user_by_id,
     get_user_by_tg_id,
     get_user_bots,
     get_bot_subscription,
@@ -112,7 +113,7 @@ from schemas.api_schemas import (
 )
 from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active, is_user_vip
-from services.funnel_readiness import evaluate_funnel_readiness
+from services.funnel_readiness import evaluate_funnel_readiness, format_readiness_errors
 from services.bot_lifecycle import BotLifecycleService
 from services.bot_entitlement import BotEntitlementService
 from services.bot_pricing import (
@@ -290,11 +291,7 @@ async def _toggle_client_bot(
         if "Bot is not ready for this lifecycle transition: " in msg:
             raw_reasons = msg.split("Bot is not ready for this lifecycle transition: ", 1)[1]
             reasons = [r.strip() for r in raw_reasons.split(";") if r.strip()]
-            if len(reasons) == 1:
-                user_msg = f"Нельзя запустить бота:\n• {reasons[0]}"
-            else:
-                bullet_list = "\n• ".join(reasons)
-                user_msg = f"Нельзя запустить бота:\n• {bullet_list}"
+            user_msg = format_readiness_errors(reasons)
         elif "Cannot transition archived or incompatible bot" in msg:
             if "archived" in msg:
                 user_msg = "Нельзя запустить архивированного бота."
@@ -755,7 +752,11 @@ async def admin_bot_readiness_endpoint(bot_id: int, request: Request):
     if not bot:
         raise HTTPException(status_code=404, detail="Бот не найден")
     is_ready, reasons = await _readiness_for_bot(bot)
-    return {"isReady": is_ready, "reasons": reasons}
+    return {
+        "isReady": is_ready,
+        "reasons": reasons,
+        "summary": format_readiness_errors(reasons) if not is_ready else "Воронка готова к запуску.",
+    }
 
 
 @api_router.post("/api/admin/bots/{bot_id}/archive-leads")
@@ -1110,9 +1111,16 @@ async def list_bots(request: Request):
 async def create_bot(request: Request, body: BotCreateApiRequest):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
-    user_bots = await get_user_bots(owner_id=user.id)
-    is_vip, _, _ = is_user_vip(user)
     is_admin = current_user.telegram_id in ADMIN_TELEGRAM_IDS
+    target_owner = user
+    if getattr(body, "owner_user_id", None) and is_admin:
+        owner_candidate = await get_user_by_id(body.owner_user_id)
+        if not owner_candidate:
+            raise HTTPException(status_code=404, detail="Указанный пользователь не найден.")
+        target_owner = owner_candidate
+
+    user_bots = await get_user_bots(owner_id=target_owner.id)
+    is_vip, _, _ = is_user_vip(target_owner)
     if not is_vip and not is_admin:
         allowed_slots = max(1, getattr(user, "lifetime_slots", 0) or 0)
         active_paid_count = 0
@@ -1174,7 +1182,7 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
     )
 
     bot = await create_bot_config(
-        owner_id=user.id,
+        owner_id=target_owner.id,
         display_name=body.display_name,
         tg_bot_id=tg_bot_id,
         username=username,
@@ -1185,11 +1193,11 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
         offer_installments=body.offer_installments,
     )
 
-    available_slots = (getattr(user, "lifetime_slots", 0) or 0) - sum(
+    available_slots = (getattr(target_owner, "lifetime_slots", 0) or 0) - sum(
         1 for b in user_bots if getattr(b, "has_lifetime_license", False)
     )
     if available_slots > 0 and not is_vip and getattr(bot, "id", None):
-        await apply_available_free_slot_to_bot(user.telegram_id, bot.id)
+        await apply_available_free_slot_to_bot(target_owner.telegram_id, bot.id)
     if not body.token:
         resp = BotApiResponse.from_orm_bot(bot, TG_WEBHOOK_URL, WEBHOOK_URL)
         return resp.model_dump(by_alias=True)
@@ -1384,6 +1392,7 @@ async def get_bot_readiness(bot_id: int, request: Request):
         "isReady": is_ready,
         "reasons": reasons,
         "reasonDetails": _readiness_reason_details(reasons),
+        "summary": format_readiness_errors(reasons) if not is_ready else "Воронка готова к запуску.",
     }
 
 
@@ -1524,6 +1533,7 @@ async def save_bot_funnel_endpoint(
         "message": "Воронка успешно сохранена",
         "funnelComplete": readiness.is_ready,
         "readinessReasons": list(readiness.reasons),
+        "readinessSummary": format_readiness_errors(readiness.reasons, header="Воронка сохранена. До запуска:") if not readiness.is_ready else "Воронка готова к запуску.",
         "botStatus": "draft" if stopped else getattr(saved_bot, "status", bot.status),
         "stopped": stopped,
     }

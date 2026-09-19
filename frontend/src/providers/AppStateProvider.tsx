@@ -241,9 +241,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
     if (botSelectionInProgressRef.current) return { status: 'busy' };
 
-    const targetBot = appState.bots.find(bot => bot.id === botId);
+    let targetBot = appState.bots.find(bot => bot.id === botId);
     if (!targetBot) {
-      return { status: 'error', message: 'Выбранный бот больше недоступен.' };
+      try {
+        const { apiService } = await import('../services/api');
+        const apiBot = await apiService.getBot(botId);
+        targetBot = mapApiBot(apiBot);
+        setAppState(prev => ({
+          ...prev,
+          bots: prev.bots.some(b => b.id === targetBot!.id) ? prev.bots : [...prev.bots, targetBot!],
+        }));
+      } catch {
+        return { status: 'error', message: 'Выбранный бот больше недоступен.' };
+      }
     }
 
     botSelectionInProgressRef.current = true;
@@ -267,7 +277,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setFunnelLoadState({ botId, status: 'ready', error: null });
       setAppState(prev => ({
         ...prev,
-        activeBot: prev.bots.find(bot => bot.id === botId) ?? targetBot,
+        bots: prev.bots.some(b => b.id === targetBot!.id) ? prev.bots : [...prev.bots, targetBot!],
+        activeBot: targetBot,
         isDirty: false,
       }));
       return { status: 'selected' };

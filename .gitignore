@@ -64,3 +64,4 @@ frontend/vite-dev.log
 .playwright-mcp
 /*.png
 tests/
+.kilo

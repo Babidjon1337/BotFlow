@@ -220,3 +220,139 @@ def evaluate_funnel_readiness(
             reasons.append("Сохраните рабочие реквизиты платёжной системы.")
 
     return FunnelReadiness(tuple(dict.fromkeys(reasons)))
+
+
+def format_russian_list(items: list[str]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} и {items[1]}"
+    return f"{', '.join(items[:-1])} и {items[-1]}"
+
+
+def format_readiness_errors(reasons: Iterable[str], header: str = "Нельзя запустить бота:") -> str:
+    """Group and format readiness reasons into structured, concise category lines.
+
+    Example:
+    Нельзя запустить бота:
+    • Сценарий: заполните «Старт», «Дожим 1» и «Дожим 2».
+    • Тариф «Тариф 1»: укажите название, цену, описание и выдачу.
+    • Оплата: подключите платёжную систему.
+    """
+    reasons_list = [r.strip() for r in reasons if r and r.strip()]
+    if not reasons_list:
+        return "Заполните сценарий перед запуском бота."
+
+    lines: list[str] = []
+
+    # 1. Сценарий
+    missing_blocks: list[str] = []
+    fill_blocks: list[str] = []
+    other_scenario: list[str] = []
+
+    for r in reasons_list:
+        m_add = re.search(r"Добавьте блок «([^»]+)»", r)
+        if m_add:
+            missing_blocks.append(f"«{m_add.group(1)}»")
+            continue
+
+        m_fill_text = re.search(r"Заполните текст блока «([^»]+)»", r)
+        if m_fill_text:
+            b = f"«{m_fill_text.group(1)}»"
+            if b not in fill_blocks:
+                fill_blocks.append(b)
+            continue
+
+        m_fill_btn = re.search(r"Заполните кнопку блока «([^»]+)»", r)
+        if m_fill_btn:
+            b = f"«{m_fill_btn.group(1)}»"
+            if b not in fill_blocks:
+                fill_blocks.append(b)
+            continue
+
+        if "актуальном формате" in r:
+            other_scenario.append("сохраните воронку в актуальном формате")
+        elif "дожимов" in r and "не больше" in r:
+            other_scenario.append("оставьте не больше 5 дожимов")
+        elif "вторую кнопку" in r:
+            other_scenario.append("в гибридном режиме заполните кнопки связи с менеджером")
+
+    scenario_parts: list[str] = []
+    if missing_blocks:
+        scenario_parts.append(f"добавьте {format_russian_list(missing_blocks)}")
+    if fill_blocks:
+        scenario_parts.append(f"заполните {format_russian_list(fill_blocks)}")
+    if other_scenario:
+        scenario_parts.extend(other_scenario)
+
+    if scenario_parts:
+        lines.append(f"Сценарий: {format_russian_list(scenario_parts)}.")
+
+    # 2. Тарифы
+    tariff_issues: dict[str, list[str]] = {}
+    general_tariff: list[str] = []
+
+    if any("хотя бы один тариф" in r for r in reasons_list):
+        general_tariff.append("добавьте хотя бы один тариф")
+    if any("текст выбора тарифов" in r for r in reasons_list):
+        general_tariff.append("добавьте текст выбора тарифов")
+
+    for r in reasons_list:
+        m_t = re.search(r"тариф (\d+)", r, re.IGNORECASE)
+        if m_t:
+            num = m_t.group(1)
+            t_key = f"Тариф {num}"
+            missing_fields = tariff_issues.setdefault(t_key, [])
+            if "название" in r and "название" not in missing_fields:
+                missing_fields.append("название")
+            if "цену" in r and "цену" not in missing_fields:
+                missing_fields.append("цену")
+            if "описание" in r and "описание" not in missing_fields:
+                missing_fields.append("описание")
+            if ("выдачу" in r or "канал или группу" in r or "профиль доступа" in r) and "выдачу" not in missing_fields:
+                missing_fields.append("выдачу")
+
+    if general_tariff:
+        lines.append(f"Тарифы: {format_russian_list(general_tariff)}.")
+
+    for t_name, fields in tariff_issues.items():
+        if fields:
+            lines.append(f"Тариф «{t_name}»: укажите {format_russian_list(fields)}.")
+
+    # 3. Оплата
+    payment_parts: list[str] = []
+    if any("платёжную систему" in r and "реквизиты" not in r for r in reasons_list):
+        payment_parts.append("подключите платёжную систему")
+    if any("реквизиты" in r for r in reasons_list):
+        payment_parts.append("сохраните реквизиты платёжной системы")
+    if any("режим продажи" in r for r in reasons_list):
+        payment_parts.append("выберите режим продажи")
+
+    if payment_parts:
+        lines.append(f"Оплата: {format_russian_list(payment_parts)}.")
+
+    # 4. Менеджер
+    if any("менеджер" in r.lower() for r in reasons_list) and not any("вторую кнопку" in r for r in reasons_list):
+        lines.append("Менеджер: укажите ссылку и текст обращения.")
+
+    # 5. Остальные причины
+    handled_keywords = [
+        "старт", "дожим", "тариф", "платёжн", "реквизит",
+        "менеджер", "оплата и выдача", "воронку", "продажи",
+    ]
+    for r in reasons_list:
+        if not any(kw in r.lower() for kw in handled_keywords):
+            clean = r.rstrip(".")
+            if clean not in lines:
+                lines.append(f"{clean}.")
+
+    if not lines:
+        lines = [r.rstrip(".") + "." for r in reasons_list[:3]]
+
+    bullet_lines = "\n• ".join(lines)
+    if header:
+        return f"{header}\n• {bullet_lines}"
+    return f"• {bullet_lines}"
+

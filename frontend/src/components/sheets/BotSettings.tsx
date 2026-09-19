@@ -209,7 +209,7 @@ export const BotSettings = ({ appState, onClose, onSave }: BotSettingsProps) => 
         ? "Настройки сохранены: бот остановлен"
         : savedFunnel.funnelComplete
           ? "Настройки сохранены"
-          : `Настройки сохранены: ${savedFunnel.readinessReasons[0] || 'завершите воронку'}`);
+          : (savedFunnel.readinessSummary || `Настройки сохранены: ${savedFunnel.readinessReasons[0] || 'завершите воронку'}`));
       onSave();
       onClose();
     } catch (error) {
