@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DeliverableType = Literal["channel", "group", "file", "link"]
-PaymentType = Literal["one_time", "recurring"]
-SalesMode = Literal["auto", "manual", "hybrid"]
+PaymentType = Literal["one_time", "recurring", "subscription"]
+SalesMode = Literal["auto", "manual", "hybrid", "application"]
 
 
 class DeliverableSchema(BaseModel):
@@ -35,25 +35,41 @@ class DeliverableSchema(BaseModel):
     @classmethod
     def normalize_aliases(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            # Normalise path / filePath
+            # Normalise path / filePath / fileUrl
             if "path" in data and "filePath" not in data and "file_path" not in data:
                 data["filePath"] = data["path"]
             if "file_path" in data and "filePath" not in data:
                 data["filePath"] = data["file_path"]
-            # Normalise size / sizeBytes
+            if "fileUrl" in data and "filePath" not in data and "url" not in data:
+                data["url"] = data["fileUrl"]
+                data["filePath"] = data["fileUrl"]
+
+            # Normalise size / sizeBytes / fileSize
+            if "fileSize" in data and "sizeBytes" not in data and "size_bytes" not in data:
+                data["sizeBytes"] = data["fileSize"]
             if "size" in data and "sizeBytes" not in data and "size_bytes" not in data:
                 data["sizeBytes"] = data["size"]
-            # Normalise originalName / filename
+
+            # Normalise originalName / filename / fileName
+            if "fileName" in data and "filename" not in data:
+                data["filename"] = data["fileName"]
             if "originalName" in data and "filename" not in data:
                 data["filename"] = data["originalName"]
             if "original_name" in data and "filename" not in data:
                 data["filename"] = data["original_name"]
+
+            # Normalise linkUrl
+            if "linkUrl" in data and not data.get("url"):
+                data["url"] = data["linkUrl"]
+
             # Normalise url / file_path for files
             if data.get("type") == "file":
                 if not data.get("url") and (data.get("filePath") or data.get("file_path")):
                     data["url"] = data.get("filePath") or data.get("file_path")
                 if not (data.get("filePath") or data.get("file_path")) and data.get("url"):
                     data["filePath"] = data.get("url")
+                if not data.get("filename") and data.get("title"):
+                    data["filename"] = data.get("title")
         return data
 
     @model_validator(mode="after")
@@ -85,6 +101,20 @@ class TariffCreateRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_create_request(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pt = data.get("paymentType") or data.get("payment_type")
+            if pt == "subscription":
+                data["paymentType"] = "recurring"
+                data["payment_type"] = "recurring"
+            sm = data.get("salesMode") or data.get("sales_mode")
+            if sm == "application":
+                data["salesMode"] = "manual"
+                data["sales_mode"] = "manual"
+        return data
+
     @model_validator(mode="after")
     def validate_recurring(self) -> "TariffCreateRequest":
         if self.payment_type == "recurring" and not self.recurring_period:
@@ -104,6 +134,20 @@ class TariffUpdateRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_update_request(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pt = data.get("paymentType") or data.get("payment_type")
+            if pt == "subscription":
+                data["paymentType"] = "recurring"
+                data["payment_type"] = "recurring"
+            sm = data.get("salesMode") or data.get("sales_mode")
+            if sm == "application":
+                data["salesMode"] = "manual"
+                data["sales_mode"] = "manual"
+        return data
+
 
 class TariffApiResponse(BaseModel):
     id: str
@@ -115,9 +159,12 @@ class TariffApiResponse(BaseModel):
     recurring_period: Optional[str] = Field(None, alias="recurringPeriod")
     sales_mode: str = Field(..., alias="salesMode")
     is_active: bool = Field(..., alias="isActive")
+    is_active_in_funnel: bool = Field(default=True, alias="isActiveInFunnel")
     deliverables: List[Dict[str, Any]] = Field(default_factory=list)
     total_buyers: int = Field(default=0, alias="totalBuyers")
+    buyers_count: int = Field(default=0, alias="buyersCount")
     total_revenue: float = Field(default=0.0, alias="totalRevenue")
+    revenue: float = Field(default=0.0, alias="revenue")
     created_at: Optional[str] = Field(None, alias="createdAt")
     updated_at: Optional[str] = Field(None, alias="updatedAt")
 
@@ -138,6 +185,8 @@ class TariffApiResponse(BaseModel):
         raw_deliverables = getattr(tariff, "deliverables", []) or []
         price_val = float(tariff.price) if tariff.price is not None else 0.0
         revenue_val = float(tariff.total_revenue) if tariff.total_revenue is not None else 0.0
+        is_act = bool(tariff.is_active)
+        buyers = int(tariff.total_buyers or 0)
         return cls(
             id=str(tariff.id),
             bot_id=tariff.bot_id,
@@ -147,10 +196,13 @@ class TariffApiResponse(BaseModel):
             payment_type=tariff.payment_type,
             recurring_period=tariff.recurring_period,
             sales_mode=tariff.sales_mode,
-            is_active=tariff.is_active,
+            is_active=is_act,
+            is_active_in_funnel=is_act,
             deliverables=list(raw_deliverables),
-            total_buyers=tariff.total_buyers,
+            total_buyers=buyers,
+            buyers_count=buyers,
             total_revenue=revenue_val,
+            revenue=revenue_val,
             created_at=created_str,
             updated_at=updated_str,
         )
@@ -158,8 +210,11 @@ class TariffApiResponse(BaseModel):
 
 class TariffStatsResponse(BaseModel):
     total_tariffs: int = Field(..., alias="totalTariffs")
+    total_count: int = Field(..., alias="totalCount")
     active_count: int = Field(..., alias="activeCount")
+    active_in_funnel_count: int = Field(..., alias="activeInFunnelCount")
     total_buyers: int = Field(..., alias="totalBuyers")
+    buyers_count: int = Field(..., alias="buyersCount")
     total_revenue: float = Field(..., alias="totalRevenue")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -174,9 +229,13 @@ class TariffListResponse(BaseModel):
 
 
 class TariffFileUploadResponse(BaseModel):
+    id: Optional[str] = None
     path: str
+    file_path: Optional[str] = Field(None, alias="filePath")
     url: str
+    file_url: Optional[str] = Field(None, alias="fileUrl")
     filename: str
+    file_name: Optional[str] = Field(None, alias="fileName")
     original_name: str = Field(..., alias="originalName")
     size: int
     size_bytes: int = Field(..., alias="sizeBytes")

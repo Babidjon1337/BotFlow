@@ -212,12 +212,15 @@ async def save_funnel(bot_id: int, funnel: FunnelSchema, request: Request):
     bot = await get_owned_bot(bot_id, request)
     schema = funnel.model_dump(by_alias=True)
     from database.requests.connected_chat_rq import list_connected_chats
+    from database.requests.tariff_rq import list_tariffs_by_bot_id
     connected_chats = await list_connected_chats(bot_id)
+    bot_tariffs = await list_tariffs_by_bot_id(bot_id)
     readiness = evaluate_funnel_readiness(
         schema,
         has_payment_provider=bool(bot.payment_provider),
         has_payment_credentials=bool(bot.payment_creds_enc),
         connected_chat_ids={chat.chat_id for chat in connected_chats},
+        bot_tariffs=bot_tariffs,
     )
     saved_bot = await update_bot_funnel(
         bot_id,

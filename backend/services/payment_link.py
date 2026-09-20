@@ -445,10 +445,10 @@ async def send_success_message(
                             action_data = first_del.get("chatId") or first_del.get("chat_id") or ""
                         elif del_type == "file":
                             action_type = "file"
-                            action_data = first_del.get("filePath") or first_del.get("file_path") or first_del.get("url") or first_del.get("fileId") or ""
+                            action_data = first_del.get("filePath") or first_del.get("file_path") or first_del.get("url") or first_del.get("fileUrl") or first_del.get("fileId") or ""
                         else:
                             action_type = "link"
-                            action_data = first_del.get("url") or ""
+                            action_data = first_del.get("url") or first_del.get("linkUrl") or ""
                         has_delivery = True
                     else:
                         has_delivery = tariff.get(

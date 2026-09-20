@@ -365,3 +365,116 @@ def test_bot_activation_allowed_for_manual_tariff_without_payment(monkeypatch):
         )
     )
     assert resp["botStatus"] == "active"
+
+
+def test_deliverable_schema_frontend_aliases():
+    """DeliverableSchema accepts frontend field names fileName, fileUrl, fileSize, linkUrl."""
+    file_item = DeliverableSchema.model_validate({
+        "type": "file",
+        "fileUrl": "/uploads/tariffs/18/presentation.pptx",
+        "fileName": "presentation.pptx",
+        "fileSize": 2048,
+    })
+    assert file_item.type == "file"
+    assert file_item.file_path == "/uploads/tariffs/18/presentation.pptx"
+    assert file_item.url == "/uploads/tariffs/18/presentation.pptx"
+    assert file_item.filename == "presentation.pptx"
+    assert file_item.size_bytes == 2048
+
+    link_item = DeliverableSchema.model_validate({
+        "type": "link",
+        "linkUrl": "https://t.me/my_channel",
+        "title": "Ссылка на канал",
+    })
+    assert link_item.type == "link"
+    assert link_item.url == "https://t.me/my_channel"
+
+
+def test_tariff_create_request_normalization():
+    """TariffCreateRequest normalizes 'subscription' -> 'recurring' and 'application' -> 'manual'."""
+    req = TariffCreateRequest.model_validate({
+        "name": "Подписка на клуб",
+        "paymentType": "subscription",
+        "salesMode": "application",
+        "deliverables": [],
+    })
+    assert req.payment_type == "recurring"
+    assert req.recurring_period == "1_month"
+    assert req.sales_mode == "manual"
+
+
+def test_tariff_update_request_normalization():
+    """TariffUpdateRequest normalizes 'subscription' -> 'recurring' and 'application' -> 'manual'."""
+    req = TariffUpdateRequest.model_validate({
+        "paymentType": "subscription",
+        "salesMode": "application",
+    })
+    assert req.payment_type == "recurring"
+    assert req.sales_mode == "manual"
+
+
+def test_tariff_api_response_frontend_aliases():
+    """TariffApiResponse exposes both backend and frontend aliases."""
+    tariff = _fake_tariff(total_buyers=5, total_revenue=Decimal("7500.00"))
+    resp = TariffApiResponse.from_orm_tariff(tariff)
+    data = resp.model_dump(by_alias=True)
+    assert data["isActiveInFunnel"] is True
+    assert data["buyersCount"] == 5
+    assert data["revenue"] == 7500.0
+    assert data["totalBuyers"] == 5
+    assert data["totalRevenue"] == 7500.0
+
+
+def test_save_funnel_builder_checks_bot_tariffs_readiness(monkeypatch):
+    """Saving funnel through builder checks active auto tariffs for payment provider."""
+    auto_tariff = _fake_tariff(is_active=True, sales_mode="auto")
+    bot = SimpleNamespace(
+        id=18,
+        owner_id=9,
+        owner=SimpleNamespace(),
+        payment_provider=None,  # No payment provider!
+        payment_creds_enc=None,
+        status="draft",
+        lifecycle_status="draft",
+        pause_reason=None,
+        funnel_schema={},
+        tariffs=[auto_tariff],
+    )
+    monkeypatch.setattr(api_router, "get_owned_bot", AsyncMock(return_value=bot))
+    monkeypatch.setattr(api_router, "_tariffs_for_bot", AsyncMock(return_value=[auto_tariff]))
+    monkeypatch.setattr(api_router, "list_connected_chats", AsyncMock(return_value=[]))
+    monkeypatch.setattr(api_router, "update_bot_funnel", AsyncMock(return_value=bot))
+
+    from schemas.api_schemas import FunnelUpdateApiRequest
+
+    save_body = FunnelUpdateApiRequest.model_validate({
+        "nodes": [
+            {
+                "id": "start",
+                "step": "Старт",
+                "subtitle": "Первое сообщение",
+                "delay": "0 сек",
+                "kind": "message",
+                "content": "Приветствуем!",
+                "buttonText": "Далее",
+            },
+            {
+                "id": "payment",
+                "step": "Оплата",
+                "subtitle": "Оплата и выдача",
+                "delay": "0 сек",
+                "kind": "payment",
+                "content": "Выберите способ оплаты:",
+                "buttonText": "Оплатить",
+                "paymentMode": "auto",
+            },
+        ],
+        "funnelComplete": True,
+    })
+
+    resp = asyncio.run(
+        api_router.save_bot_funnel_endpoint(18, object(), save_body)
+    )
+    assert resp["funnelComplete"] is False
+    assert any("платёжную систему" in r for r in resp["readinessReasons"])
+
