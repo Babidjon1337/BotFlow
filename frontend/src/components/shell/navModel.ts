@@ -23,6 +23,7 @@ export const ACCOUNT_TAB_ICONS: Record<AccountTab, LucideIcon> = {
 export const BOT_VIEW_ICONS: Record<BotView, LucideIcon> = {
   overview: LayoutDashboard,
   scenario: FileText,
+  tariffs: Banknote,
   integrations: Plug,
   audience: Users,
   broadcasts: Send,

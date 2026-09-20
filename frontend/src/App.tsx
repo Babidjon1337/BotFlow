@@ -23,6 +23,7 @@ import type { AccountTab, AppRoute } from './routes';
 import { AppShell } from './components/shell/AppShell';
 import { BotIntegrationsScreen } from './components/screens/BotIntegrationsScreen';
 import { BotOverviewScreen } from './components/screens/BotOverviewScreen';
+import { BotTariffsScreen } from './components/screens/BotTariffsScreen';
 import { BroadcastsScreen } from './components/screens/BroadcastsScreen';
 
 type TelegramWebApp = {
@@ -429,6 +430,12 @@ export default function App() {
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'scenario' && (
               funnelWorkspaceReady ? <Build key="scenario" /> : <FunnelLoadStateView key="scenario-state" />
+            )}
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'tariffs' && appState.activeBot && (
+              <BotTariffsScreen
+                key="tariffs"
+                bot={appState.activeBot}
+              />
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'integrations' && appState.activeBot && (
               <BotIntegrationsScreen

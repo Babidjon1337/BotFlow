@@ -1,4 +1,4 @@
-import type { FunnelNode } from "../types";
+import type { FunnelNode, TariffItem, TariffMetrics } from "../types";
 import type { ApiBot } from "./botMapper";
 
 export type SubscriptionStatus = "none" | "active" | "expired";
@@ -851,6 +851,50 @@ export const apiService = {
     return fetchApi<BillingState>("/api/billing/cancel", {
       method: "POST",
       body: JSON.stringify(botId ? { botId } : {}),
+    });
+  },
+
+  async getTariffs(botId: string | number) {
+    return fetchApi<{ tariffs: TariffItem[]; metrics?: TariffMetrics } | TariffItem[]>(
+      `/api/bots/${botId}/tariffs`
+    );
+  },
+
+  async createTariff(botId: string | number, payload: Partial<TariffItem>) {
+    return fetchApi<TariffItem>(`/api/bots/${botId}/tariffs`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async updateTariff(botId: string | number, tariffId: string, payload: Partial<TariffItem>) {
+    return fetchApi<TariffItem>(`/api/bots/${botId}/tariffs/${tariffId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteTariff(botId: string | number, tariffId: string) {
+    return fetchApi<{ status: string }>(`/api/bots/${botId}/tariffs/${tariffId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async uploadTariffFile(botId: string | number, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return fetchApi<{
+      id?: string;
+      url?: string;
+      filePath?: string;
+      filename?: string;
+      fileName?: string;
+      originalName?: string;
+      size?: number;
+      sizeBytes?: number;
+    }>(`/api/bots/${botId}/tariffs/upload-file`, {
+      method: "POST",
+      body: formData,
     });
   },
 };

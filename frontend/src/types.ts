@@ -1,3 +1,5 @@
+export * from './types/tariff';
+
 export interface Tariff {
   id: string;
   name: string;
