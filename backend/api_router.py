@@ -1,12 +1,15 @@
 import asyncio
 import json
 import io
+import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
+import uuid
 from uuid import UUID
 from sqlalchemy import select
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from loggers import logger
 from config import (
     ADMIN_TELEGRAM_IDS,
@@ -64,6 +67,14 @@ from database.requests.client_payment_rq import (
 from database.requests.billing_rq import cancel_subscription_auto_renew
 from database.requests.gateway_rq import create_gateway_connection, list_gateway_connections
 from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
+from database.requests.tariff_rq import (
+    create_tariff,
+    get_tariff_by_id,
+    list_tariffs_by_bot_id,
+    update_tariff,
+    delete_tariff,
+    get_tariff_summary_stats,
+)
 from database.requests.admin_rq import (
     get_admin_overview,
     get_admin_user_detail,
@@ -110,6 +121,12 @@ from schemas.api_schemas import (
     BroadcastApiResponse,
     BroadcastCreateRequest,
     BroadcastListResponse,
+    TariffApiResponse,
+    TariffCreateRequest,
+    TariffFileUploadResponse,
+    TariffListResponse,
+    TariffStatsResponse,
+    TariffUpdateRequest,
 )
 from services.saas_billing import BillingError, PRODUCTS, create_checkout
 from services.entitlements import available_lifetime_licenses, is_pro_active, is_user_vip
@@ -161,14 +178,30 @@ def _validate_installments(provider: str | None, enabled: bool) -> None:
         )
 
 
+async def _tariffs_for_bot(bot) -> list:
+    if hasattr(bot, "tariffs") and bot.tariffs is not None:
+        try:
+            return list(bot.tariffs)
+        except Exception:
+            pass
+    if hasattr(bot, "id") and isinstance(bot.id, int):
+        try:
+            return await list_tariffs_by_bot_id(bot.id)
+        except Exception:
+            return []
+    return []
+
+
 async def _readiness_for_bot(bot) -> tuple[bool, list[str]]:
     """Return the only publishability decision used by API endpoints."""
     connected_chats = await list_connected_chats(bot.id)
+    bot_tariffs = await _tariffs_for_bot(bot)
     readiness = evaluate_funnel_readiness(
         bot.funnel_schema,
         has_payment_provider=bool(bot.payment_provider),
         has_payment_credentials=bool(bot.payment_creds_enc),
         connected_chat_ids={chat.chat_id for chat in connected_chats},
+        bot_tariffs=bot_tariffs,
     )
     return readiness.is_ready, list(readiness.reasons)
 
@@ -200,6 +233,7 @@ async def _connected_chat_ids_for_bot(bot) -> set[str]:
 
 bot_lifecycle_service = BotLifecycleService(
     connected_chat_ids_for=_connected_chat_ids_for_bot,
+    tariffs_for=_tariffs_for_bot,
 )
 bot_pricing_service = BotPricingService()
 bot_entitlement_service = BotEntitlementService()
@@ -257,6 +291,23 @@ async def _toggle_client_bot(
     )
 
     if new_status == "active":
+        bot_tariffs = await _tariffs_for_bot(bot)
+        auto_tariffs = [
+            t for t in bot_tariffs
+            if t.is_active and t.sales_mode in {"auto", "hybrid"}
+        ]
+        if auto_tariffs:
+            if not bot.payment_provider:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Нельзя запустить бота: Подключите платёжную систему.",
+                )
+            if not bot.payment_creds_enc:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Нельзя запустить бота: Сохраните рабочие реквизиты платёжной системы.",
+                )
+
         is_vip = is_pro_active(bot.owner)
         if is_vip or allow_admin_entitlement_bypass:
             # VIP owners and platform admins can publish any bot without per-bot payment
@@ -1489,6 +1540,185 @@ async def delete_connected_chat_endpoint(bot_id: int, chat_id: str, request: Req
     return {"status": "ok"}
 
 
+# =====================================================================
+# TARIFFS & DELIVERABLES ENDPOINTS
+# =====================================================================
+
+MAX_TARIFF_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
+@api_router.get("/api/bots/{bot_id}/tariffs", response_model=TariffListResponse)
+async def list_bot_tariffs_endpoint(bot_id: int, request: Request):
+    """List all tariffs configured for a bot, along with summary statistics."""
+    await get_owned_bot(bot_id, request)
+    tariffs = await list_tariffs_by_bot_id(bot_id)
+    stats = await get_tariff_summary_stats(bot_id)
+    return {
+        "tariffs": [TariffApiResponse.from_orm_tariff(t).model_dump(by_alias=True) for t in tariffs],
+        "total": len(tariffs),
+        "stats": {
+            "totalTariffs": stats["total_tariffs"],
+            "activeCount": stats["active_count"],
+            "totalBuyers": stats["total_buyers"],
+            "totalRevenue": float(stats["total_revenue"]),
+        },
+    }
+
+
+@api_router.get("/api/bots/{bot_id}/tariffs/stats", response_model=TariffStatsResponse)
+@api_router.get("/api/bots/{bot_id}/tariffs/summary", response_model=TariffStatsResponse)
+async def get_bot_tariffs_stats_endpoint(bot_id: int, request: Request):
+    """Return summary statistics for bot tariffs (total, active, buyers, revenue)."""
+    await get_owned_bot(bot_id, request)
+    stats = await get_tariff_summary_stats(bot_id)
+    return {
+        "totalTariffs": stats["total_tariffs"],
+        "activeCount": stats["active_count"],
+        "totalBuyers": stats["total_buyers"],
+        "totalRevenue": float(stats["total_revenue"]),
+    }
+
+
+@api_router.post("/api/bots/{bot_id}/tariffs/upload", response_model=TariffFileUploadResponse)
+async def upload_tariff_deliverable_file_endpoint(
+    bot_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """Upload any file type as a deliverable for a tariff (up to 100MB)."""
+    await get_owned_bot(bot_id, request)
+
+    payload = await file.read(MAX_TARIFF_FILE_SIZE + 1)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Файл пуст.")
+    if len(payload) > MAX_TARIFF_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="Размер файла не должен превышать 100 МБ.")
+
+    orig_name = file.filename or "deliverable_file"
+    base_name = os.path.basename(orig_name).replace(" ", "_")
+    safe_name = f"{uuid.uuid4().hex[:12]}_{base_name}"
+
+    upload_dir = Path(__file__).resolve().parent / "uploads" / "tariffs" / str(bot_id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target_path = upload_dir / safe_name
+
+    with open(target_path, "wb") as f:
+        f.write(payload)
+
+    rel_path = f"/uploads/tariffs/{bot_id}/{safe_name}"
+    return {
+        "path": rel_path,
+        "url": rel_path,
+        "filename": orig_name,
+        "originalName": orig_name,
+        "size": len(payload),
+        "sizeBytes": len(payload),
+    }
+
+
+@api_router.get("/api/bots/{bot_id}/tariffs/files/{filename}")
+async def get_tariff_deliverable_file_endpoint(
+    bot_id: int,
+    filename: str,
+    request: Request,
+):
+    """Download a previously uploaded tariff deliverable file."""
+    await get_owned_bot(bot_id, request)
+    safe_filename = os.path.basename(filename)
+    file_path = Path(__file__).resolve().parent / "uploads" / "tariffs" / str(bot_id) / safe_filename
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Файл не найден.")
+    return FileResponse(path=file_path, filename=safe_filename)
+
+
+@api_router.post("/api/bots/{bot_id}/tariffs", response_model=TariffApiResponse)
+async def create_tariff_endpoint(
+    bot_id: int,
+    request: Request,
+    body: TariffCreateRequest,
+):
+    """Create a new tariff belonging to the user's bot."""
+    await get_owned_bot(bot_id, request)
+
+    deliverables_data = [d.model_dump(by_alias=True) for d in body.deliverables]
+    tariff = await create_tariff(
+        bot_id=bot_id,
+        name=body.name,
+        description=body.description,
+        price=body.price,
+        payment_type=body.payment_type,
+        recurring_period=body.recurring_period,
+        sales_mode=body.sales_mode,
+        is_active=body.is_active,
+        deliverables=deliverables_data,
+    )
+    return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
+
+
+@api_router.get("/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse)
+async def get_tariff_endpoint(
+    bot_id: int,
+    tariff_id: str,
+    request: Request,
+):
+    """Get a single tariff by ID, ensuring it belongs to the user's bot."""
+    await get_owned_bot(bot_id, request)
+    tariff = await get_tariff_by_id(tariff_id)
+    if not tariff or tariff.bot_id != bot_id:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+    return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
+
+
+@api_router.put("/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse)
+async def update_tariff_endpoint(
+    bot_id: int,
+    tariff_id: str,
+    request: Request,
+    body: TariffUpdateRequest,
+):
+    """Update a tariff, ensuring it belongs to the user's bot."""
+    await get_owned_bot(bot_id, request)
+    tariff = await get_tariff_by_id(tariff_id)
+    if not tariff or tariff.bot_id != bot_id:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+
+    deliverables_data = (
+        [d.model_dump(by_alias=True) for d in body.deliverables]
+        if body.deliverables is not None
+        else None
+    )
+    updated = await update_tariff(
+        tariff.id,
+        name=body.name,
+        description=body.description,
+        price=body.price,
+        payment_type=body.payment_type,
+        recurring_period=body.recurring_period,
+        sales_mode=body.sales_mode,
+        is_active=body.is_active,
+        deliverables=deliverables_data,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+    return TariffApiResponse.from_orm_tariff(updated).model_dump(by_alias=True)
+
+
+@api_router.delete("/api/bots/{bot_id}/tariffs/{tariff_id}")
+async def delete_tariff_endpoint(
+    bot_id: int,
+    tariff_id: str,
+    request: Request,
+):
+    """Delete a tariff, ensuring it belongs to the user's bot."""
+    await get_owned_bot(bot_id, request)
+    tariff = await get_tariff_by_id(tariff_id)
+    if not tariff or tariff.bot_id != bot_id:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+
+    await delete_tariff(tariff.id)
+    return {"status": "ok", "message": "Тариф удален", "tariffId": str(tariff.id)}
+
+
 @api_router.put("/api/bots/{bot_id}/funnel")
 @api_router.post("/api/bots/{bot_id}/funnel")
 async def save_bot_funnel_endpoint(
@@ -2143,4 +2373,131 @@ async def sse_events_endpoint(request: Request):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ── Каталог тарифов бота ──────────────────────────────────────────
+
+
+@api_router.get("/api/bots/{bot_id}/tariffs", response_model=TariffListResponse)
+async def list_bot_tariffs_endpoint(bot_id: int, request: Request):
+    bot = await get_owned_bot(bot_id, request)
+    tariffs = await list_tariffs_by_bot_id(bot.id)
+    stats = await get_tariff_summary_stats(bot.id)
+    return {
+        "tariffs": [
+            TariffApiResponse.from_orm_tariff(t).model_dump(by_alias=True)
+            for t in tariffs
+        ],
+        "total": len(tariffs),
+        "stats": {
+            "totalTariffs": stats["total_tariffs"],
+            "activeCount": stats["active_count"],
+            "totalBuyers": stats["total_buyers"],
+            "totalRevenue": float(stats["total_revenue"]),
+        },
+    }
+
+
+@api_router.post("/api/bots/{bot_id}/tariffs", response_model=TariffApiResponse)
+async def create_bot_tariff_endpoint(
+    bot_id: int, request: Request, body: TariffCreateRequest
+):
+    bot = await get_owned_bot(bot_id, request)
+    tariff = await create_tariff(
+        bot_id=bot.id,
+        name=body.name,
+        description=body.description,
+        price=body.price,
+        payment_type=body.payment_type,
+        recurring_period=body.recurring_period,
+        sales_mode=body.sales_mode,
+        is_active=body.is_active,
+        deliverables=[d.model_dump(by_alias=True) for d in body.deliverables],
+    )
+    return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
+
+
+@api_router.get("/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse)
+async def get_bot_tariff_endpoint(bot_id: int, tariff_id: str, request: Request):
+    bot = await get_owned_bot(bot_id, request)
+    tariff = await get_tariff_by_id(tariff_id)
+    if not tariff or tariff.bot_id != bot.id:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+    return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
+
+
+@api_router.put("/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse)
+async def update_bot_tariff_endpoint(
+    bot_id: int, tariff_id: str, request: Request, body: TariffUpdateRequest
+):
+    bot = await get_owned_bot(bot_id, request)
+    tariff = await get_tariff_by_id(tariff_id)
+    if not tariff or tariff.bot_id != bot.id:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+    updates = {}
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.description is not None:
+        updates["description"] = body.description
+    if body.price is not None:
+        updates["price"] = body.price
+    if body.payment_type is not None:
+        updates["payment_type"] = body.payment_type
+    if body.recurring_period is not None:
+        updates["recurring_period"] = body.recurring_period
+    if body.sales_mode is not None:
+        updates["sales_mode"] = body.sales_mode
+    if body.is_active is not None:
+        updates["is_active"] = body.is_active
+    if body.deliverables is not None:
+        updates["deliverables"] = [d.model_dump(by_alias=True) for d in body.deliverables]
+    updated = await update_tariff(tariff.id, **updates)
+    return TariffApiResponse.from_orm_tariff(updated).model_dump(by_alias=True)
+
+
+@api_router.delete("/api/bots/{bot_id}/tariffs/{tariff_id}")
+async def delete_bot_tariff_endpoint(
+    bot_id: int, tariff_id: str, request: Request
+):
+    bot = await get_owned_bot(bot_id, request)
+    tariff = await get_tariff_by_id(tariff_id)
+    if not tariff or tariff.bot_id != bot.id:
+        raise HTTPException(status_code=404, detail="Тариф не найден")
+    await delete_tariff(tariff.id)
+    return {"status": "ok"}
+
+
+@api_router.post("/api/bots/{bot_id}/upload")
+@api_router.post("/api/bots/{bot_id}/tariffs/upload-file")
+async def upload_tariff_deliverable_file(
+    bot_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    node_id: str = Query("tariffs"),
+):
+    bot = await get_owned_bot(bot_id, request)
+    upload_dir = Path("static/uploads") / str(bot.id)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    content = await file.read(50 * 1024 * 1024 + 1)
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Файл не должен превышать 50 МБ")
+    file_uuid = uuid.uuid4()
+    safe_filename = f"{file_uuid}_{file.filename}"
+    target_path = upload_dir / safe_filename
+    target_path.write_bytes(content)
+    url = f"/static/uploads/{bot.id}/{safe_filename}"
+    size = len(content)
+    return {
+        "id": str(file_uuid),
+        "path": str(target_path),
+        "filePath": str(target_path),
+        "url": url,
+        "fileUrl": url,
+        "filename": file.filename or "file",
+        "fileName": file.filename or "file",
+        "originalName": file.filename or "file",
+        "size": size,
+        "sizeBytes": size,
+    }
+
 

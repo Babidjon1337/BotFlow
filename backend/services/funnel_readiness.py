@@ -63,6 +63,7 @@ def evaluate_funnel_readiness(
     has_payment_provider: bool,
     has_payment_credentials: bool,
     connected_chat_ids: set[str] | None = None,
+    bot_tariffs: list[Any] | None = None,
 ) -> FunnelReadiness:
     """Validate all conditions required to make a bot public.
 
@@ -117,9 +118,20 @@ def evaluate_funnel_readiness(
     mode = _node_value(payment, "payment_mode", "paymentMode") or "auto"
     selection_text = _node_value(payment, "tariff_selection_text", "tariffSelectionText")
     tariffs = payment.get("tariffs")
-    if not isinstance(tariffs, list) or not tariffs:
+    has_custom_tariffs = bool(
+        bot_tariffs
+        and any(
+            (
+                getattr(t, "is_active", True)
+                if hasattr(t, "is_active")
+                else (t.get("isActive", t.get("is_active", True)) if isinstance(t, dict) else True)
+            )
+            for t in bot_tariffs
+        )
+    )
+    if (not isinstance(tariffs, list) or not tariffs) and not has_custom_tariffs:
         reasons.append("Добавьте хотя бы один тариф.")
-    else:
+    elif isinstance(tariffs, list) and tariffs:
         if len(tariffs) > 1:
             if not _text(selection_text):
                 reasons.append("Добавьте текст выбора тарифов.")
@@ -218,6 +230,27 @@ def evaluate_funnel_readiness(
             reasons.append("Подключите платёжную систему.")
         elif not has_payment_credentials:
             reasons.append("Сохраните рабочие реквизиты платёжной системы.")
+
+    if bot_tariffs:
+        for t in bot_tariffs:
+            is_active = (
+                getattr(t, "is_active", True)
+                if hasattr(t, "is_active")
+                else (t.get("isActive", t.get("is_active", True)) if isinstance(t, dict) else True)
+            )
+            if not is_active:
+                continue
+            sales_mode = (
+                getattr(t, "sales_mode", "auto")
+                if hasattr(t, "sales_mode")
+                else (t.get("salesMode", t.get("sales_mode", "auto")) if isinstance(t, dict) else "auto")
+            )
+            if sales_mode in {"auto", "hybrid"}:
+                if not has_payment_provider:
+                    reasons.append("Подключите платёжную систему.")
+                elif not has_payment_credentials:
+                    reasons.append("Сохраните рабочие реквизиты платёжной системы.")
+                break
 
     return FunnelReadiness(tuple(dict.fromkeys(reasons)))
 

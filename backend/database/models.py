@@ -167,6 +167,9 @@ class BotConfig(Base):
     client_payments: Mapped[list["ClientPayment"]] = relationship(
         back_populates="bot", cascade="all, delete-orphan"
     )
+    tariffs: Mapped[list["Tariff"]] = relationship(
+        back_populates="bot", cascade="all, delete-orphan", order_by="Tariff.created_at"
+    )
 
 
 # ==========================================
@@ -564,6 +567,75 @@ class AccessLinkActivation(Base):
     )
 
 
+# ==========================================
+# 6. ТАБЛИЦА TARIFFS (Тарифы бота)
+# ==========================================
+class Tariff(Base):
+    """Tariff plan for a bot with deliverables configuration and metrics tracking."""
+
+    __tablename__ = "tariffs"
+    __table_args__ = (
+        CheckConstraint(
+            "payment_type IN ('one_time', 'recurring')",
+            name="ck_tariffs_payment_type",
+        ),
+        CheckConstraint(
+            "sales_mode IN ('auto', 'manual', 'hybrid')",
+            name="ck_tariffs_sales_mode",
+        ),
+        CheckConstraint(
+            "price >= 0",
+            name="ck_tariffs_price_positive",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    bot_id: Mapped[int] = mapped_column(
+        ForeignKey("bots.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    price: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=Decimal("0.00")
+    )
+    payment_type: Mapped[str] = mapped_column(
+        String(32), default="one_time", nullable=False
+    )
+    recurring_period: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    sales_mode: Mapped[str] = mapped_column(
+        String(32), default="auto", nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    deliverables: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+    total_buyers: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
+    )
+    total_revenue: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0.00"), server_default=text("0.00"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    # Связи
+    bot: Mapped["BotConfig"] = relationship(back_populates="tariffs")
+
+
 engine = create_async_engine(url=DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, expire_on_commit=False)
 async def init_models():
@@ -574,6 +646,26 @@ async def init_models():
             await conn.execute(sa_text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_vip_permanent BOOLEAN DEFAULT FALSE"))
             await conn.execute(sa_text("ALTER TABLE access_links ADD COLUMN IF NOT EXISTS free_bots_count INTEGER DEFAULT 1"))
             await conn.execute(sa_text("ALTER TABLE access_links ADD COLUMN IF NOT EXISTS is_permanent BOOLEAN DEFAULT FALSE"))
+            await conn.execute(sa_text("""
+                CREATE TABLE IF NOT EXISTS tariffs (
+                    id UUID PRIMARY KEY,
+                    bot_id INTEGER NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+                    payment_type VARCHAR(32) NOT NULL DEFAULT 'one_time',
+                    recurring_period VARCHAR(64),
+                    sales_mode VARCHAR(32) NOT NULL DEFAULT 'auto',
+                    is_active BOOLEAN NOT NULL DEFAULT true,
+                    deliverables JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    total_buyers INTEGER NOT NULL DEFAULT 0,
+                    total_revenue NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """))
+            await conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_tariffs_bot_id ON tariffs(bot_id)"))
+            await conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_tariffs_created_at ON tariffs(created_at)"))
         except Exception as exc:
             logger.debug("Схема уже актуальна или alter не требуется: %s", exc)
 

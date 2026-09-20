@@ -35,6 +35,7 @@ ALLOWED_TRANSITIONS = {
 
 ReadinessEvaluator = Callable[..., FunnelReadiness]
 ConnectedChatIdsProvider = Callable[[Any], Awaitable[set[str]]]
+TariffsProvider = Callable[[Any], Awaitable[list[Any]]]
 
 
 class LifecycleTransitionError(ValueError):
@@ -43,6 +44,10 @@ class LifecycleTransitionError(ValueError):
 
 async def _no_connected_chats(_bot: Any) -> set[str]:
     return set()
+
+
+async def _no_tariffs(_bot: Any) -> list[Any]:
+    return []
 
 
 class BotLifecycleService:
@@ -58,18 +63,22 @@ class BotLifecycleService:
         *,
         readiness_evaluator: ReadinessEvaluator = evaluate_funnel_readiness,
         connected_chat_ids_for: ConnectedChatIdsProvider = _no_connected_chats,
+        tariffs_for: TariffsProvider = _no_tariffs,
     ) -> None:
         self._readiness_evaluator = readiness_evaluator
         self._connected_chat_ids_for = connected_chat_ids_for
+        self._tariffs_for = tariffs_for
 
     async def readiness(self, bot: Any) -> FunnelReadiness:
         """Evaluate server-side publishability from the stored bot configuration."""
         connected_chat_ids = await self._connected_chat_ids_for(bot)
+        tariffs = await self._tariffs_for(bot)
         return self._readiness_evaluator(
             getattr(bot, "funnel_schema", None),
             has_payment_provider=bool(getattr(bot, "payment_provider", None)),
             has_payment_credentials=bool(getattr(bot, "payment_creds_enc", None)),
             connected_chat_ids=connected_chat_ids,
+            bot_tariffs=tariffs,
         )
 
     async def transition(

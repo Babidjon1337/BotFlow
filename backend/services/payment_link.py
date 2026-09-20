@@ -436,15 +436,30 @@ async def send_success_message(
                 )
                 if tariff_snapshot:
                     tariff = tariff_snapshot
-                    has_delivery = tariff.get(
-                        "has_delivery", tariff.get("hasDelivery", True)
-                    )
-                    action_type = tariff.get("action_type") or tariff.get(
-                        "actionType", "text"
-                    )
-                    action_data = tariff.get("action_data") or tariff.get(
-                        "actionData", ""
-                    )
+                    deliverables = tariff.get("deliverables")
+                    if deliverables and isinstance(deliverables, list) and len(deliverables) > 0:
+                        first_del = deliverables[0]
+                        del_type = first_del.get("type")
+                        if del_type in ("channel", "group"):
+                            action_type = "group"
+                            action_data = first_del.get("chatId") or first_del.get("chat_id") or ""
+                        elif del_type == "file":
+                            action_type = "file"
+                            action_data = first_del.get("filePath") or first_del.get("file_path") or first_del.get("url") or first_del.get("fileId") or ""
+                        else:
+                            action_type = "link"
+                            action_data = first_del.get("url") or ""
+                        has_delivery = True
+                    else:
+                        has_delivery = tariff.get(
+                            "has_delivery", tariff.get("hasDelivery", True)
+                        )
+                        action_type = tariff.get("action_type") or tariff.get(
+                            "actionType", "text"
+                        )
+                        action_data = tariff.get("action_data") or tariff.get(
+                            "actionData", ""
+                        )
                     if has_delivery and not str(action_data).strip():
                         logger.error(
                             "The paid tariff delivery is empty for bot %s, payment %s",

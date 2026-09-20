@@ -384,3 +384,18 @@ class BroadcastApiResponse(BaseModel):
 
 class BroadcastListResponse(BaseModel):
     broadcasts: List[BroadcastApiResponse]
+
+
+# ── Tariffs & Deliverables ─────────────────────────────────────
+from schemas.tariff_schemas import (
+    DeliverableSchema,
+    DeliverableType,
+    PaymentType,
+    SalesMode,
+    TariffApiResponse,
+    TariffCreateRequest,
+    TariffFileUploadResponse,
+    TariffListResponse,
+    TariffStatsResponse,
+    TariffUpdateRequest,
+)

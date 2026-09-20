@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import joinedload
 
-from database.models import ClientPayment, Lead, ScheduledTask, async_session
+from database.models import ClientPayment, Lead, ScheduledTask, Tariff, async_session
 
 
 class ClientPaymentInvariantError(ValueError):
@@ -213,6 +213,15 @@ async def mark_client_payment_succeeded(
         payment.paid_at = payment.paid_at or datetime.now(timezone.utc)
         lead.current_step_id = "node_success"
         lead.has_purchased = True
+        if newly_paid and payment.tariff_id:
+            try:
+                tariff_uuid = uuid.UUID(str(payment.tariff_id))
+                tariff_item = await session.get(Tariff, tariff_uuid)
+                if tariff_item:
+                    tariff_item.total_buyers += 1
+                    tariff_item.total_revenue = (tariff_item.total_revenue or Decimal("0.00")) + payment.amount
+            except Exception:
+                pass
         await session.execute(
             delete(ScheduledTask).where(ScheduledTask.lead_id == lead.id)
         )
