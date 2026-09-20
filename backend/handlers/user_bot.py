@@ -585,15 +585,12 @@ async def process_agreement(callback: CallbackQuery):
 
 
 @user_bot_router.callback_query(F.data == "application")
+@user_bot_router.callback_query(F.data.startswith("apply_tariff:"))
 async def process_application_button(callback: CallbackQuery):
     """Create a traceable manager request without relying on a user deep link."""
     bot_config = await get_bot_by_tg_id(callback.bot.id)
     funnel = await get_funnel_by_bot_id(callback.bot.id)
-    if (
-        not bot_config
-        or not funnel
-        or _payment_mode(funnel) not in {"application", "hybrid"}
-    ):
+    if not bot_config or not funnel:
         await callback.answer("Этот способ связи сейчас недоступен.", show_alert=True)
         return
 
@@ -607,12 +604,35 @@ async def process_application_button(callback: CallbackQuery):
         if callback.from_user.username
         else f"ID: {callback.from_user.id}"
     )
+
+    tariff_info = ""
+    if callback.data.startswith("apply_tariff:"):
+        target_tariff_id = callback.data.removeprefix("apply_tariff:")
+        tariffs = list(getattr(payment_node, "tariffs", []) or [])
+        found_tariff = next(
+            (t for t in tariffs if str(getattr(t, "id", "")) == target_tariff_id),
+            None,
+        )
+        if not found_tariff:
+            from database.requests.tariff_rq import get_tariff_by_id
+
+            db_t = await get_tariff_by_id(target_tariff_id)
+            if db_t and db_t.bot_id == bot_config.id:
+                found_tariff = db_t
+        if found_tariff:
+            t_name = str(getattr(found_tariff, "name", "Тариф")).strip()
+            t_price = float(getattr(found_tariff, "price", 0) or 0)
+            tariff_info = (
+                f"Выбранный тариф: <b>{escape(t_name)}</b> ({t_price:,.0f} ₽)\n\n"
+            ).replace(",", " ")
+
     try:
         await callback.bot.send_message(
             bot_config.owner.telegram_id,
             f"📩 <b>Новая заявка в «{bot_config.display_name}»</b>\n\n"
             f"Клиент: {lead_name} ({lead_handle})\n"
             f"Telegram ID: <code>{callback.from_user.id}</code>\n\n"
+            f"{tariff_info}"
             f"Текст заявки:\n{manager_text}",
         )
     except Exception as exc:
@@ -633,21 +653,13 @@ async def process_application_button(callback: CallbackQuery):
 async def _send_tariff_invoice(
     callback: CallbackQuery, bot_config, funnel, tariff, edit_message: bool = True
 ):
-    """Create a YooKassa link and replace the message with an invoice."""
-    try:
-        await callback.answer(
-            text="⏳ Формируем счёт на оплату… Пожалуйста, подождите.", show_alert=False
-        )
-    except Exception:
-        pass
+    """Display tariff offer with appropriate action buttons depending on sales_mode."""
     node_checkout = _get_payment_node(funnel)
+    mode = _payment_mode(funnel)
     tariff_name = str(getattr(tariff, "name", "Доступ") or "Доступ").strip()
     tariff_description = getattr(tariff, "description", "") or ""
     amount = float(getattr(tariff, "price", 0) or 0)
     message_text = _get_node_text(node_checkout) if node_checkout else ""
-    button_text = (
-        _get_node_button_text(node_checkout, default="🟢 Оплатить") or "🟢 Оплатить"
-    )
 
     tariff_details = f"<b>{escape(tariff_name)}</b>"
     if tariff_description:
@@ -659,6 +671,89 @@ async def _send_tariff_invoice(
     else:
         message_text = tariff_details
 
+    # Manager button resolution for application and hybrid modes
+    manager_url = None
+    if node_checkout and getattr(node_checkout, "manager_url", ""):
+        raw_url = getattr(node_checkout, "manager_url", "")
+        raw_text = (
+            getattr(node_checkout, "manager_text", "")
+            or f"Здравствуйте! Хочу оформить тариф «{tariff_name}»."
+        )
+        manager_url = build_manager_deep_link(raw_url, raw_text)
+        if not manager_url and raw_url:
+            username = extract_telegram_username(raw_url)
+            if username:
+                manager_url = f"https://t.me/{username}"
+            elif raw_url.startswith("http://") or raw_url.startswith("https://"):
+                manager_url = raw_url
+
+    tariff_id = str(getattr(tariff, "id", ""))
+    manager_button = (
+        InlineKeyboardButton(text="Связаться с менеджером", url=manager_url)
+        if manager_url
+        else InlineKeyboardButton(
+            text="Связаться с менеджером", callback_data=f"apply_tariff:{tariff_id}"
+        )
+    )
+
+    all_tariffs = list(getattr(node_checkout, "tariffs", []) or [])
+    has_multiple = len(all_tariffs) > 1
+
+    # 1. Application mode: only manager button
+    if mode == "application":
+        rows = [[manager_button]]
+        if has_multiple:
+            rows.append(
+                [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
+            )
+        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+        if edit_message:
+            await _remove_callback_message(callback)
+        await _send_payment_message(
+            callback,
+            message_text,
+            pay_keyboard,
+            media_type=getattr(tariff, "media_type", None),
+            file_id=getattr(tariff, "media_file_id", None),
+        )
+        return
+
+    # 2. Auto / Hybrid mode: requires payment link
+    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
+        if mode == "hybrid":
+            rows = [[manager_button]]
+            if has_multiple:
+                rows.append(
+                    [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
+                )
+            pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+            if edit_message:
+                await _remove_callback_message(callback)
+            await _send_payment_message(
+                callback,
+                message_text,
+                pay_keyboard,
+                media_type=getattr(tariff, "media_type", None),
+                file_id=getattr(tariff, "media_file_id", None),
+            )
+            return
+
+        try:
+            await callback.answer(
+                "Платёжная система бота временно не настроена. Обратитесь к администратору.",
+                show_alert=True,
+            )
+        except Exception:
+            pass
+        return
+
+    try:
+        await callback.answer(
+            text="⏳ Формируем счёт на оплату… Пожалуйста, подождите.", show_alert=False
+        )
+    except Exception:
+        pass
+
     lead = await get_lead(bot_config.id, callback.from_user.id)
     if not lead:
         error_msg = "Не удалось определить заявку. Нажмите /start и повторите попытку."
@@ -667,9 +762,12 @@ async def _send_tariff_invoice(
         else:
             await callback.message.answer(error_msg)
         return
+
     tariff_snapshot = (
         tariff.model_dump(by_alias=True)
         if hasattr(tariff, "model_dump")
+        else vars(tariff)
+        if hasattr(tariff, "__dict__")
         else dict(tariff)
     )
     client_payment = await create_client_payment(
@@ -711,14 +809,21 @@ async def _send_tariff_invoice(
             logger.warning("Не удалось уведомить владельца о сбое счёта: %s", exc)
         return
 
-    rows = [[InlineKeyboardButton(text=button_text, url=payment_url, style="success")]]
-    if len(getattr(node_checkout, "tariffs", []) or []) > 1:
+    if getattr(tariff, "installments", False) or getattr(tariff, "payment_type", "") == "recurring":
+        primary_btn_text = "Оформить подписку"
+    elif amount > 0:
+        primary_btn_text = f"Купить за {amount:,.0f} ₽".replace(",", " ")
+    else:
+        primary_btn_text = (
+            _get_node_button_text(node_checkout, default="🟢 Оплатить") or "🟢 Оплатить"
+        )
+
+    rows = [[InlineKeyboardButton(text=primary_btn_text, url=payment_url, style="success")]]
+    if mode == "hybrid":
+        rows.append([manager_button])
+    if has_multiple:
         rows.append(
-            [
-                InlineKeyboardButton(
-                    text="← Назад к тарифам", callback_data="payment_tariffs_back"
-                )
-            ]
+            [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
         )
     pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -813,37 +918,25 @@ async def process_payment_button(callback: CallbackQuery):
     if not funnel:
         return
 
-    mode = _payment_mode(funnel)
-    if mode == "application":
-        try:
-            await callback.answer(
-                "Этот бот работает по заявкам. Нажмите кнопку связи с менеджером.",
-                show_alert=True,
-            )
-        except Exception:
-            pass
-        return
-
-    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
-        try:
-            await callback.answer(
-                "Платёжная система бота временно не настроена. Обратитесь к администратору.",
-                show_alert=True,
-            )
-        except Exception:
-            pass
-        return
-
     node_checkout = _get_payment_node(funnel)
     tariffs = list(getattr(node_checkout, "tariffs", []) or [])
+    if not tariffs:
+        from database.requests.tariff_rq import list_tariffs_by_bot_id
+
+        db_tariffs = await list_tariffs_by_bot_id(bot_config.id, active_only=True)
+        if db_tariffs:
+            tariffs = db_tariffs
+
     if not tariffs:
         await callback.message.answer(
             "Тарифы ещё не настроены. Обратитесь к владельцу бота."
         )
         return
+
     if len(tariffs) > 1:
         await _send_tariff_selection_message(callback, node_checkout, tariffs)
         return
+
     await _send_tariff_invoice(
         callback, bot_config, funnel, tariffs[0], edit_message=False
     )
@@ -856,37 +949,24 @@ async def process_tariff_choice(callback: CallbackQuery):
     if not bot_config or not funnel:
         return
 
-    mode = _payment_mode(funnel)
-    if mode == "application":
-        try:
-            await callback.answer(
-                "Этот бот работает по заявкам. Нажмите кнопку связи с менеджером.",
-                show_alert=True,
-            )
-        except Exception:
-            pass
-        return
-
-    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
-        try:
-            await callback.answer(
-                "Платёжная система бота временно не настроена. Обратитесь к администратору.",
-                show_alert=True,
-            )
-        except Exception:
-            pass
-        return
-
     node_checkout = _get_payment_node(funnel)
     tariff_id = callback.data.split(":", 1)[1]
+    tariffs = list(getattr(node_checkout, "tariffs", []) or [])
     tariff = next(
         (
             item
-            for item in (getattr(node_checkout, "tariffs", []) or [])
-            if item.id == tariff_id
+            for item in tariffs
+            if str(getattr(item, "id", "")) == tariff_id
         ),
         None,
     )
+    if not tariff:
+        from database.requests.tariff_rq import get_tariff_by_id
+
+        db_tariff = await get_tariff_by_id(tariff_id)
+        if db_tariff and db_tariff.bot_id == bot_config.id:
+            tariff = db_tariff
+
     if not tariff:
         try:
             await callback.answer(
@@ -896,7 +976,7 @@ async def process_tariff_choice(callback: CallbackQuery):
         except Exception:
             pass
         return
-    await _send_tariff_invoice(callback, bot_config, funnel, tariff)
+    await _send_tariff_invoice(callback, bot_config, funnel, tariff, edit_message=True)
 
 
 @user_bot_router.callback_query(F.data == "payment_tariffs_back")
