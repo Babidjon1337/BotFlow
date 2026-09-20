@@ -12,10 +12,15 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
-import type { TariffItem, TariffMetrics, TariffDeliverable, DeliverableType } from '../../types/tariff';
+import type { TariffItem, TariffMetrics } from '../../types/tariff';
 import { apiService } from '../../services/api';
 import { useAppState } from '../../providers/AppStateProvider';
 import { TariffEditorModal } from '../sheets/TariffEditorModal';
+import {
+  toBackendPayload,
+  mapBackendTariff,
+  tariffItemToTariff,
+} from '../../utils/tariffMappers';
 
 interface BotTariffsScreenProps {
   bot: BotConfig;
@@ -24,14 +29,6 @@ interface BotTariffsScreenProps {
 function formatNumber(num: number | undefined | null): string {
   if (num === null || num === undefined || isNaN(num)) return '0';
   return num.toLocaleString('ru-RU');
-}
-
-function formatFileSize(bytes: number): string {
-  if (!bytes || bytes <= 0) return '0 КБ';
-  if (bytes < 1024 * 1024) {
-    return `${Math.max(1, Math.round(bytes / 1024))} КБ`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
 function pluralizeBuyers(count: number): string {
@@ -56,109 +53,11 @@ function getPeriodSuffix(period?: string): string {
       return '/ мес';
   }
 }
-
-function toBackendPayload(item: TariffItem) {
-  const isSubscription = item.paymentType === 'subscription';
-  let recurringPeriod: string | undefined = undefined;
-  if (isSubscription) {
-    if (item.billingPeriod === 'week') recurringPeriod = '1_week';
-    else if (item.billingPeriod === '3months') recurringPeriod = '3_months';
-    else if (item.billingPeriod === 'year') recurringPeriod = '1_year';
-    else recurringPeriod = '1_month';
-  }
-
-  return {
-    name: item.name,
-    description: item.description || undefined,
-    price: item.price,
-    paymentType: isSubscription ? 'recurring' : 'one_time',
-    recurringPeriod,
-    salesMode: item.salesMode === 'application' ? 'manual' : item.salesMode,
-    isActive: item.isActiveInFunnel,
-    deliverables: item.deliverables.map((d) => ({
-      type: d.type,
-      chatId: d.chatId,
-      title: d.title,
-      accessMode: 'member',
-      filePath: d.fileUrl || d.fileName,
-      url: d.url || d.fileUrl,
-      filename: d.fileName || d.title,
-      sizeBytes: d.fileSize || 0,
-    })),
-  };
-}
-
 interface BackendStats {
   totalTariffs?: number;
   activeCount?: number;
   totalBuyers?: number;
   totalRevenue?: number;
-}
-
-function mapBackendTariff(raw: Record<string, unknown>, idx = 0): TariffItem {
-  const isRecurring =
-    raw.payment_type === 'recurring' ||
-    raw.paymentType === 'recurring' ||
-    raw.paymentType === 'subscription';
-
-  const recPeriod = String(raw.recurring_period || raw.recurringPeriod || '');
-  let billingPeriod: 'week' | 'month' | '3months' | 'year' = 'month';
-  if (recPeriod === '1_week' || recPeriod === 'week') billingPeriod = 'week';
-  else if (recPeriod === '3_months' || recPeriod === '3months') billingPeriod = '3months';
-  else if (recPeriod === '1_year' || recPeriod === 'year') billingPeriod = 'year';
-
-  const rawSales = String(raw.sales_mode || raw.salesMode || 'auto');
-  const salesMode: 'auto' | 'application' | 'hybrid' =
-    rawSales === 'manual' ? 'application' : rawSales === 'hybrid' ? 'hybrid' : 'auto';
-
-  const rawDeliverables = (Array.isArray(raw.deliverables) ? raw.deliverables : []) as Array<Record<string, unknown>>;
-  const deliverables: TariffDeliverable[] = rawDeliverables.map((d, dIdx) => {
-    const isFile = d.type === 'file';
-    const isChat = d.type === 'channel' || d.type === 'group';
-    const size =
-      typeof d.sizeBytes === 'number'
-        ? d.sizeBytes
-        : typeof d.size_bytes === 'number'
-        ? d.size_bytes
-        : typeof d.size === 'number'
-        ? d.size
-        : undefined;
-
-    return {
-      id: String(d.id || `del_${raw.id || idx}_${dIdx}`),
-      type: (d.type as DeliverableType) || 'link',
-      title: String(d.title || (isFile ? d.filename || d.originalName || 'Файл' : isChat ? 'Чат / Канал' : 'Ссылка')),
-      chatId: d.chatId ? String(d.chatId) : d.chat_id ? String(d.chat_id) : undefined,
-      chatType: (d.chatType as 'channel' | 'group' | 'supergroup') || (d.type === 'channel' ? 'channel' : 'group'),
-      accessNote: isChat ? 'Персональная ссылка (1 вход)' : undefined,
-      fileName: d.filename ? String(d.filename) : d.originalName ? String(d.originalName) : d.fileName ? String(d.fileName) : undefined,
-      fileSize: size,
-      fileSizeFormatted: size ? formatFileSize(size) : undefined,
-      fileUrl: d.url ? String(d.url) : d.filePath ? String(d.filePath) : d.file_path ? String(d.file_path) : undefined,
-      url: d.url ? String(d.url) : undefined,
-    };
-  });
-
-  return {
-    id: String(raw.id || `t_${idx}`),
-    name: String(raw.name || 'Тариф'),
-    price: Number(raw.price) || 0,
-    oldPrice: raw.oldPrice ? Number(raw.oldPrice) : null,
-    paymentType: isRecurring ? 'subscription' : 'one_time',
-    billingPeriod: isRecurring ? billingPeriod : undefined,
-    salesMode,
-    isActiveInFunnel:
-      raw.is_active !== undefined
-        ? Boolean(raw.is_active)
-        : raw.isActive !== undefined
-        ? Boolean(raw.isActive)
-        : true,
-    buyersCount: Number(raw.total_buyers ?? raw.totalBuyers ?? raw.buyersCount) || 0,
-    revenue: Number(raw.total_revenue ?? raw.totalRevenue ?? raw.revenue) || 0,
-    deliverables,
-    createdAt: raw.created_at ? String(raw.created_at) : raw.createdAt ? String(raw.createdAt) : new Date().toISOString(),
-    updatedAt: raw.updated_at ? String(raw.updated_at) : raw.updatedAt ? String(raw.updatedAt) : undefined,
-  };
 }
 
 export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
@@ -185,17 +84,14 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
   const calculatedMetrics = useMemo(() => {
     const totalCount = tariffs.length;
     const activeInFunnelCount = tariffs.filter((t) => t.isActiveInFunnel).length;
-    const buyersCount = tariffs.reduce((sum, t) => sum + (t.buyersCount || 0), 0);
-    const totalRevenue = tariffs.reduce((sum, t) => sum + (t.revenue || 0), 0);
+    const computedBuyers = tariffs.reduce((sum, t) => sum + (t.buyersCount || 0), 0);
+    const computedRevenue = tariffs.reduce((sum, t) => sum + (t.revenue || 0), 0);
 
     return {
-      totalCount: metrics.totalCount > totalCount ? metrics.totalCount : totalCount,
-      activeInFunnelCount:
-        metrics.activeInFunnelCount > activeInFunnelCount
-          ? metrics.activeInFunnelCount
-          : activeInFunnelCount,
-      buyersCount: metrics.buyersCount > buyersCount ? metrics.buyersCount : buyersCount,
-      totalRevenue: metrics.totalRevenue > totalRevenue ? metrics.totalRevenue : totalRevenue,
+      totalCount,
+      activeInFunnelCount,
+      buyersCount: Math.max(metrics.buyersCount || 0, computedBuyers),
+      totalRevenue: Math.max(metrics.totalRevenue || 0, computedRevenue),
     };
   }, [tariffs, metrics]);
 
@@ -293,8 +189,13 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
           if (res) savedItem = mapBackendTariff(res as unknown as Record<string, unknown>);
         }
         savedSuccessfully = true;
-      } catch {
-        // Fallback: update via funnel
+      } catch (saveErr: unknown) {
+        const msg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+        if (msg.includes('404')) {
+          // Dedicated endpoint not yet available, fallback to funnel
+        } else {
+          throw saveErr;
+        }
       }
 
       // Sync state locally
@@ -303,6 +204,11 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         : [...tariffs, savedItem];
 
       setTariffs(updatedTariffs);
+      setMetrics((prev) => ({
+        ...prev,
+        totalCount: updatedTariffs.length,
+        activeInFunnelCount: updatedTariffs.filter((t) => t.isActiveInFunnel).length,
+      }));
 
       // If dedicated API wasn't available, sync funnel payment node
       if (!savedSuccessfully) {
@@ -312,20 +218,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
           const paymentIdx = nodes.findIndex((n) => n.id === 'payment');
           if (paymentIdx >= 0) {
             const paymentNode = { ...nodes[paymentIdx] };
-            paymentNode.tariffs = updatedTariffs.map((t) => ({
-              id: t.id,
-              name: t.name,
-              price: t.price,
-              oldPrice: t.oldPrice,
-              paymentType: t.paymentType,
-              billingPeriod: t.billingPeriod,
-              salesMode: t.salesMode,
-              isActiveInFunnel: t.isActiveInFunnel,
-              deliverables: t.deliverables,
-              description: t.description || '',
-              actionType: t.deliverables[0]?.type === 'file' ? 'file' : t.deliverables[0]?.type === 'link' ? 'link' : 'group',
-              actionData: t.deliverables[0]?.title || '',
-            }));
+            paymentNode.tariffs = updatedTariffs.map(tariffItemToTariff);
             nodes[paymentIdx] = paymentNode;
             await apiService.saveFunnel(bot.id, nodes, false);
           }
@@ -350,12 +243,20 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
     try {
       try {
         await apiService.deleteTariff(bot.id, tariffToDelete.id);
-      } catch {
-        // fallback
+      } catch (delErr: unknown) {
+        const msg = delErr instanceof Error ? delErr.message : String(delErr);
+        if (!msg.includes('404')) {
+          throw delErr;
+        }
       }
 
       const updated = tariffs.filter((t) => t.id !== tariffToDelete.id);
       setTariffs(updated);
+      setMetrics((prev) => ({
+        ...prev,
+        totalCount: updated.length,
+        activeInFunnelCount: updated.filter((t) => t.isActiveInFunnel).length,
+      }));
 
       // Funnel sync fallback
       try {
@@ -364,7 +265,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         const paymentIdx = nodes.findIndex((n) => n.id === 'payment');
         if (paymentIdx >= 0) {
           const paymentNode = { ...nodes[paymentIdx] };
-          paymentNode.tariffs = updated;
+          paymentNode.tariffs = updated.map(tariffItemToTariff);
           nodes[paymentIdx] = paymentNode;
           await apiService.saveFunnel(bot.id, nodes, false);
         }
@@ -411,9 +312,9 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         <button
           type="button"
           onClick={handleOpenCreate}
-          className="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl bg-primary px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover"
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover"
         >
-          <Plus className="size-4" />
+          <Plus className="size-3.5" />
           Создать тариф
         </button>
       </div>
@@ -423,7 +324,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         {/* Metric 1 */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-xs">
           <div className="mb-1 text-xs font-medium text-fg-secondary">Всего тарифов</div>
-          <div className="font-accent text-2xl font-bold text-foreground">
+          <div className="font-accent tabular-nums text-2xl font-bold text-foreground">
             {calculatedMetrics.totalCount}
           </div>
         </div>
@@ -431,7 +332,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         {/* Metric 2 */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-xs">
           <div className="mb-1 text-xs font-medium text-fg-secondary">Активны в воронке</div>
-          <div className="font-accent text-2xl font-bold text-foreground">
+          <div className="font-accent tabular-nums text-2xl font-bold text-foreground">
             {calculatedMetrics.activeInFunnelCount}
           </div>
         </div>
@@ -440,11 +341,11 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 shadow-xs">
           <div className="mb-1 text-xs font-medium text-fg-secondary">Покупателей</div>
           <div className="flex items-end gap-2">
-            <div className="font-accent text-2xl font-bold text-foreground">
+            <div className="font-accent tabular-nums text-2xl font-bold text-foreground">
               {calculatedMetrics.buyersCount}
             </div>
             <div className="pb-0.5 text-xs font-medium text-success">
-              <span className="font-accent">
+              <span className="font-accent tabular-nums">
                 +{formatNumber(calculatedMetrics.totalRevenue)} ₽
               </span>{' '}
               выручка
@@ -472,9 +373,9 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="mt-6 inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover"
+            className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover"
           >
-            <Plus className="size-4" />
+            <Plus className="size-3.5" />
             Создать тариф
           </button>
         </div>
@@ -530,7 +431,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
                   {/* Price Section */}
                   <div className="flex flex-col gap-1">
                     <div className="flex items-baseline gap-2">
-                      <span className="font-accent text-2xl font-bold text-foreground">
+                      <span className="font-accent tabular-nums text-2xl font-bold text-foreground">
                         {formatNumber(tariff.price)} ₽
                       </span>
                       {isSubscription && (
@@ -539,7 +440,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
                         </span>
                       )}
                       {Boolean(tariff.oldPrice) && (
-                        <span className="font-accent text-sm text-fg-tertiary line-through">
+                        <span className="font-accent tabular-nums text-sm text-fg-tertiary line-through">
                           {formatNumber(tariff.oldPrice)} ₽
                         </span>
                       )}
@@ -559,38 +460,44 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
                     </div>
 
                     {tariff.deliverables && tariff.deliverables.length > 0 ? (
-                      tariff.deliverables.map((del) => (
-                        <div
-                          key={del.id}
-                          className="flex items-center gap-2.5 text-xs text-fg-secondary"
-                        >
-                          {del.type === 'channel' && (
-                            <Megaphone className="size-4 shrink-0 text-fg-tertiary" />
-                          )}
-                          {del.type === 'group' && (
-                            <Users className="size-4 shrink-0 text-fg-tertiary" />
-                          )}
-                          {del.type === 'file' && (
-                            <FileText className="size-4 shrink-0 text-fg-tertiary" />
-                          )}
-                          {del.type === 'link' && (
-                            <Link2 className="size-4 shrink-0 text-fg-tertiary" />
-                          )}
+                      tariff.deliverables.map((del) => {
+                        const formattedSize =
+                          del.fileSizeFormatted ||
+                          (del.fileSize ? formatNumber(Math.round(del.fileSize / 1024)) + ' КБ' : undefined);
 
-                          <span className="truncate">
-                            {del.title}
-                            {del.accessNote && (
-                              <span className="text-fg-tertiary"> · 1 вход</span>
+                        return (
+                          <div
+                            key={del.id}
+                            className="flex items-center gap-2.5 text-xs text-fg-secondary"
+                          >
+                            {del.type === 'channel' && (
+                              <Megaphone className="size-4 shrink-0 text-fg-tertiary" />
                             )}
-                            {del.type === 'file' && del.fileSizeFormatted && (
-                              <span className="text-fg-tertiary">
-                                {' '}
-                                ({del.fileSizeFormatted})
-                              </span>
+                            {del.type === 'group' && (
+                              <Users className="size-4 shrink-0 text-fg-tertiary" />
                             )}
-                          </span>
-                        </div>
-                      ))
+                            {del.type === 'file' && (
+                              <FileText className="size-4 shrink-0 text-fg-tertiary" />
+                            )}
+                            {del.type === 'link' && (
+                              <Link2 className="size-4 shrink-0 text-fg-tertiary" />
+                            )}
+
+                            <span className="truncate">
+                              {del.title}
+                              {del.accessNote && (
+                                <span className="text-fg-tertiary"> · 1 вход</span>
+                              )}
+                              {del.type === 'file' && formattedSize && (
+                                <span className="text-fg-tertiary">
+                                  {' '}
+                                  ({formattedSize})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })
                     ) : (
                       <div className="text-xs italic text-fg-tertiary">
                         Доступ не настроен
@@ -605,7 +512,7 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
                 {/* Footer: Buyers count & actions */}
                 <div className="flex shrink-0 items-center justify-between">
                   <div className="flex items-center gap-1 text-xs text-fg-secondary">
-                    <span className="font-accent font-bold text-foreground">
+                    <span className="font-accent tabular-nums font-bold text-foreground">
                       {tariff.buyersCount || 0}
                     </span>{' '}
                     {pluralizeBuyers(tariff.buyersCount || 0)}

@@ -15,6 +15,7 @@ export interface Tariff {
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaType?: 'photo' | 'video' | null;
+  deliverables?: import('./types/tariff').TariffDeliverable[];
 }
 
 /** Медиа в узле воронки: Telegram file_id + id ассета (до 10 на шаг). */

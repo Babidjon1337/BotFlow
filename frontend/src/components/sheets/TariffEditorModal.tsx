@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
   Plus,
@@ -66,7 +66,10 @@ function TariffEditorForm({
   const isEditing = Boolean(tariff);
 
   const [name, setName] = useState(tariff?.name || '');
-  const [price, setPrice] = useState(tariff?.price ? String(tariff.price) : '');
+  const [description, setDescription] = useState(tariff?.description || '');
+  const [price, setPrice] = useState(
+    tariff?.price !== undefined && tariff.price !== null ? String(tariff.price) : ''
+  );
   const [oldPrice, setOldPrice] = useState(tariff?.oldPrice ? String(tariff.oldPrice) : '');
   const [paymentType, setPaymentType] = useState<PaymentType>(tariff?.paymentType || 'subscription');
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>(tariff?.billingPeriod || 'month');
@@ -112,6 +115,17 @@ function TariffEditorForm({
     }
   }, [isDropdownOpen]);
 
+  // Close modal on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   // Load connected chats when picker is opened
   const loadConnectedChats = async () => {
     if (!botId) return;
@@ -119,7 +133,7 @@ function TariffEditorForm({
     setChatLoadError(null);
     try {
       const res = await apiService.getConnectedChats(botId);
-      setConnectedChats(res.chats as ConnectedChat[]);
+      setConnectedChats(Array.isArray(res?.chats) ? (res.chats as ConnectedChat[]) : []);
     } catch (err) {
       setChatLoadError(err instanceof Error ? err.message : 'Не удалось загрузить чаты');
     } finally {
@@ -135,6 +149,11 @@ function TariffEditorForm({
 
   const handleSelectChat = (chat: ConnectedChat) => {
     const isChannel = chat.chatType === 'channel';
+    if (deliverables.some((d) => d.chatId === chat.chatId)) {
+      setFormError(`Этот ${isChannel ? 'канал' : 'чат'} уже добавлен в выдачу этого тарифа`);
+      setChatPickerOpen(null);
+      return;
+    }
     const newDeliverable: TariffDeliverable = {
       id: createDeliverableId(),
       type: isChannel ? 'channel' : 'group',
@@ -157,16 +176,23 @@ function TariffEditorForm({
     if (!file) return;
 
     setIsUploadingFile(true);
+    setFormError(null);
     try {
       let fileUrl: string | undefined;
       let fileId: string | undefined;
 
       try {
         const uploadRes = await apiService.uploadTariffFile(botId, file);
-        fileUrl = uploadRes.url;
+        fileUrl = uploadRes.url || uploadRes.filePath;
         fileId = uploadRes.id;
-      } catch {
-        // Fallback: file noted locally
+      } catch (uploadErr) {
+        console.error('File upload error:', uploadErr);
+        setFormError(
+          uploadErr instanceof Error
+            ? uploadErr.message
+            : 'Не удалось загрузить файл на сервер. Проверьте размер файла (до 100 МБ).'
+        );
+        return;
       }
 
       const newDeliverable: TariffDeliverable = {
@@ -192,7 +218,18 @@ function TariffEditorForm({
       setLinkError('Введите ссылку');
       return;
     }
-    const finalUrl = trimmedUrl.startsWith('http') ? trimmedUrl : `https://${trimmedUrl}`;
+    const finalUrl =
+      trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')
+        ? trimmedUrl
+        : `https://${trimmedUrl}`;
+
+    try {
+      new URL(finalUrl);
+    } catch {
+      setLinkError('Введите корректный URL-адрес (например, https://example.com)');
+      return;
+    }
+
     const newDeliverable: TariffDeliverable = {
       id: createDeliverableId(),
       type: 'link',
@@ -218,18 +255,31 @@ function TariffEditorForm({
       return;
     }
 
-    const cleanPrice = Number(price.toString().replace(/\s+/g, ''));
-    if (isNaN(cleanPrice) || cleanPrice <= 0) {
-      setFormError('Укажите корректную стоимость тарифа (больше 0 ₽)');
+    const rawPriceStr = price.toString().trim();
+    if (!rawPriceStr) {
+      setFormError('Укажите стоимость тарифа');
+      return;
+    }
+
+    const cleanPrice = Number(rawPriceStr.replace(/\s+/g, ''));
+    if (isNaN(cleanPrice) || cleanPrice < 0) {
+      setFormError('Укажите корректную стоимость тарифа (от 0 ₽)');
       return;
     }
 
     let cleanOldPrice: number | null = null;
-    if (oldPrice.trim()) {
-      const parsedOldPrice = Number(oldPrice.replace(/\s+/g, ''));
-      if (!isNaN(parsedOldPrice) && parsedOldPrice > 0) {
-        cleanOldPrice = parsedOldPrice;
+    const rawOldPriceStr = oldPrice.toString().trim();
+    if (rawOldPriceStr) {
+      const parsedOldPrice = Number(rawOldPriceStr.replace(/\s+/g, ''));
+      if (isNaN(parsedOldPrice) || parsedOldPrice <= 0) {
+        setFormError('Старая цена должна быть положительным числом');
+        return;
       }
+      if (parsedOldPrice <= cleanPrice) {
+        setFormError('Старая цена должна быть выше текущей цены');
+        return;
+      }
+      cleanOldPrice = parsedOldPrice;
     }
 
     const tariffItem: TariffItem = {
@@ -243,6 +293,7 @@ function TariffEditorForm({
       isActiveInFunnel,
       buyersCount: tariff?.buyersCount ?? 0,
       revenue: tariff?.revenue ?? 0,
+      description: description.trim() || undefined,
       deliverables,
       createdAt: tariff?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -261,7 +312,12 @@ function TariffEditorForm({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4 backdrop-blur-xs">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4 backdrop-blur-xs"
+    >
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -306,6 +362,20 @@ function TariffEditorForm({
             />
           </div>
 
+          {/* Description */}
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-foreground">
+              Описание тарифа <span className="text-xs font-normal text-fg-tertiary">(что входит)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Краткое описание тарифа для клиента в Telegram..."
+              rows={2}
+              className="w-full rounded-xl border border-border bg-card p-3 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+            />
+          </div>
+
           {/* 2. Price & Old Price */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -317,7 +387,7 @@ function TariffEditorForm({
                 value={price}
                 onChange={(e) => setPrice(e.target.value.replace(/[^\d\s]/g, ''))}
                 placeholder="1 990"
-                className="font-accent h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="font-accent tabular-nums h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
             <div>
@@ -329,7 +399,7 @@ function TariffEditorForm({
                 value={oldPrice}
                 onChange={(e) => setOldPrice(e.target.value.replace(/[^\d\s]/g, ''))}
                 placeholder="2 990"
-                className="font-accent h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="font-accent tabular-nums h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </div>
@@ -510,11 +580,11 @@ function TariffEditorForm({
               <button
                 type="button"
                 onClick={() => setIsDropdownOpen((prev) => !prev)}
-                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-sm font-medium text-primary transition-colors hover:bg-primary/5 focus:outline-none"
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-xs font-semibold text-primary transition-colors hover:bg-primary/5 focus:outline-none"
               >
-                <Plus className="size-4" />
+                <Plus className="size-3.5" />
                 Добавить выдачу
-                <ChevronDown className="ml-1 size-4 text-fg-tertiary" />
+                <ChevronDown className="ml-0.5 size-3.5 text-fg-tertiary" />
               </button>
 
               {/* Dropdown Menu */}
@@ -596,25 +666,37 @@ function TariffEditorForm({
                   </div>
                 ) : chatLoadError ? (
                   <div className="text-xs text-danger">{chatLoadError}</div>
-                ) : connectedChats.length === 0 ? (
-                  <div className="space-y-2 text-xs text-fg-secondary">
-                    <p>Подключённые чаты не найдены.</p>
-                    <p className="rounded-lg bg-card p-3 border border-border">
-                      Чтобы добавить канал или группу:
-                      <br />1. Откройте чат в Telegram.
-                      <br />2. Добавьте бота в администраторы с правом публикации и пригласительных ссылок.
-                      <br />3. Нажмите кнопку «Обновить».
-                    </p>
-                  </div>
-                ) : (
-                  <div className="max-h-48 space-y-1 overflow-y-auto">
-                    {connectedChats
-                      .filter((c) =>
-                        chatPickerOpen === 'channel'
-                          ? c.chatType === 'channel'
-                          : c.chatType === 'group' || c.chatType === 'supergroup'
-                      )
-                      .map((chat) => (
+                ) : (() => {
+                  const availableChats = connectedChats.filter((c) =>
+                    chatPickerOpen === 'channel'
+                      ? c.chatType === 'channel'
+                      : c.chatType === 'group' || c.chatType === 'supergroup'
+                  );
+
+                  if (availableChats.length === 0) {
+                    const isChannel = chatPickerOpen === 'channel';
+                    return (
+                      <div className="space-y-2 text-xs text-fg-secondary">
+                        <p>
+                          Подключённые {isChannel ? 'каналы' : 'группы или чаты'} не найдены.
+                        </p>
+                        <div className="space-y-1 rounded-lg border border-border bg-card p-3">
+                          <p className="font-semibold text-foreground">
+                            Как подключить {isChannel ? 'канал' : 'группу'}:
+                          </p>
+                          <p>1. Откройте {isChannel ? 'канал' : 'чат'} в Telegram.</p>
+                          <p>
+                            2. Добавьте бота в администраторы с правом приглашения участников.
+                          </p>
+                          <p>3. Нажмите «Обновить» выше.</p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="max-h-48 space-y-1 overflow-y-auto">
+                      {availableChats.map((chat) => (
                         <button
                           key={chat.chatId}
                           type="button"
@@ -625,8 +707,9 @@ function TariffEditorForm({
                           <span className="text-xs text-primary">Выбрать →</span>
                         </button>
                       ))}
-                  </div>
-                )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -651,6 +734,12 @@ function TariffEditorForm({
                     type="text"
                     value={linkTitle}
                     onChange={(e) => setLinkTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddLink();
+                      }
+                    }}
                     placeholder="например, База знаний или Личный кабинет"
                     className="h-9 w-full rounded-lg border border-border bg-card px-3 text-xs text-foreground focus:border-primary focus:outline-none"
                   />
@@ -665,6 +754,12 @@ function TariffEditorForm({
                     onChange={(e) => {
                       setLinkUrl(e.target.value);
                       if (linkError) setLinkError('');
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddLink();
+                      }
                     }}
                     placeholder="https://example.com/course"
                     className="h-9 w-full rounded-lg border border-border bg-card px-3 text-xs text-foreground focus:border-primary focus:outline-none"
@@ -727,12 +822,12 @@ function TariffEditorForm({
         </div>
 
         {/* Modal Footer */}
-        <div className="sticky bottom-0 z-10 flex shrink-0 justify-end gap-3 border-t border-border bg-muted/30 px-6 py-4">
+        <div className="sticky bottom-0 z-10 flex shrink-0 justify-end gap-2.5 border-t border-border bg-muted/30 px-6 py-3.5">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="h-11 rounded-xl px-5 text-sm font-medium text-fg-secondary transition-colors hover:bg-muted"
+            className="h-10 rounded-xl px-4 text-xs font-semibold text-fg-secondary transition-colors hover:bg-muted"
           >
             Отмена
           </button>
@@ -740,11 +835,11 @@ function TariffEditorForm({
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:opacity-50"
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover disabled:opacity-50"
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="size-4 animate-spin" />
+                <Loader2 className="size-3.5 animate-spin" />
                 Сохранение...
               </>
             ) : (
@@ -764,15 +859,17 @@ export function TariffEditorModal({
   tariff,
   botId,
 }: TariffEditorModalProps) {
-  if (!isOpen) return null;
-
   return (
-    <TariffEditorForm
-      key={tariff?.id || 'new'}
-      onClose={onClose}
-      onSave={onSave}
-      tariff={tariff}
-      botId={botId}
-    />
+    <AnimatePresence>
+      {isOpen && (
+        <TariffEditorForm
+          key={tariff?.id || 'new'}
+          onClose={onClose}
+          onSave={onSave}
+          tariff={tariff}
+          botId={botId}
+        />
+      )}
+    </AnimatePresence>
   );
 }
