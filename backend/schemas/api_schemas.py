@@ -287,20 +287,50 @@ class LeadApiResponse(BaseModel):
     first_name: Optional[str] = Field(None, alias="firstName")
     current_step: str = Field(..., alias="currentStep")
     has_purchased: bool = Field(default=False, alias="hasPurchased")
+    purchased_tariffs: List[Dict[str, Any]] = Field(default_factory=list, alias="purchasedTariffs")
+    total_paid: float = Field(default=0.0, alias="totalPaid")
     created_at: Optional[str] = Field(None, alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True)
 
     @classmethod
-    def from_orm_lead(cls, lead):
-        created_str = lead.created_at.isoformat() if hasattr(lead, "created_at") and lead.created_at else None
+    def from_orm_lead(cls, lead, payments=None):
+        created_str = (
+            lead.created_at.isoformat()
+            if hasattr(lead, "created_at") and lead.created_at
+            else None
+        )
+        purchased_tariffs = []
+        total_paid = 0.0
+        if payments:
+            for p in payments:
+                if p.status == "succeeded":
+                    amount_val = float(p.amount)
+                    total_paid += amount_val
+                    snap = dict(p.tariff_snapshot or {})
+                    purchased_tariffs.append(
+                        {
+                            "paymentId": str(p.id),
+                            "tariffId": str(p.tariff_id),
+                            "name": snap.get("name") or "Тариф",
+                            "amount": amount_val,
+                            "paymentType": snap.get("payment_type")
+                            or snap.get("paymentType")
+                            or "one_time",
+                            "billingPeriod": snap.get("billing_period")
+                            or snap.get("billingPeriod"),
+                            "paidAt": p.paid_at.isoformat() if p.paid_at else None,
+                        }
+                    )
         return cls(
             id=lead.id,
             telegram_id=lead.telegram_id,
             username=getattr(lead, "username", None),
             first_name=getattr(lead, "first_name", None),
             current_step=lead.current_step_id,
-            has_purchased=lead.has_purchased,
+            has_purchased=lead.has_purchased or len(purchased_tariffs) > 0,
+            purchased_tariffs=purchased_tariffs,
+            total_paid=round(total_paid, 2),
             created_at=created_str,
         )
 

@@ -84,7 +84,7 @@ function collectTariffOptions(nodes: unknown[]): BroadcastTariffOption[] {
   return options;
 }
 
-export function BroadcastsScreen({ bot, initialTab = 'audience' }: { bot: BotConfig; initialTab?: BroadcastsTab }) {
+export function BroadcastsScreen({ bot, initialTab = 'broadcasts' }: { bot: BotConfig; initialTab?: BroadcastsTab }) {
   const [tab, setTab] = useState<BroadcastsTab>(initialTab);
   const [summary, setSummary] = useState<AudienceSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);

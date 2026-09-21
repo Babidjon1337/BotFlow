@@ -2350,12 +2350,34 @@ async def send_manual_invoice(
     nodes = (bot.funnel_schema or {}).get("nodes", [])
     payment_node = next((node for node in nodes if node.get("id") == "payment"), None)
     available = (payment_node or {}).get("tariffs") or []
-    tariffs = [
-        tariff for tariff in available if str(tariff.get("id")) in set(body.tariff_ids)
-    ]
+
+    target_ids = set(str(t_id) for t_id in body.tariff_ids)
+    db_tariffs = await list_tariffs_by_bot_id(bot.id)
+    tariffs = []
+
+    for dt in db_tariffs:
+        if str(dt.id) in target_ids:
+            tariffs.append(
+                {
+                    "id": str(dt.id),
+                    "name": dt.name,
+                    "price": dt.price,
+                    "payment_type": dt.payment_type,
+                    "billing_period": dt.recurring_period,
+                    "deliverables": dt.deliverables or [],
+                }
+            )
+            target_ids.discard(str(dt.id))
+
+    if target_ids:
+        for tariff in available:
+            if str(tariff.get("id")) in target_ids:
+                tariffs.append(tariff)
+                target_ids.discard(str(tariff.get("id")))
+
     if not tariffs:
         raise HTTPException(
-            status_code=400, detail="Выберите действующий тариф из воронки"
+            status_code=400, detail="Выберите действующий тариф"
         )
 
     from aiogram import Bot
@@ -2497,12 +2519,266 @@ async def list_audience_endpoint(
     leads, total = await list_audience_leads(
         bot_id, audience=audience, page=page, limit=limit, search=search
     )
+
+    lead_ids = [l.id for l in leads]
+    payments_by_lead = {}
+    if lead_ids:
+        from database.models import ClientPayment, async_session
+        from sqlalchemy import select
+
+        async with async_session() as session:
+            payments = await session.scalars(
+                select(ClientPayment)
+                .where(
+                    ClientPayment.bot_id == bot_id,
+                    ClientPayment.lead_id.in_(lead_ids),
+                    ClientPayment.status == "succeeded",
+                )
+                .order_by(ClientPayment.created_at.desc())
+            )
+            for p in payments:
+                payments_by_lead.setdefault(p.lead_id, []).append(p)
+
     return {
         "leads": [
-            LeadApiResponse.from_orm_lead(l).model_dump(by_alias=True) for l in leads
+            LeadApiResponse.from_orm_lead(
+                l, payments=payments_by_lead.get(l.id, [])
+            ).model_dump(by_alias=True)
+            for l in leads
         ],
         "total": total,
     }
+
+
+@api_router.get("/api/bots/{bot_id}/leads/{lead_id}")
+async def get_lead_detail_endpoint(bot_id: int, lead_id: int, request: Request):
+    """Детальная карточка клиента: профиль, купленные тарифы, история оплат и права доступа."""
+    bot = await get_owned_bot(bot_id, request)
+    from database.models import ClientPayment, ChatAccessGrant, Lead, async_session
+    from sqlalchemy import select
+
+    async with async_session() as session:
+        lead = await session.scalar(
+            select(Lead).where(Lead.id == lead_id, Lead.bot_id == bot.id)
+        )
+        if not lead:
+            raise HTTPException(status_code=404, detail="Клиент не найден")
+
+        payments = list(
+            await session.scalars(
+                select(ClientPayment)
+                .where(
+                    ClientPayment.lead_id == lead.id,
+                    ClientPayment.bot_id == bot.id,
+                )
+                .order_by(ClientPayment.created_at.desc())
+            )
+        )
+        payment_ids = [p.id for p in payments]
+        grants = []
+        if payment_ids:
+            grants = list(
+                await session.scalars(
+                    select(ChatAccessGrant).where(
+                        ChatAccessGrant.client_payment_id.in_(payment_ids)
+                    )
+                )
+            )
+        grants_by_payment = {}
+        for g in grants:
+            grants_by_payment.setdefault(g.client_payment_id, []).append(g)
+
+        total_paid = sum(
+            float(p.amount) for p in payments if p.status == "succeeded"
+        )
+        payments_data = []
+        for p in payments:
+            snap = dict(p.tariff_snapshot or {})
+            p_grants = grants_by_payment.get(p.id, [])
+            payments_data.append(
+                {
+                    "id": str(p.id),
+                    "tariffId": str(p.tariff_id),
+                    "name": snap.get("name") or "Тариф",
+                    "amount": float(p.amount),
+                    "currency": p.currency,
+                    "provider": p.provider,
+                    "status": p.status,
+                    "paidAt": p.paid_at.isoformat() if p.paid_at else None,
+                    "createdAt": p.created_at.isoformat() if p.created_at else None,
+                    "paymentType": snap.get("payment_type")
+                    or snap.get("paymentType")
+                    or "one_time",
+                    "billingPeriod": snap.get("billing_period")
+                    or snap.get("billingPeriod"),
+                    "autoRenew": snap.get("auto_renew", True),
+                    "deliverables": snap.get("deliverables") or [],
+                    "grants": [
+                        {
+                            "id": str(g.id),
+                            "chatId": g.chat_id,
+                            "status": g.status,
+                            "inviteLink": g.invite_link,
+                            "expiresAt": g.expires_at.isoformat()
+                            if g.expires_at
+                            else None,
+                        }
+                        for g in p_grants
+                    ],
+                }
+            )
+
+        return {
+            "lead": {
+                "id": lead.id,
+                "botId": lead.bot_id,
+                "telegramId": lead.telegram_id,
+                "username": lead.username,
+                "firstName": lead.first_name,
+                "currentStep": lead.current_step_id,
+                "hasPurchased": lead.has_purchased or len(payments_data) > 0,
+                "createdAt": lead.created_at.isoformat() if lead.created_at else None,
+                "totalPaid": round(total_paid, 2),
+            },
+            "payments": payments_data,
+        }
+
+
+@api_router.post("/api/bots/{bot_id}/leads/{lead_id}/payments/{payment_id}/refund")
+async def refund_client_payment_endpoint(
+    bot_id: int, lead_id: int, payment_id: UUID, request: Request
+):
+    """Оформление возврата по платежу клиента с отзывом доступа."""
+    bot = await get_owned_bot(bot_id, request)
+    from database.models import (
+        ClientPayment,
+        ChatAccessGrant,
+        Tariff,
+        Lead,
+        async_session,
+    )
+    from sqlalchemy import select, func
+    from decimal import Decimal
+
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(
+                ClientPayment.id == payment_id,
+                ClientPayment.lead_id == lead_id,
+                ClientPayment.bot_id == bot.id,
+            )
+            .with_for_update()
+        )
+        if not payment:
+            raise HTTPException(status_code=404, detail="Платёж не найден")
+        if payment.status != "succeeded":
+            raise HTTPException(
+                status_code=400,
+                detail="Возврат можно оформить только для успешно оплаченного платежа",
+            )
+
+        payment.status = "refunded"
+        snap = dict(payment.tariff_snapshot or {})
+        snap["refunded_at"] = datetime.now(timezone.utc).isoformat()
+        payment.tariff_snapshot = snap
+
+        # Отзываем выданные доступы к чатам
+        grants = list(
+            await session.scalars(
+                select(ChatAccessGrant).where(
+                    ChatAccessGrant.client_payment_id == payment.id
+                )
+            )
+        )
+        token = None
+        if bot.bot_token_enc:
+            try:
+                token = crypto.decrypt(bot.bot_token_enc)
+            except Exception:
+                pass
+
+        lead_row = await session.get(Lead, lead_id)
+        for grant in grants:
+            grant.status = "revoked"
+            if token and grant.chat_id and lead_row and lead_row.telegram_id:
+                try:
+                    from aiogram import Bot
+
+                    tg_bot = Bot(token=token, session=request.app.state.session)
+                    try:
+                        await tg_bot.ban_chat_member(
+                            chat_id=int(grant.chat_id),
+                            user_id=lead_row.telegram_id,
+                            until_date=timedelta(seconds=60),
+                        )
+                    except Exception as e:
+                        logger.warning("Telegram kick on refund error: %s", e)
+                except Exception as ex:
+                    logger.warning("Telegram bot on refund error: %s", ex)
+
+        # Обновляем статистику тарифа
+        if payment.tariff_id:
+            try:
+                t_uuid = UUID(str(payment.tariff_id))
+                t_item = await session.get(Tariff, t_uuid)
+                if t_item:
+                    t_item.total_buyers = max(0, t_item.total_buyers - 1)
+                    t_item.total_revenue = max(
+                        Decimal("0.00"),
+                        (t_item.total_revenue or Decimal("0.00")) - payment.amount,
+                    )
+            except Exception:
+                pass
+
+        # Проверяем оставшиеся активные оплаты
+        other_active = await session.scalar(
+            select(func.count(ClientPayment.id)).where(
+                ClientPayment.lead_id == lead_id,
+                ClientPayment.bot_id == bot.id,
+                ClientPayment.id != payment.id,
+                ClientPayment.status == "succeeded",
+            )
+        )
+        if lead_row and (not other_active or other_active == 0):
+            lead_row.has_purchased = False
+
+        await session.commit()
+
+    return {"status": "ok", "message": "Возврат успешно оформлен, доступ отозван"}
+
+
+@api_router.post(
+    "/api/bots/{bot_id}/leads/{lead_id}/payments/{payment_id}/cancel-subscription"
+)
+async def cancel_lead_subscription_endpoint(
+    bot_id: int, lead_id: int, payment_id: UUID, request: Request
+):
+    """Отмена автопродления подписки у клиента."""
+    bot = await get_owned_bot(bot_id, request)
+    from database.models import ClientPayment, async_session
+    from sqlalchemy import select
+
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(
+                ClientPayment.id == payment_id,
+                ClientPayment.lead_id == lead_id,
+                ClientPayment.bot_id == bot.id,
+            )
+            .with_for_update()
+        )
+        if not payment:
+            raise HTTPException(status_code=404, detail="Платёж не найден")
+
+        snap = dict(payment.tariff_snapshot or {})
+        snap["auto_renew"] = False
+        snap["auto_renew_cancelled_at"] = datetime.now(timezone.utc).isoformat()
+        payment.tariff_snapshot = snap
+        await session.commit()
+
+    return {"status": "ok", "message": "Автосписание успешно отменено"}
 
 
 @api_router.post("/api/bots/{bot_id}/broadcasts", response_model=BroadcastApiResponse)

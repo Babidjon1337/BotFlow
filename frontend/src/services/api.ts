@@ -41,6 +41,16 @@ export interface AudienceSummary {
   unpaid: number;
 }
 
+export interface PurchasedTariffSummary {
+  paymentId: string;
+  tariffId: string;
+  name: string;
+  amount: number;
+  paymentType: 'one_time' | 'subscription';
+  billingPeriod?: string;
+  paidAt?: string;
+}
+
 export interface AudienceLead {
   id: number;
   telegramId: number;
@@ -48,7 +58,44 @@ export interface AudienceLead {
   firstName: string | null;
   currentStep: string;
   hasPurchased: boolean;
+  purchasedTariffs?: PurchasedTariffSummary[];
+  totalPaid?: number;
   createdAt: string | null;
+}
+
+export interface LeadPaymentGrant {
+  id: string;
+  chatId: string;
+  status: string;
+  inviteLink: string;
+  expiresAt?: string | null;
+}
+
+export interface LeadPaymentDetail {
+  id: string;
+  tariffId: string;
+  name: string;
+  amount: number;
+  currency: string;
+  provider: string;
+  status: 'pending' | 'succeeded' | 'refunded' | 'cancelled';
+  paidAt?: string | null;
+  createdAt?: string | null;
+  paymentType: 'one_time' | 'subscription';
+  billingPeriod?: string;
+  autoRenew?: boolean;
+  deliverables?: Array<{
+    id: string;
+    type: 'channel' | 'group' | 'file' | 'link';
+    title: string;
+    url?: string;
+  }>;
+  grants?: LeadPaymentGrant[];
+}
+
+export interface LeadDetailResponse {
+  lead: AudienceLead;
+  payments: LeadPaymentDetail[];
 }
 
 export type BroadcastStatus =
@@ -772,13 +819,17 @@ export const apiService = {
     botId: string | number,
     audience: AudienceFilter,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
+    search?: string
   ) {
     const params = new URLSearchParams({
       audience,
-      page: str(page),
-      limit: str(limit),
+      page: String(page),
+      limit: String(limit),
     });
+    if (search && search.trim()) {
+      params.set("search", search.trim());
+    }
     return fetchApi<{ leads: AudienceLead[]; total: number }>(
       `/api/bots/${botId}/audience?${params.toString()}`
     );
@@ -896,6 +947,32 @@ export const apiService = {
       method: "POST",
       body: formData,
     });
+  },
+
+  async getLeadDetail(botId: string | number, leadId: string | number) {
+    return fetchApi<LeadDetailResponse>(`/api/bots/${botId}/leads/${leadId}`);
+  },
+
+  async refundLeadPayment(
+    botId: string | number,
+    leadId: string | number,
+    paymentId: string
+  ) {
+    return fetchApi<{ status: string; message: string }>(
+      `/api/bots/${botId}/leads/${leadId}/payments/${paymentId}/refund`,
+      { method: "POST" }
+    );
+  },
+
+  async cancelLeadSubscription(
+    botId: string | number,
+    leadId: string | number,
+    paymentId: string
+  ) {
+    return fetchApi<{ status: string; message: string }>(
+      `/api/bots/${botId}/leads/${leadId}/payments/${paymentId}/cancel-subscription`,
+      { method: "POST" }
+    );
   },
 };
 

@@ -38,6 +38,7 @@ export const BOT_VIEWS: Array<{
   { id: 'overview', label: 'Обзор' },
   { id: 'scenario', label: 'Сценарий' },
   { id: 'tariffs', label: 'Тарифы' },
+  { id: 'audience', label: 'Аудитория' },
   { id: 'integrations', label: 'Интеграции' },
   { id: 'broadcasts', label: 'Рассылки' },
 ];
@@ -59,7 +60,6 @@ const BOT_VIEW_ALIASES: Record<string, BotView> = {
   platforms: 'integrations',
   monetization: 'tariffs',
   tariffs: 'tariffs',
-  audience: 'broadcasts',
   clients: 'overview',
   analytics: 'overview',
 };

@@ -24,6 +24,7 @@ import { AppShell } from './components/shell/AppShell';
 import { BotIntegrationsScreen } from './components/screens/BotIntegrationsScreen';
 import { BotOverviewScreen } from './components/screens/BotOverviewScreen';
 import { BotTariffsScreen } from './components/screens/BotTariffsScreen';
+import { AudienceScreen } from './components/screens/AudienceScreen';
 import { BroadcastsScreen } from './components/screens/BroadcastsScreen';
 
 type TelegramWebApp = {
@@ -456,11 +457,17 @@ export default function App() {
                 bot={appState.activeBot}
               />
             )}
-            {resolvedRoute.level === 'bot' && (resolvedRoute.view === 'audience' || resolvedRoute.view === 'broadcasts') && appState.activeBot && (
-              <BroadcastsScreen
-                key={`audience-broadcasts-${resolvedRoute.view}`}
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'audience' && appState.activeBot && (
+              <AudienceScreen
+                key="audience"
                 bot={appState.activeBot}
-                initialTab={resolvedRoute.view === 'audience' ? 'audience' : 'broadcasts'}
+                onNavigateToBroadcasts={() => setRoute({ level: 'bot', view: 'broadcasts' })}
+              />
+            )}
+            {resolvedRoute.level === 'bot' && resolvedRoute.view === 'broadcasts' && appState.activeBot && (
+              <BroadcastsScreen
+                key="broadcasts"
+                bot={appState.activeBot}
               />
             )}
           </AnimatePresence>
