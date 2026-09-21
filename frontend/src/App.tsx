@@ -182,10 +182,22 @@ export default function App() {
     const root = document.documentElement;
     const applyTelegramSafeArea = () => {
       const hasTg = Boolean(tg);
+      const desktopPlatforms = new Set(['tdesktop', 'macos', 'windows', 'web', 'weba', 'webk']);
+      const platform = String(tg?.platform || '').toLowerCase();
+      const isDesktop =
+        desktopPlatforms.has(platform) ||
+        (typeof window !== 'undefined' && (window.innerWidth >= 1024 || !('ontouchstart' in window)));
+
       const inset = tg?.contentSafeAreaInset ?? tg?.safeAreaInset;
-      const topInset = inset?.top ?? 0;
-      // On Telegram WebApp, native header buttons (⋮ and ✕) sit in the top right (~88px width)
-      const rightInset = Math.max(inset?.right ?? 0, hasTg ? 88 : 0);
+
+      // На десктопе системные кнопки Telegram (⋮ и ✕) находятся прямо в правом углу окна.
+      // Там нет мобильной «чёлки» или шторки, поэтому верхний отступ (topInset) должен быть 0,
+      // чтобы шапка находилась на самом верху на одном уровне с кнопками.
+      const topInset = isDesktop ? 0 : (inset?.top ?? 0);
+
+      // Правый отступ для кнопок Telegram: на десктопе резервируем минимум 104px,
+      // чтобы элементы шапки не перекрывались нативным оверлеем.
+      const rightInset = Math.max(inset?.right ?? 0, hasTg ? (isDesktop ? 104 : 88) : 0);
       const bottomInset = inset?.bottom ?? 0;
       const leftInset = inset?.left ?? 0;
 
@@ -196,9 +208,11 @@ export default function App() {
     };
 
     applyTelegramSafeArea();
+    window.addEventListener("resize", applyTelegramSafeArea);
     tg?.onEvent?.("safeAreaChanged", applyTelegramSafeArea);
     tg?.onEvent?.("contentSafeAreaChanged", applyTelegramSafeArea);
     return () => {
+      window.removeEventListener("resize", applyTelegramSafeArea);
       tg?.offEvent?.("safeAreaChanged", applyTelegramSafeArea);
       tg?.offEvent?.("contentSafeAreaChanged", applyTelegramSafeArea);
     };
