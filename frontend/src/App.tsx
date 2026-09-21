@@ -195,9 +195,9 @@ export default function App() {
       // чтобы шапка находилась на самом верху на одном уровне с кнопками.
       const topInset = isDesktop ? 0 : (inset?.top ?? 0);
 
-      // Правый отступ для кнопок Telegram: на десктопе резервируем минимум 104px,
-      // чтобы элементы шапки не перекрывались нативным оверлеем.
-      const rightInset = Math.max(inset?.right ?? 0, hasTg ? (isDesktop ? 104 : 88) : 0);
+      // Правый отступ для кнопок Telegram: на десктопе резервируем минимум 116px,
+      // чтобы элементы шапки гарантированно не перекрывались нативным оверлеем (кнопки ⋮ и ✕).
+      const rightInset = Math.max(inset?.right ?? 0, hasTg ? (isDesktop ? 116 : 96) : 0);
       const bottomInset = inset?.bottom ?? 0;
       const leftInset = inset?.left ?? 0;
 

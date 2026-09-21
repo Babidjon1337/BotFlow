@@ -42,7 +42,13 @@ export function TopBar({
       : ACCOUNT_TABS.find(t => t.id === route.tab)?.label ?? '';
 
   return (
-    <header className="flex h-[calc(3.25rem+var(--tg-content-safe-area-inset-top,0px))] shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 pt-[var(--tg-content-safe-area-inset-top,0px)] pr-[calc(var(--tg-content-safe-area-inset-right,0px)+1rem)] sm:px-4 lg:px-6">
+    <header
+      className="flex h-[calc(3.25rem+var(--tg-content-safe-area-inset-top,0px))] shrink-0 items-center justify-between gap-2 border-b border-border bg-card pl-3 sm:pl-4 lg:pl-6"
+      style={{
+        paddingTop: 'var(--tg-content-safe-area-inset-top, 0px)',
+        paddingRight: 'calc(var(--tg-content-safe-area-inset-right, 0px) + 1.25rem)',
+      }}
+    >
       {route.level === 'bot' ? (
         <>
           <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
