@@ -67,37 +67,25 @@ export function TopBar({
               aria-label="Выбрать другого бота"
               className="group flex min-w-0 cursor-pointer items-center gap-2 rounded-xl px-2 py-1 text-left transition-colors hover:bg-muted"
             >
-              <div className="flex min-w-0 flex-col sm:flex-row sm:items-baseline sm:gap-2">
-                <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex min-w-0 flex-col">
+                <div className="flex min-w-0 items-center gap-3">
                   <span className="truncate text-[15px] font-bold text-foreground leading-tight sm:text-base">
                     {activeBot?.name ?? 'Бот'}
                   </span>
+                  {activeBot && <BotStatusBadge status={activeBot.status} />}
+                  <ChevronsUpDown className="size-3.5 shrink-0 text-fg-tertiary transition-colors group-hover:text-foreground" />
                   {adminOrigin && (
-                    <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.2 text-[9px] font-bold text-amber-600 dark:text-amber-400">
+                    <span className="hidden sm:inline-flex shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-600 dark:text-amber-400">
                       Режим админа
                     </span>
                   )}
                 </div>
-                <span className="truncate text-xs font-medium text-fg-secondary leading-none sm:text-[13px]">
+
+                <span className="truncate text-xs font-medium text-fg-secondary leading-none sm:text-[13px] mt-1">
                   {formatBotUsername(activeBot?.username)}
                 </span>
               </div>
-              <ChevronsUpDown className="size-3.5 shrink-0 text-fg-tertiary transition-colors group-hover:text-foreground" />
             </button>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            {activeBot && <BotStatusBadge status={activeBot.status} />}
-            {adminOrigin && (
-              <button
-                type="button"
-                onClick={onBackToBots}
-                className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-bold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors"
-                title="Вернуться в админку"
-              >
-                В админку
-              </button>
-            )}
           </div>
         </>
       ) : (
