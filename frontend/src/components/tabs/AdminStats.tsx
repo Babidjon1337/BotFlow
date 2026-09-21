@@ -1070,87 +1070,84 @@ function UserProfileScreen({
     [bots]
   );
 
+  const freeUsed = user.free_slots_used ?? bots.filter((b) => b.has_lifetime_license).length;
+  const freeAvail = user.free_slots_available ?? Math.max(0, (user.lifetime_slots || 0) - freeUsed);
+  const freeTotal = user.free_slots_total ?? user.lifetime_slots ?? 0;
+
+  const displayName = user.username
+    ? `@${user.username.replace(/^@/, "")}`
+    : `Пользователь ${user.telegram_id}`;
+
   return (
-    <div className="w-full space-y-6" aria-labelledby="admin-user-profile-title">
-      {/* Верхняя панель навигации и действий */}
-      <div className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="w-full space-y-4" aria-labelledby="admin-user-profile-title">
+      {/* ── Breadcrumb + actions ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-xs font-bold text-[var(--color-foreground)] shadow-sm transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[11px] font-semibold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)]"
           >
-            <ArrowLeft size={16} aria-hidden="true" />
-            Назад ко всем пользователям
+            <ArrowLeft size={13} aria-hidden="true" />
+            Пользователи
           </button>
-          <div className="hidden h-5 w-px bg-[var(--color-border)] sm:block" />
-          <div className="flex items-center gap-1.5 text-xs text-[var(--color-foreground-secondary)]">
-            <span>Пользователи</span>
-            <ChevronRight size={13} aria-hidden="true" />
-            <span className="font-semibold text-[var(--color-foreground)]">
-              {user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}
-            </span>
-          </div>
+          <ChevronRight size={13} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
+          <span className="text-[11px] font-semibold text-[var(--color-foreground)]">{displayName}</span>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onManageAccess}
-            className="h-10 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-          >
-            {user.is_disabled ? "Разблокировать доступ" : "Ограничить доступ"}
-          </button>
+        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => onOpenGrantUser(user, bots)}
-            className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-4 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90"
           >
-            <Gift size={16} aria-hidden="true" />
+            <Gift size={13} aria-hidden="true" />
             +3 мес на бота
+          </button>
+          <button
+            type="button"
+            onClick={onManageAccess}
+            className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[11px] font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)]"
+          >
+            {user.is_disabled ? "Разблокировать" : "Ограничить доступ"}
           </button>
         </div>
       </div>
 
-      {/* Карточка пользователя с метаданными */}
-      <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <h2
-                id="admin-user-profile-title"
-                className="text-2xl font-black tracking-tight text-[var(--color-foreground)]"
-              >
-                {user.username ? `@${user.username.replace(/^@/, "")}` : `Пользователь ${user.telegram_id}`}
-              </h2>
-              <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
-                {user.is_disabled ? (
-                  <>
-                    <ShieldAlert size={12} className="mr-1 inline" aria-hidden="true" />
-                    Доступ ограничен
-                  </>
-                ) : (
-                  <>
-                    <ShieldCheck size={12} className="mr-1 inline" aria-hidden="true" />
-                    Доступ активен
-                  </>
-                )}
-              </StatusBadge>
-              {user.is_platform_admin ? (
-                <StatusBadge tone="warning">
-                  <Crown size={12} className="mr-1 inline" aria-hidden="true" />
-                  Администратор платформы
-                </StatusBadge>
-              ) : null}
-            </div>
-            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--color-foreground-secondary)]">
-              <span>Telegram ID: <strong className="font-semibold text-[var(--color-foreground)]">{user.telegram_id}</strong></span>
-              <span>·</span>
-              <span>BotFlow ID: <strong className="font-semibold text-[var(--color-foreground)]">#{user.id}</strong></span>
-              <span>·</span>
-              <span>Дата регистрации: <strong className="font-semibold text-[var(--color-foreground)]">{formatDate(user.created_at)}</strong></span>
-            </p>
-          </div>
+      {/* ── User identity ── */}
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2
+            id="admin-user-profile-title"
+            className="text-xl font-black tracking-tight text-[var(--color-foreground)]"
+          >
+            {displayName}
+          </h2>
+          <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
+            {user.is_disabled ? (
+              <><ShieldAlert size={11} className="mr-1 inline" aria-hidden="true" />Доступ ограничен</>
+            ) : (
+              <><ShieldCheck size={11} className="mr-1 inline" aria-hidden="true" />Доступ активен</>
+            )}
+          </StatusBadge>
+          {user.is_platform_admin && (
+            <StatusBadge tone="warning">
+              <Crown size={11} className="mr-1 inline" aria-hidden="true" />
+              Администратор
+            </StatusBadge>
+          )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-[11px] text-[var(--color-foreground-tertiary)]">
+            TG&nbsp;ID:&nbsp;<strong className="font-semibold text-[var(--color-foreground-secondary)]">{user.telegram_id}</strong>
+          </span>
+          <span className="text-[var(--color-border)]">·</span>
+          <span className="text-[11px] text-[var(--color-foreground-tertiary)]">
+            BotFlow:&nbsp;<strong className="font-semibold text-[var(--color-foreground-secondary)]">#{user.id}</strong>
+          </span>
+          <span className="text-[var(--color-border)]">·</span>
+          <span className="text-[11px] text-[var(--color-foreground-tertiary)]">
+            Регистрация:&nbsp;<strong className="font-semibold text-[var(--color-foreground-secondary)]">{formatDate(user.created_at)}</strong>
+          </span>
         </div>
       </div>
 
@@ -1160,233 +1157,179 @@ function UserProfileScreen({
         <ErrorState message={error ?? "Не удалось открыть профиль."} onRetry={onRetry} />
       ) : (
         <>
-          {/* 1. Сводные метрики профиля */}
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <ProfileMetric
-              label="Всего ботов"
-              value={String(bots.length)}
-              note={`В аккаунте: ${user.bots_count}`}
-              icon={<Bot size={20} />}
-            />
-            <ProfileMetric
-              label="Работает сейчас"
-              value={`${activeRunningCount} / ${bots.length}`}
-              note="Активные боты"
-              icon={<Activity size={20} />}
-            />
-            <ProfileMetric
-              label="С активной подпиской"
-              value={`${activeSubCount} / ${bots.length}`}
-              note="1 бот = 1 подписка"
-              icon={<ShieldCheck size={20} />}
-            />
-            <ProfileMetric
-              label="Регистрация"
-              value={formatDate(user.created_at)}
-              note="Дата создания аккаунта"
-              icon={<Clock size={20} />}
-            />
-          </section>
+          {/* ── 4 compact metrics ── */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <ProfileMetric icon={<Bot size={16} />} label="Всего ботов" value={String(bots.length)} note={`В аккаунте: ${user.bots_count}`} />
+            <ProfileMetric icon={<Activity size={16} />} label="Работает" value={`${activeRunningCount} / ${bots.length}`} note="Активные боты" />
+            <ProfileMetric icon={<ShieldCheck size={16} />} label="С подпиской" value={`${activeSubCount} / ${bots.length}`} note="1 бот = 1 подписка" />
+            <ProfileMetric icon={<Clock size={16} />} label="Регистрация" value={formatDate(user.created_at).split(",")[0]} note={formatDate(user.created_at).split(",")[1]?.trim()} />
+          </div>
 
-          {/* 2. Карточка: VIP-статус аккаунта */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-500/15 text-amber-500 shadow-sm">
-                  <Crown size={24} aria-hidden="true" />
+          {/* ── Entitlements: 3-column grid ── */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {/* VIP */}
+            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-500">
+                  <Crown size={16} aria-hidden="true" />
                 </div>
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-bold text-[var(--color-foreground)]">
-                      VIP-статус аккаунта
-                    </h3>
-                    {user.is_vip_permanent ? (
-                      <StatusBadge tone="success">Бессрочно (Навсегда)</StatusBadge>
-                    ) : user.is_vip ? (
-                      <StatusBadge tone="success">
-                        Активен до {formatDate(user.vip_ends_at || user.subscription_ends_at)}
-                      </StatusBadge>
-                    ) : (
-                      <StatusBadge tone="neutral">Не активен</StatusBadge>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
-                    При активном VIP публикация всех ботов пользователя бесплатна, без ограничений по слотам.
-                  </p>
+                  <p className="text-[12px] font-bold text-[var(--color-foreground)] leading-none">VIP-статус</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--color-foreground-tertiary)]">Глобальный, все боты бесплатно</p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onManageVip("grant", 30, false)}
-                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
-                >
-                  +30 дн
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onManageVip("grant", 90, false)}
-                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
-                >
-                  +90 дн
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onManageVip("grant", 365, false)}
-                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
-                >
-                  +1 год
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onManageVip("grant", undefined, true)}
-                  className="h-9 rounded-xl bg-amber-500/20 px-3 text-xs font-bold text-amber-500 transition-opacity hover:opacity-90"
-                >
-                  Бессрочно навсегда
+              <div className="mb-3">
+                {user.is_vip_permanent ? (
+                  <StatusBadge tone="success">Бессрочно (навсегда)</StatusBadge>
+                ) : user.is_vip ? (
+                  <StatusBadge tone="success">до {formatDate(user.vip_ends_at || user.subscription_ends_at)}</StatusBadge>
+                ) : (
+                  <StatusBadge tone="neutral">Не активен</StatusBadge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(["30", "90", "365"] as const).map((d) => (
+                  <button key={d} type="button" onClick={() => onManageVip("grant", Number(d), false)}
+                    className="h-7 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 text-[11px] font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface)] transition-colors">
+                    {d === "365" ? "+1 год" : `+${d} дн`}
+                  </button>
+                ))}
+                <button type="button" onClick={() => onManageVip("grant", undefined, true)}
+                  className="h-7 rounded-lg bg-amber-500/20 px-2.5 text-[11px] font-bold text-amber-500 hover:opacity-90 transition-opacity">
+                  ∞ навсегда
                 </button>
                 {(user.is_vip || user.is_vip_permanent) && (
-                  <button
-                    type="button"
-                    onClick={() => onManageVip("revoke")}
-                    className="h-9 rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-xs font-semibold text-red-500 transition-colors hover:bg-red-500/20"
-                  >
-                    Отозвать VIP
+                  <button type="button" onClick={() => onManageVip("revoke")}
+                    className="h-7 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 text-[11px] font-semibold text-red-500 hover:bg-red-500/20 transition-colors">
+                    Отозвать
                   </button>
                 )}
               </div>
-            </div>
-          </section>
+            </section>
 
-          {/* 3. Карточка: Слоты бесплатных ботов */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-start gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[var(--color-primary-soft)] text-[var(--color-primary)] shadow-sm">
-                  <Layers size={24} aria-hidden="true" />
+            {/* Free Slots */}
+            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary-soft)] text-[var(--color-primary)]">
+                  <Layers size={16} aria-hidden="true" />
                 </div>
                 <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-bold text-[var(--color-foreground)]">
-                      Слоты бесплатных ботов
-                    </h3>
-                    <span className="rounded-md bg-[var(--color-primary)] px-2 py-0.5 text-xs font-bold text-white">
-                      {user.free_slots_total ?? user.lifetime_slots ?? 0} шт.
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
-                    Использовано ботами: <strong>{user.free_slots_used ?? bots.filter((b) => b.has_lifetime_license).length}</strong> · Доступно для новых ботов: <strong>{user.free_slots_available ?? Math.max(0, (user.lifetime_slots || 0) - bots.filter((b) => b.has_lifetime_license).length)}</strong>
-                  </p>
-                  <p className="text-xs text-[var(--color-foreground-tertiary)]">
-                    1 слот = 1 бот навсегда бесплатно. Слот привязывается к конкретному боту и не дублируется.
-                  </p>
+                  <p className="text-[12px] font-bold text-[var(--color-foreground)] leading-none">Бесплатные боты</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--color-foreground-tertiary)]">1 слот = 1 бот навсегда</p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onManageFreeSlots("grant", 1)}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90"
-                >
-                  <Plus size={14} /> 1 слот
+              <div className="mb-3 flex items-center gap-4">
+                {[
+                  { v: freeTotal, label: "всего" },
+                  { v: freeUsed, label: "исп." },
+                  { v: freeAvail, label: "своб.", primary: true },
+                ].map(({ v, label, primary }) => (
+                  <div key={label} className="text-center">
+                    <p className={`font-accent text-lg font-black tabular-nums ${primary ? "text-[var(--color-primary)]" : "text-[var(--color-foreground)]"}`}>{v}</p>
+                    <p className="text-[10px] text-[var(--color-foreground-tertiary)]">{label}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button type="button" onClick={() => onManageFreeSlots("grant", 1)}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg bg-[var(--color-primary)] px-2.5 text-[11px] font-bold text-white hover:opacity-90 transition-opacity">
+                  <Plus size={11} />1 слот
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onManageFreeSlots("grant", 5)}
-                  className="h-9 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
-                >
+                <button type="button" onClick={() => onManageFreeSlots("grant", 5)}
+                  className="h-7 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 text-[11px] font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface)] transition-colors">
                   +5 слотов
                 </button>
-                {(user.free_slots_available ?? ((user.lifetime_slots || 0) - bots.filter((b) => b.has_lifetime_license).length)) > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onManageFreeSlots("revoke", 1)}
-                    className="h-9 rounded-xl border border-red-500/30 bg-red-500/10 px-3 text-xs font-semibold text-red-500 transition-colors hover:bg-red-500/20"
-                  >
-                    -1 свободный слот
+                {freeAvail > 0 && (
+                  <button type="button" onClick={() => onManageFreeSlots("revoke", 1)}
+                    className="h-7 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 text-[11px] font-semibold text-red-500 hover:bg-red-500/20 transition-colors">
+                    −1 слот
                   </button>
                 )}
               </div>
-            </div>
-          </section>
+            </section>
 
-          {/* 3. Карточка: Безопасность и доступ в Mini App */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-[var(--color-foreground)]">
-                    Доступ к сервису (Mini App)
-                  </h3>
-                  <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
-                    {user.is_disabled ? "Вход заблокирован" : "Вход разрешён"}
-                  </StatusBadge>
+            {/* Mini App Access */}
+            <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <div className="flex items-center gap-2.5 mb-3">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${user.is_disabled ? "bg-red-500/15 text-red-500" : "bg-emerald-500/15 text-emerald-500"}`}>
+                  <ShieldCheck size={16} aria-hidden="true" />
                 </div>
-                <p className="mt-1 text-xs leading-5 text-[var(--color-foreground-secondary)]">
+                <div>
+                  <p className="text-[12px] font-bold text-[var(--color-foreground)] leading-none">Доступ к сервису</p>
+                  <p className="mt-0.5 text-[10px] text-[var(--color-foreground-tertiary)]">Mini App · BotFlow</p>
+                </div>
+              </div>
+              <div className="mb-3">
+                <StatusBadge tone={user.is_disabled ? "danger" : "success"}>
+                  {user.is_disabled ? "Вход заблокирован" : "Вход разрешён"}
+                </StatusBadge>
+                <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-foreground-secondary)]">
                   {user.is_disabled
-                    ? "Пользователь временно не может открывать интерфейс BotFlow и редактировать воронки."
-                    : "Пользователь имеет стандартный доступ к платформе, созданию и настройке воронок."}
+                    ? "Пользователь не может открывать интерфейс и редактировать воронки."
+                    : "Стандартный доступ к платформе, созданию и настройке воронок."}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={onManageAccess}
-                className="h-10 shrink-0 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                className="h-7 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-[11px] font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
               >
                 {user.is_disabled ? "Разблокировать вход" : "Ограничить доступ"}
               </button>
-            </div>
-          </section>
+            </section>
+          </div>
 
-          {/* 4. Карточка: Боты пользователя с прямым переходом в воронку */}
-          <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-sm">
-            <header className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          {/* ── Bots ── */}
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3.5">
               <div>
-                <h3 className="text-lg font-bold text-[var(--color-foreground)]">
+                <h3 className="text-[13px] font-bold text-[var(--color-foreground)]">
                   Боты пользователя · {bots.length}
                 </h3>
-                <p className="mt-0.5 text-xs text-[var(--color-foreground-secondary)]">
-                  1 опубликованный бот = 1 подписка на него. Открывайте и настраивайте воронку любого бота прямо отсюда.
+                <p className="text-[11px] text-[var(--color-foreground-tertiary)]">
+                  1 бот = 1 подписка. Настройте воронку прямо отсюда.
                 </p>
               </div>
-              {onAddBot ? (
+              {onAddBot && (
                 <button
                   type="button"
                   onClick={onAddBot}
-                  className="inline-flex h-9 items-center gap-1.5 self-start sm:self-auto rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90"
                 >
-                  <Plus size={14} /> Добавить бота
+                  <Plus size={13} /> Добавить бота
                 </button>
-              ) : null}
-            </header>
-
-            {bots.length ? (
-              <div className="space-y-3">
-                {bots.map((bot) => (
-                  <AdminBotRow
-                    key={bot.id}
-                    bot={bot}
-                    busy={busyBotId === bot.id}
-                    showOwner={false}
-                    userIsVip={Boolean(user.is_vip_permanent || user.is_vip)}
-                    onAction={onAction}
-                    onCheckReadiness={onCheckReadiness}
-                    onArchiveLeads={onArchiveLeads}
-                    onOpenGrant={onOpenGrantBot}
-                    onRevokeSubscription={onRevokeSubscription}
-                    onEditFunnel={onEditFunnel}
-                    onOpenIntegrations={onOpenIntegrations}
-                    onOpenWorkspace={onOpenWorkspace}
-                    onOpenSettings={onOpenSettings}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<Bot size={21} />}
-                title="У пользователя пока нет ботов"
-                description="Как только пользователь создаст бота в интерфейсе, он появится здесь с возможностью мгновенно заполнить воронку."
-              />
-            )}
+              )}
+            </div>
+            <div className="p-4">
+              {bots.length ? (
+                <div className="space-y-2.5">
+                  {bots.map((bot) => (
+                    <AdminBotRow
+                      key={bot.id}
+                      bot={bot}
+                      busy={busyBotId === bot.id}
+                      showOwner={false}
+                      userIsVip={Boolean(user.is_vip_permanent || user.is_vip)}
+                      onAction={onAction}
+                      onCheckReadiness={onCheckReadiness}
+                      onArchiveLeads={onArchiveLeads}
+                      onOpenGrant={onOpenGrantBot}
+                      onRevokeSubscription={onRevokeSubscription}
+                      onEditFunnel={onEditFunnel}
+                      onOpenIntegrations={onOpenIntegrations}
+                      onOpenWorkspace={onOpenWorkspace}
+                      onOpenSettings={onOpenSettings}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<Bot size={21} />}
+                  title="У пользователя пока нет ботов"
+                  description="Как только пользователь создаст бота в интерфейсе, он появится здесь."
+                />
+              )}
+            </div>
           </section>
         </>
       )}
@@ -1406,24 +1349,19 @@ function ProfileMetric({
   icon: ReactNode;
 }) {
   return (
-    <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-      <div className="mb-3 text-[var(--color-primary)]" aria-hidden="true">
-        {icon}
+    <article className="flex items-center gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm">
+      <div className="text-[var(--color-primary)] shrink-0" aria-hidden="true">{icon}</div>
+      <div className="min-w-0">
+        <p className="font-accent text-sm font-bold tabular-nums leading-none text-[var(--color-foreground)]">{value}</p>
+        <p className="mt-1 text-[11px] font-semibold text-[var(--color-foreground-secondary)] truncate">{label}</p>
+        {note && <p className="text-[10px] leading-none text-[var(--color-foreground-tertiary)] truncate mt-0.5">{note}</p>}
       </div>
-      <p className="font-accent text-lg font-bold tabular-nums text-[var(--color-foreground)]">
-        {value}
-      </p>
-      <p className="mt-0.5 text-xs font-semibold text-[var(--color-foreground-secondary)]">
-        {label}
-      </p>
-      {note ? (
-        <p className="mt-1 text-[11px] leading-4 text-[var(--color-foreground-tertiary)]">
-          {note}
-        </p>
-      ) : null}
     </article>
   );
 }
+
+
+
 
 function UserActionDialog({
   user,
