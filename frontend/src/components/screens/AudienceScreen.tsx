@@ -140,7 +140,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
   const isAudienceEmpty = !summaryLoading && summary !== null && summary.all === 0;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-6 sm:px-6">
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-20">
       {/* Page Header */}
       <PageHeader
         kicker="Аудитория"
@@ -150,7 +150,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
       />
 
       {/* Segment Cards */}
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {SEGMENTS.map((item) => {
           const isSelected = segment === item.value;
           const count = summary ? summary[item.value] : 0;
@@ -197,7 +197,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
       </div>
 
       {/* Controls Bar: Search & Broadcast CTA */}
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1">
           <Search
             size={16}

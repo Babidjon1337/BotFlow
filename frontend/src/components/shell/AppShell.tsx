@@ -155,8 +155,8 @@ export function AppShell({
               className={cn(
                 isFirstEntry
                   ? 'min-h-full w-full'
-                  : 'mx-auto w-full px-4 pb-24 pt-4 lg:px-8 lg:pb-10 lg:pt-6',
-                !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-[1120px]'),
+                  : 'mx-auto w-full px-4 pb-24 pt-3 lg:px-8 lg:pb-10 lg:pt-4',
+                !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-6xl'),
               )}
             >
               {children}

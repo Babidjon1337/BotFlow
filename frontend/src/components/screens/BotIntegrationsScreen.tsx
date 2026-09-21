@@ -292,7 +292,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-20">
       <PageHeader
         kicker="Интеграции"
         tone="green"

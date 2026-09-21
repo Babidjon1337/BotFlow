@@ -16,7 +16,8 @@ import { EntityTile } from '../common/EntityTile';
 import { StatusBadge } from '../common/StatusBadge';
 import { DeltaBadge } from '../common/DeltaBadge';
 import { CheckStepList, type CheckStepItem } from '../common/CheckStep';
-import { Overline, SectionHeader } from '../common/SectionHeader';
+import { Overline } from '../common/SectionHeader';
+import { PageHeader } from '../common/PageHeader';
 import { setIntegrationTarget } from '../../lib/integrationNav';
 
 interface BotOverviewScreenProps {
@@ -216,17 +217,27 @@ function LaunchChecklist({
   }, [bot.funnelComplete, platformDone, publishReady, paymentDone, publishing, onNavigate, onPublish]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20">
+      <PageHeader
+        kicker="Обзор"
+        tone="blue"
+        title="Запуск бота"
+        hint={`${bot.name} · Четыре шага от черновика до работающей воронки продаж`}
+      />
+
       {/* Top Banner / Progress overview for desktop & mobile */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
         <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-display font-bold tracking-tight">Запуск бота</h1>
-            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-micro font-bold text-primary">
+          <div className="flex items-center gap-2">
+            <span className="text-body font-bold text-foreground">
               {progressPercent}% готово
             </span>
+            <span className="text-fg-tertiary">·</span>
+            <span className="text-meta text-fg-secondary">
+              {completedStepsCount}/4 шагов пройдено
+            </span>
           </div>
-          <p className="mt-1 text-body-sm text-fg-secondary">
+          <p className="mt-0.5 text-meta text-fg-secondary">
             {bot.funnelComplete
               ? 'Основные шаги почти завершены — осталось совсем немного до первого клиента'
               : 'Четыре шага от черновика до работающей воронки продаж'}
@@ -512,8 +523,13 @@ function LaunchedOverview({
   }, [bot.id]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <SectionHeader title={bot.name} meta={`@${(bot.username ?? '').replace(/^@/, '')} · результаты за неделю`} />
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20">
+      <PageHeader
+        kicker="Обзор"
+        tone="blue"
+        title={bot.name}
+        hint={`@${(bot.username ?? '').replace(/^@/, '')} · Результаты за неделю`}
+      />
 
       <div className="grid gap-6 lg:grid-cols-12 lg:items-start">
         <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 sm:p-6 lg:col-span-7 xl:col-span-8">

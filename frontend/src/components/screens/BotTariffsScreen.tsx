@@ -15,6 +15,7 @@ import type { BotConfig } from '../../types';
 import type { TariffItem } from '../../types/tariff';
 import { apiService } from '../../services/api';
 import { useAppState } from '../../providers/AppStateProvider';
+import { PageHeader } from '../common/PageHeader';
 import { TariffEditorModal } from '../sheets/TariffEditorModal';
 import {
   toBackendPayload,
@@ -262,29 +263,24 @@ export function BotTariffsScreen({
   };
 
   return (
-    <div className="space-y-8">
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-20">
       {/* 1. Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <div className="font-accent mb-2 text-[11px] font-bold uppercase tracking-wider text-primary">
-            МОНЕТИЗАЦИЯ БОТА
-          </div>
-          <h1 className="text-[26px] font-extrabold leading-tight text-foreground">
-            Тарифы и продукты
-          </h1>
-          <p className="mt-1 text-sm text-fg-secondary">
-            Управляйте продуктами, ценами и правами доступа в закрытые чаты
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={handleOpenCreate}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-primary px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover"
-        >
-          <Plus className="size-3.5" />
-          Создать тариф
-        </button>
-      </div>
+      <PageHeader
+        kicker="Тарифы"
+        tone="blue"
+        title="Тарифы и продукты"
+        hint={`${bot.name} · Продукты, цены и выдача доступов`}
+        action={
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover"
+          >
+            <Plus className="size-3.5" />
+            Создать тариф
+          </button>
+        }
+      />
 
 
       {/* 3. Catalog Grid or Loading / Empty state */}

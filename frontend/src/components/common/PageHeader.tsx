@@ -24,7 +24,6 @@ interface PageHeaderProps {
   className?: string;
 }
 
-/** Заголовок экрана по паттерну DS v2 §10: kicker → title 26/800 → hint → action. */
 export function PageHeader({
   kicker,
   tone = 'blue',
@@ -34,13 +33,20 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn('flex flex-wrap items-start justify-between gap-x-6 gap-y-3', className)}>
-      <div className="min-w-0">
-        {kicker && (
-          <p className={cn('kicker', kickerTone[tone])}>{kicker}</p>
-        )}
-        <h1 className="mt-2 text-page-title font-extrabold text-foreground">{title}</h1>
-        {hint && <p className="mt-1 text-body-sm text-fg-secondary">{hint}</p>}
+    <div className={cn('mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3', className)}>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {kicker && (
+            <>
+              <span className={cn('kicker text-micro font-bold uppercase tracking-wider', kickerTone[tone])}>
+                {kicker}
+              </span>
+              <span className="text-fg-tertiary select-none text-meta">·</span>
+            </>
+          )}
+          <h1 className="text-body-lg font-bold text-foreground sm:text-title">{title}</h1>
+        </div>
+        {hint && <p className="mt-0.5 text-meta text-fg-secondary">{hint}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>

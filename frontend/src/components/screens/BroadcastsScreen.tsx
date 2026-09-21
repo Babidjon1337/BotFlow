@@ -153,7 +153,7 @@ export function BroadcastsScreen({ bot, initialTab = 'broadcasts' }: { bot: BotC
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 pb-28 pt-6 sm:px-6">
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-20">
       <PageHeader
         kicker={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
         tone={tab === 'audience' ? 'indigo' : 'orange'}
@@ -163,7 +163,7 @@ export function BroadcastsScreen({ bot, initialTab = 'broadcasts' }: { bot: BotC
           : `${bot.name} · Сегменты аудитории и рассылки по ним`}
       />
 
-      <div className="mt-6">
+      <div>
         {tab === 'audience' ? (
           <AudienceTab
             botId={bot.id}

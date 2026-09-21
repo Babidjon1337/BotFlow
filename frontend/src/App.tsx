@@ -181,10 +181,18 @@ export default function App() {
     const tg = getTelegramWebApp();
     const root = document.documentElement;
     const applyTelegramSafeArea = () => {
+      const hasTg = Boolean(tg);
       const inset = tg?.contentSafeAreaInset ?? tg?.safeAreaInset;
-      for (const side of ["top", "right", "bottom", "left"] as const) {
-        root.style.setProperty(`--tg-content-safe-area-inset-${side}`, `${inset?.[side] ?? 0}px`);
-      }
+      const topInset = inset?.top ?? 0;
+      // On Telegram WebApp, native header buttons (⋮ and ✕) sit in the top right (~88px width)
+      const rightInset = Math.max(inset?.right ?? 0, hasTg ? 88 : 0);
+      const bottomInset = inset?.bottom ?? 0;
+      const leftInset = inset?.left ?? 0;
+
+      root.style.setProperty(`--tg-content-safe-area-inset-top`, `${topInset}px`);
+      root.style.setProperty(`--tg-content-safe-area-inset-right`, `${rightInset}px`);
+      root.style.setProperty(`--tg-content-safe-area-inset-bottom`, `${bottomInset}px`);
+      root.style.setProperty(`--tg-content-safe-area-inset-left`, `${leftInset}px`);
     };
 
     applyTelegramSafeArea();

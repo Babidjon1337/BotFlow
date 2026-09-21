@@ -1,4 +1,4 @@
-﻿import { motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import {
   LineChart as RechartsLineChart,
@@ -591,21 +591,26 @@ export const Home = () => {
       animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
       exit={{ opacity: 0, filter: "blur(4px)" }}
       transition={{ duration: 0.25, ease: "easeOut" }}
-      className="space-y-6 pb-8"
+      className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-20"
     >
-      <div className="flex items-center justify-between gap-3">
-        <PageHeader kicker="Обзор" tone="blue" title="Обзор бота" hint={appState.activeBot?.name} />
-        <button
-          type="button"
-          onClick={refreshDashboard}
-          disabled={isDashboardRefreshing}
-          className="btn btn-secondary h-10 shrink-0 px-3 text-[13px]"
-          aria-busy={isDashboardRefreshing || undefined}
-        >
-          <RefreshCw size={15} className={isDashboardRefreshing ? "animate-spin" : ""} />
-          {isDashboardRefreshing ? "Обновляем" : "Обновить"}
-        </button>
-      </div>
+      <PageHeader
+        kicker="Обзор"
+        tone="blue"
+        title="Обзор бота"
+        hint={appState.activeBot?.name}
+        action={
+          <button
+            type="button"
+            onClick={refreshDashboard}
+            disabled={isDashboardRefreshing}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-fg-secondary hover:bg-muted hover:text-foreground transition-colors"
+            aria-busy={isDashboardRefreshing || undefined}
+          >
+            <RefreshCw size={13} className={isDashboardRefreshing ? "animate-spin" : ""} />
+            {isDashboardRefreshing ? "Обновляем" : "Обновить"}
+          </button>
+        }
+      />
 
       {/* Bot Revenue Dashboard Header */}
       <div className="card-saas flex w-full flex-col p-5 sm:p-6">
