@@ -4,7 +4,11 @@ export interface Tariff {
   id: string;
   name: string;
   price: string | number;
+  oldPrice?: string | number | null;
   description: string;
+  managerUrl?: string | null;
+  buttonText?: string | null;
+  salesMode?: 'auto' | 'application' | 'hybrid';
   hasDelivery?: boolean;
   actionType: 'link' | 'group' | 'text' | 'file';
   actionData: string;
@@ -15,6 +19,7 @@ export interface Tariff {
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaType?: 'photo' | 'video' | null;
+  mediaAssets?: NodeMediaAsset[] | null;
   deliverables?: import('./types/tariff').TariffDeliverable[];
 }
 

@@ -93,10 +93,14 @@ class TariffCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Название тарифа")
     description: Optional[str] = Field(None, max_length=4096, description="Описание тарифа")
     price: float = Field(default=0.0, ge=0, description="Стоимость в рублях")
+    old_price: Optional[float] = Field(None, ge=0, alias="oldPrice", description="Старая зачёркнутая цена")
     payment_type: PaymentType = Field(default="one_time", alias="paymentType")
     recurring_period: Optional[str] = Field(None, alias="recurringPeriod")
     sales_mode: SalesMode = Field(default="auto", alias="salesMode")
+    manager_url: Optional[str] = Field(None, max_length=512, alias="managerUrl", description="Ссылка на менеджера")
+    button_text: Optional[str] = Field(None, max_length=255, alias="buttonText", description="Кастомный текст кнопки")
     is_active: bool = Field(default=True, alias="isActive")
+    media_assets: List[Dict[str, Any]] = Field(default_factory=list, alias="mediaAssets")
     deliverables: List[DeliverableSchema] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -126,10 +130,14 @@ class TariffUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=4096)
     price: Optional[float] = Field(None, ge=0)
+    old_price: Optional[float] = Field(None, ge=0, alias="oldPrice")
     payment_type: Optional[PaymentType] = Field(None, alias="paymentType")
     recurring_period: Optional[str] = Field(None, alias="recurringPeriod")
     sales_mode: Optional[SalesMode] = Field(None, alias="salesMode")
+    manager_url: Optional[str] = Field(None, max_length=512, alias="managerUrl")
+    button_text: Optional[str] = Field(None, max_length=255, alias="buttonText")
     is_active: Optional[bool] = Field(None, alias="isActive")
+    media_assets: Optional[List[Dict[str, Any]]] = Field(None, alias="mediaAssets")
     deliverables: Optional[List[DeliverableSchema]] = None
 
     model_config = ConfigDict(populate_by_name=True)
@@ -155,11 +163,15 @@ class TariffApiResponse(BaseModel):
     name: str
     description: Optional[str] = None
     price: float
+    old_price: Optional[float] = Field(None, alias="oldPrice")
     payment_type: str = Field(..., alias="paymentType")
     recurring_period: Optional[str] = Field(None, alias="recurringPeriod")
     sales_mode: str = Field(..., alias="salesMode")
+    manager_url: Optional[str] = Field(None, alias="managerUrl")
+    button_text: Optional[str] = Field(None, alias="buttonText")
     is_active: bool = Field(..., alias="isActive")
     is_active_in_funnel: bool = Field(default=True, alias="isActiveInFunnel")
+    media_assets: List[Dict[str, Any]] = Field(default_factory=list, alias="mediaAssets")
     deliverables: List[Dict[str, Any]] = Field(default_factory=list)
     total_buyers: int = Field(default=0, alias="totalBuyers")
     buyers_count: int = Field(default=0, alias="buyersCount")
@@ -184,20 +196,30 @@ class TariffApiResponse(BaseModel):
         )
         raw_deliverables = getattr(tariff, "deliverables", []) or []
         price_val = float(tariff.price) if tariff.price is not None else 0.0
+        old_price_val = (
+            float(tariff.old_price)
+            if getattr(tariff, "old_price", None) is not None
+            else None
+        )
         revenue_val = float(tariff.total_revenue) if tariff.total_revenue is not None else 0.0
         is_act = bool(tariff.is_active)
         buyers = int(tariff.total_buyers or 0)
+        media_assets_val = list(getattr(tariff, "media_assets", []) or [])
         return cls(
             id=str(tariff.id),
             bot_id=tariff.bot_id,
             name=tariff.name,
             description=tariff.description,
             price=price_val,
+            old_price=old_price_val,
             payment_type=tariff.payment_type,
             recurring_period=tariff.recurring_period,
             sales_mode=tariff.sales_mode,
+            manager_url=getattr(tariff, "manager_url", None),
+            button_text=getattr(tariff, "button_text", None),
             is_active=is_act,
             is_active_in_funnel=is_act,
+            media_assets=media_assets_val,
             deliverables=list(raw_deliverables),
             total_buyers=buyers,
             buyers_count=buyers,

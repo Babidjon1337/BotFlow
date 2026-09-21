@@ -1780,11 +1780,15 @@ async def create_tariff_endpoint(
         name=body.name,
         description=body.description,
         price=body.price,
+        old_price=body.old_price,
         payment_type=body.payment_type,
         recurring_period=body.recurring_period,
         sales_mode=body.sales_mode,
+        manager_url=body.manager_url,
+        button_text=body.button_text,
         is_active=body.is_active,
         deliverables=deliverables_data,
+        media_assets=body.media_assets,
     )
     return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
 
@@ -1830,11 +1834,15 @@ async def update_tariff_endpoint(
         name=body.name,
         description=body.description,
         price=body.price,
+        old_price=body.old_price,
         payment_type=body.payment_type,
         recurring_period=body.recurring_period,
         sales_mode=body.sales_mode,
+        manager_url=body.manager_url,
+        button_text=body.button_text,
         is_active=body.is_active,
         deliverables=deliverables_data,
+        media_assets=body.media_assets,
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Тариф не найден")

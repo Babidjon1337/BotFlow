@@ -115,6 +115,8 @@ function TariffEditorForm({
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>(tariff?.billingPeriod || 'month');
   const [salesMode, setSalesMode] = useState<SalesMode>(tariff?.salesMode || 'auto');
   const [isActiveInFunnel, setIsActiveInFunnel] = useState(tariff?.isActiveInFunnel !== false);
+  const [managerUrl, setManagerUrl] = useState<string>(tariff?.managerUrl || '');
+  const [buttonText, setButtonText] = useState<string>(tariff?.buttonText || '');
   const [mediaType, setMediaType] = useState<'photo' | 'video' | null>(tariff?.mediaType || null);
   const [mediaFileId, setMediaFileId] = useState<string | null>(tariff?.mediaFileId || null);
   const [mediaAssetId, setMediaAssetId] = useState<string | null>(tariff?.mediaAssetId || null);
@@ -291,11 +293,36 @@ function TariffEditorForm({
     }
   };
 
-  const handleUploadLargeMedia = (file?: File) => {
-    const sizeMb = file ? Math.round(file.size / (1024 * 1024)) : 0;
-    setFormError(
-      `Файл${sizeMb ? ` (${sizeMb} МБ)` : ''} превышает лимит браузера 20 МБ. Большие видео до 2 ГБ загружаются через Telegram-бота во вкладке «Сценарий».`
-    );
+  const handleUploadLargeMedia = async (_file?: File) => {
+    if (!botId) return;
+    const tariffId = tariff?.id || 'new';
+    try {
+      const session = await apiService.createMediaUploadSession(botId, `tariff:${tariffId}`);
+      const tg = (window as any).Telegram?.WebApp;
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(session.deepLink);
+      } else {
+        window.open(session.deepLink, '_blank');
+      }
+      setFormError(null);
+      // Subscribe to SSE event for upload completion
+      const { eventStream } = await import('../../services/eventStream');
+      const unsub = eventStream.subscribe<{
+        sessionId: string;
+        nodeId: string;
+        mediaAssets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: 'photo' | 'video' | 'document' }>;
+      }>('media:upload_completed', (data) => {
+        if (data?.mediaAssets?.length) {
+          const first = data.mediaAssets[0];
+          setMediaType(first.mediaType === 'video' ? 'video' : 'photo');
+          setMediaFileId(first.mediaFileId);
+          setMediaAssetId(first.mediaAssetId);
+        }
+        unsub();
+      });
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Не удалось открыть бота для загрузки');
+    }
   };
 
   const handleRemoveMedia = () => {
@@ -337,6 +364,8 @@ function TariffEditorForm({
       billingPeriod: paymentType === 'subscription' ? billingPeriod : undefined,
       salesMode,
       isActiveInFunnel,
+      managerUrl: managerUrl.trim() || null,
+      buttonText: buttonText.trim() || null,
       mediaType,
       mediaFileId,
       mediaAssetId,
@@ -398,8 +427,8 @@ function TariffEditorForm({
           {/* 1. Name & Prices Grid */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
             <div className="sm:col-span-6">
-              <label className="mb-2 block text-sm font-semibold text-foreground">
-                Название тарифа <span className="text-danger">*</span>
+              <label className="mb-2 flex h-5 items-center text-sm font-semibold text-foreground">
+                Название тарифа <span className="ml-1 text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -410,8 +439,8 @@ function TariffEditorForm({
               />
             </div>
             <div className="sm:col-span-3">
-              <label className="mb-2 block text-sm font-semibold text-foreground">
-                Цена, ₽ <span className="text-danger">*</span>
+              <label className="mb-2 flex h-5 items-center text-sm font-semibold text-foreground">
+                Цена, ₽ <span className="ml-1 text-danger">*</span>
               </label>
               <input
                 type="text"
@@ -422,8 +451,9 @@ function TariffEditorForm({
               />
             </div>
             <div className="sm:col-span-3">
-              <label className="mb-2 block text-sm font-semibold text-fg-secondary">
-                Старая цена, ₽ <span className="text-xs font-normal text-fg-tertiary">(зачёркнуто)</span>
+              <label className="mb-2 flex h-5 items-center text-sm font-semibold text-fg-secondary whitespace-nowrap">
+                Старая цена, ₽{' '}
+                <span className="ml-1 text-xs font-normal text-fg-tertiary">(зачёрк.)</span>
               </label>
               <input
                 type="text"
@@ -552,6 +582,37 @@ function TariffEditorForm({
             <div className="rounded-xl border border-border/60 bg-muted/40 p-3 text-xs leading-relaxed text-fg-secondary">
               {SALES_MODES.find((m) => m.id === salesMode)?.description}
             </div>
+          </div>
+
+          {/* 4b. Manager URL (shown when sales mode requires manager contact) */}
+          {(salesMode === 'application' || salesMode === 'hybrid') && (
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-foreground">
+                Ссылка на менеджера
+              </label>
+              <input
+                type="text"
+                value={managerUrl}
+                onChange={(e) => setManagerUrl(e.target.value)}
+                placeholder="@manager или https://t.me/manager"
+                className="h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          )}
+
+          {/* 4c. Custom button text */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-fg-secondary">
+              Текст кнопки{' '}
+              <span className="text-xs font-normal text-fg-tertiary">(необязательно)</span>
+            </label>
+            <input
+              type="text"
+              value={buttonText}
+              onChange={(e) => setButtonText(e.target.value)}
+              placeholder="Купить за ₽ / Оформить / Связаться..."
+              className="h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
           </div>
 
           {/* 5. Deliverables */}

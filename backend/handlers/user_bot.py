@@ -511,8 +511,8 @@ async def on_owner_media_message(message: Message):
         "mediaType": media_type,
     }
 
-    if session.node_id.startswith("payment:tariff:"):
-        tariff_id = session.node_id.removeprefix("payment:tariff:")
+    if session.node_id.startswith("payment:tariff:") or session.node_id.startswith("tariff:"):
+        tariff_id = session.node_id.removeprefix("payment:tariff:").removeprefix("tariff:")
         payment_node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == "payment"), None)
         if payment_node and isinstance(payment_node.get("tariffs"), list):
             for t in payment_node["tariffs"]:
@@ -520,7 +520,19 @@ async def on_owner_media_message(message: Message):
                     t["mediaFileId"] = telegram_file_id
                     t["mediaAssetId"] = str(asset.id)
                     t["mediaType"] = media_type
+                    t_assets = list(t.get("mediaAssets") or [])
+                    t_assets.append(asset_dict)
+                    t["mediaAssets"] = t_assets[-10:]
                     break
+        try:
+            from database.requests.tariff_rq import get_tariff_by_id, update_tariff
+            db_tariff = await get_tariff_by_id(tariff_id)
+            if db_tariff:
+                tar_assets = list(getattr(db_tariff, "media_assets", []) or [])
+                tar_assets.append(asset_dict)
+                await update_tariff(db_tariff.id, media_assets=tar_assets[-10:])
+        except Exception as e:
+            logger.debug("Не удалось обновить медиа тарифа в БД: %s", e)
     else:
         target_node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == session.node_id), None)
         if target_node:
@@ -673,10 +685,12 @@ async def _send_tariff_invoice(
 
     # Manager button resolution for application and hybrid modes
     manager_url = None
-    if node_checkout and getattr(node_checkout, "manager_url", ""):
-        raw_url = getattr(node_checkout, "manager_url", "")
+    raw_url = getattr(tariff, "manager_url", None) or (
+        getattr(node_checkout, "manager_url", "") if node_checkout else ""
+    )
+    if raw_url:
         raw_text = (
-            getattr(node_checkout, "manager_text", "")
+            (getattr(node_checkout, "manager_text", "") if node_checkout else "")
             or f"Здравствуйте! Хочу оформить тариф «{tariff_name}»."
         )
         manager_url = build_manager_deep_link(raw_url, raw_text)
@@ -688,16 +702,27 @@ async def _send_tariff_invoice(
                 manager_url = raw_url
 
     tariff_id = str(getattr(tariff, "id", ""))
+    manager_btn_text = (
+        getattr(tariff, "button_text", None)
+        if mode == "application" and getattr(tariff, "button_text", None)
+        else "Связаться с менеджером"
+    )
     manager_button = (
-        InlineKeyboardButton(text="Связаться с менеджером", url=manager_url)
+        InlineKeyboardButton(text=manager_btn_text, url=manager_url)
         if manager_url
         else InlineKeyboardButton(
-            text="Связаться с менеджером", callback_data=f"apply_tariff:{tariff_id}"
+            text=manager_btn_text, callback_data=f"apply_tariff:{tariff_id}"
         )
     )
 
     all_tariffs = list(getattr(node_checkout, "tariffs", []) or [])
     has_multiple = len(all_tariffs) > 1
+
+    tariff_media_assets = (
+        getattr(tariff, "media_assets", None)
+        or getattr(tariff, "mediaAssets", None)
+        or []
+    )
 
     # 1. Application mode: only manager button
     if mode == "application":
@@ -715,6 +740,7 @@ async def _send_tariff_invoice(
             pay_keyboard,
             media_type=getattr(tariff, "media_type", None),
             file_id=getattr(tariff, "media_file_id", None),
+            media_assets=tariff_media_assets,
         )
         return
 
@@ -735,6 +761,7 @@ async def _send_tariff_invoice(
                 pay_keyboard,
                 media_type=getattr(tariff, "media_type", None),
                 file_id=getattr(tariff, "media_file_id", None),
+                media_assets=tariff_media_assets,
             )
             return
 
@@ -809,7 +836,9 @@ async def _send_tariff_invoice(
             logger.warning("Не удалось уведомить владельца о сбое счёта: %s", exc)
         return
 
-    if getattr(tariff, "installments", False) or getattr(tariff, "payment_type", "") == "recurring":
+    if getattr(tariff, "button_text", None):
+        primary_btn_text = tariff.button_text
+    elif getattr(tariff, "installments", False) or getattr(tariff, "payment_type", "") == "recurring":
         primary_btn_text = "Оформить подписку"
     elif amount > 0:
         primary_btn_text = f"Купить за {amount:,.0f} ₽".replace(",", " ")
@@ -835,6 +864,7 @@ async def _send_tariff_invoice(
         pay_keyboard,
         media_type=getattr(tariff, "media_type", None),
         file_id=getattr(tariff, "media_file_id", None),
+        media_assets=tariff_media_assets,
     )
 
 
@@ -856,16 +886,43 @@ async def _send_payment_message(
     *,
     media_type: str | None = None,
     file_id: str | None = None,
+    media_assets: list | None = None,
 ) -> None:
     """Send text/photo/video payment screens without unsupported Telegram edits."""
     chat_id = callback.message.chat.id
-    if media_type == "photo" and file_id:
+    if media_assets and len(media_assets) > 1:
+        from aiogram.types import InputMediaPhoto, InputMediaVideo
+        group = []
+        for i, a in enumerate(media_assets[:10]):
+            fid = a.get("mediaFileId") or a.get("file_id") if isinstance(a, dict) else getattr(a, "media_file_id", None)
+            m_type = a.get("mediaType") or a.get("type") if isinstance(a, dict) else getattr(a, "media_type", None)
+            if not fid:
+                continue
+            cap = text if i == 0 else None
+            if m_type == "video":
+                group.append(InputMediaVideo(media=fid, caption=cap, parse_mode="HTML"))
+            else:
+                group.append(InputMediaPhoto(media=fid, caption=cap, parse_mode="HTML"))
+        if group:
+            await callback.bot.send_media_group(chat_id=chat_id, media=group)
+            if reply_markup:
+                await callback.bot.send_message(chat_id=chat_id, text="👇", reply_markup=reply_markup)
+            return
+
+    effective_file_id = file_id
+    effective_media_type = media_type
+    if not effective_file_id and media_assets and len(media_assets) == 1:
+        first = media_assets[0]
+        effective_file_id = first.get("mediaFileId") or first.get("file_id") if isinstance(first, dict) else getattr(first, "media_file_id", None)
+        effective_media_type = first.get("mediaType") or first.get("type") if isinstance(first, dict) else getattr(first, "media_type", None)
+
+    if effective_media_type == "photo" and effective_file_id:
         await callback.bot.send_photo(
-            chat_id, file_id, caption=text or "👋", reply_markup=reply_markup
+            chat_id, effective_file_id, caption=text or "👋", reply_markup=reply_markup
         )
-    elif media_type == "video" and file_id:
+    elif effective_media_type == "video" and effective_file_id:
         await callback.bot.send_video(
-            chat_id, file_id, caption=text or "👋", reply_markup=reply_markup
+            chat_id, effective_file_id, caption=text or "👋", reply_markup=reply_markup
         )
     else:
         await callback.bot.send_message(chat_id, text or "👋", reply_markup=reply_markup)

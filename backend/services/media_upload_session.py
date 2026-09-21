@@ -42,8 +42,8 @@ def get_node_human_title(node_id: str, funnel_schema: dict | None = None) -> str
         return "Дожим 2"
     elif node_id == "payment":
         return "Оплата"
-    elif node_id.startswith("payment:tariff:"):
-        tariff_id = node_id.removeprefix("payment:tariff:")
+    elif node_id.startswith("payment:tariff:") or node_id.startswith("tariff:"):
+        tariff_id = node_id.removeprefix("payment:tariff:").removeprefix("tariff:")
         if funnel_schema and isinstance(funnel_schema, dict):
             nodes = funnel_schema.get("nodes") or []
             payment_node = next((n for n in nodes if isinstance(n, dict) and n.get("id") == "payment"), None)

@@ -15,11 +15,15 @@ async def create_tariff(
     name: str,
     description: str | None = None,
     price: Decimal | float | int = Decimal("0.00"),
+    old_price: Decimal | float | int | None = None,
     payment_type: str = "one_time",
     recurring_period: str | None = None,
     sales_mode: str = "auto",
+    manager_url: str | None = None,
+    button_text: str | None = None,
     is_active: bool = True,
     deliverables: list[dict[str, Any]] | None = None,
+    media_assets: list[dict[str, Any]] | None = None,
 ) -> Tariff:
     """Create and persist a new tariff belonging to bot_id."""
     if isinstance(price, (int, float, str)):
@@ -27,16 +31,27 @@ async def create_tariff(
     elif isinstance(price, Decimal):
         price = price.quantize(Decimal("0.01"))
 
+    norm_old_price = None
+    if old_price is not None:
+        if isinstance(old_price, (int, float, str)):
+            norm_old_price = Decimal(str(old_price)).quantize(Decimal("0.01"))
+        elif isinstance(old_price, Decimal):
+            norm_old_price = old_price.quantize(Decimal("0.01"))
+
     tariff = Tariff(
         bot_id=bot_id,
         name=name.strip(),
         description=description.strip() if description else None,
         price=price,
+        old_price=norm_old_price,
         payment_type=payment_type,
         recurring_period=recurring_period.strip() if recurring_period else None,
         sales_mode=sales_mode,
+        manager_url=manager_url.strip() if manager_url else None,
+        button_text=button_text.strip() if button_text else None,
         is_active=is_active,
         deliverables=list(deliverables or []),
+        media_assets=list(media_assets or []),
     )
     async with async_session() as session:
         session.add(tariff)
@@ -73,11 +88,15 @@ async def update_tariff(
     name: str | None = None,
     description: str | None = None,
     price: Decimal | float | int | None = None,
+    old_price: Decimal | float | int | None = None,
     payment_type: str | None = None,
     recurring_period: str | None = None,
     sales_mode: str | None = None,
+    manager_url: str | None = None,
+    button_text: str | None = None,
     is_active: bool | None = None,
     deliverables: list[dict[str, Any]] | None = None,
+    media_assets: list[dict[str, Any]] | None = None,
 ) -> Tariff | None:
     """Update fields of an existing tariff."""
     try:
@@ -96,16 +115,24 @@ async def update_tariff(
             tariff.description = description.strip() if description else None
         if price is not None:
             tariff.price = Decimal(str(price)).quantize(Decimal("0.01"))
+        if old_price is not None:
+            tariff.old_price = Decimal(str(old_price)).quantize(Decimal("0.01")) if old_price else None
         if payment_type is not None:
             tariff.payment_type = payment_type
         if recurring_period is not None:
             tariff.recurring_period = recurring_period.strip() if recurring_period else None
         if sales_mode is not None:
             tariff.sales_mode = sales_mode
+        if manager_url is not None:
+            tariff.manager_url = manager_url.strip() if manager_url else None
+        if button_text is not None:
+            tariff.button_text = button_text.strip() if button_text else None
         if is_active is not None:
             tariff.is_active = is_active
         if deliverables is not None:
             tariff.deliverables = list(deliverables)
+        if media_assets is not None:
+            tariff.media_assets = list(media_assets)
 
         tariff.updated_at = datetime.now(timezone.utc)
         await session.commit()

@@ -31,10 +31,13 @@ export interface TariffItem {
   buyersCount: number;
   revenue: number;
   description?: string;
+  managerUrl?: string | null;
+  buttonText?: string | null;
   mediaType?: 'photo' | 'video' | null;
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaUrl?: string | null;
+  mediaAssets?: import('../types').NodeMediaAsset[];
   deliverables: TariffDeliverable[];
   createdAt?: string;
   updatedAt?: string;

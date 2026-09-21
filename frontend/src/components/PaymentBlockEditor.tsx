@@ -129,7 +129,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
   botId,
   onChange,
   paymentMode,
-  onPaymentModeChange,
+  onPaymentModeChange: _onPaymentModeChange,
   managerUrl,
   managerText,
   onManagerUrlChange,
@@ -311,109 +311,49 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
 
   return (
     <div className="flex flex-col gap-4" onClick={(e) => e.stopPropagation()}>
-      {/* ─── Режим продажи ─── */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[13px] font-semibold text-[var(--color-foreground)]">
-            Режим продажи
-          </span>
-          <InfoTooltip
-            title="Логика работы воронки"
-            text={
-              <>
-                <strong>Автопродажа:</strong> онлайн-оплата, доступ автоматически.
-                <br />
-                <strong>По заявкам:</strong> кнопка → ЛС менеджера, счёт вручную.
-                <br />
-                <strong>Гибрид:</strong> две кнопки — оплата и связь с менеджером.
-              </>
-            }
-          />
-        </div>
-        <div
-          className="flex bg-[var(--color-surface-2)] p-1 rounded-xl gap-1"
-          role="radiogroup"
-          aria-label="Режим работы воронки"
-        >
-          {(['auto', 'application', 'hybrid'] as const).map((mode) => {
-            const labels = {
-              auto: 'Автопродажа',
-              application: 'По заявкам',
-              hybrid: 'Гибрид',
-            };
-            const mobileLabels = { auto: 'Авто', application: 'Заявки', hybrid: 'Гибрид' };
-            const colors = {
-              auto: 'var(--color-success)',
-              application: '#3b82f6',
-              hybrid: '#a855f7',
-            };
-            return (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => onPaymentModeChange(mode)}
-                role="radio"
-                aria-checked={paymentMode === mode}
-                className={`flex-1 min-w-0 whitespace-nowrap py-2 px-1 text-[12px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                  paymentMode === mode
-                    ? 'bg-[var(--color-surface)] shadow-sm text-[var(--color-foreground)]'
-                    : 'text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]'
-                }`}
-              >
-                <span
-                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                  style={{ background: colors[mode] }}
-                />
-                <span className="sm:hidden">{mobileLabels[mode]}</span>
-                <span className="hidden sm:inline">{labels[mode]}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <AnimatePresence>
-          {(paymentMode === 'application' || paymentMode === 'hybrid') && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="pt-2 border-t border-[var(--color-border)]"
+      {/* ─── Ссылка на менеджера (для режимов "По заявкам" и "Гибрид") ─── */}
+      <AnimatePresence>
+        {(paymentMode === 'application' || paymentMode === 'hybrid') && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="pt-2 border-t border-[var(--color-border)]"
+          >
+            <label
+              htmlFor="manager-url"
+              className="text-[12px] font-semibold text-[var(--color-foreground-secondary)] block mb-1.5"
             >
-              <label
-                htmlFor="manager-url"
-                className="text-[12px] font-semibold text-[var(--color-foreground-secondary)] block mb-1.5"
-              >
-                Ссылка на Telegram менеджера
-              </label>
-              <input
-                id="manager-url"
-                type="text"
-                className="input w-full text-[13px] h-9 mb-3"
-                value={managerUrl}
-                placeholder="@manager или https://t.me/manager"
-                onChange={(e) => onManagerUrlChange(e.target.value)}
-              />
-              <label
-                htmlFor="manager-text"
-                className="text-[12px] font-semibold text-[var(--color-foreground-secondary)] block mb-1.5"
-              >
-                Текст для связи
-              </label>
-              <input
-                id="manager-text"
-                type="text"
-                className="input w-full text-[13px] h-9"
-                value={managerText}
-                placeholder="Хочу узнать подробнее / записаться..."
-                onChange={(e) => onManagerTextChange(e.target.value)}
-              />
-              <p className="text-[11px] text-[var(--color-foreground-tertiary)] mt-1.5">
-                Telegram подставит этот текст в поле ввода клиента при нажатии кнопки связи.
-              </p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              Ссылка на Telegram менеджера
+            </label>
+            <input
+              id="manager-url"
+              type="text"
+              className="input w-full text-[13px] h-9 mb-3"
+              value={managerUrl}
+              placeholder="@manager или https://t.me/manager"
+              onChange={(e) => onManagerUrlChange(e.target.value)}
+            />
+            <label
+              htmlFor="manager-text"
+              className="text-[12px] font-semibold text-[var(--color-foreground-secondary)] block mb-1.5"
+            >
+              Текст для связи
+            </label>
+            <input
+              id="manager-text"
+              type="text"
+              className="input w-full text-[13px] h-9"
+              value={managerText}
+              placeholder="Хочу узнать подробнее / записаться..."
+              onChange={(e) => onManagerTextChange(e.target.value)}
+            />
+            <p className="text-[11px] text-[var(--color-foreground-tertiary)] mt-1.5">
+              Telegram подставит этот текст в поле ввода клиента при нажатии кнопки связи.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <hr className="border-[var(--color-border)] my-1" />
 
@@ -517,7 +457,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                   onClick={() => handleToggleTariff(item)}
                   className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
                     isChecked
-                      ? 'border-[var(--color-primary)] bg-[var(--color-primary-soft)]/25 shadow-2xs'
+                      ? 'border-primary/40 bg-primary/5 shadow-sm'
                       : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]/50'
                   }`}
                 >

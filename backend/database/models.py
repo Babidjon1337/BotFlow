@@ -600,6 +600,9 @@ class Tariff(Base):
     price: Mapped[Decimal] = mapped_column(
         Numeric(10, 2), nullable=False, default=Decimal("0.00")
     )
+    old_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(10, 2), nullable=True
+    )
     payment_type: Mapped[str] = mapped_column(
         String(32), default="one_time", nullable=False
     )
@@ -609,10 +612,19 @@ class Tariff(Base):
     sales_mode: Mapped[str] = mapped_column(
         String(32), default="auto", nullable=False
     )
+    manager_url: Mapped[Optional[str]] = mapped_column(
+        String(512), nullable=True
+    )
+    button_text: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
     )
     deliverables: Mapped[list] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
+    )
+    media_assets: Mapped[list] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb"), default=list
     )
     total_buyers: Mapped[int] = mapped_column(
@@ -666,6 +678,10 @@ async def init_models():
             """))
             await conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_tariffs_bot_id ON tariffs(bot_id)"))
             await conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_tariffs_created_at ON tariffs(created_at)"))
+            await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS old_price NUMERIC(10, 2)"))
+            await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS manager_url VARCHAR(512)"))
+            await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS button_text VARCHAR(255)"))
+            await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS media_assets JSONB DEFAULT '[]'::jsonb"))
         except Exception as exc:
             logger.debug("Схема уже актуальна или alter не требуется: %s", exc)
 

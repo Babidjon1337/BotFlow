@@ -47,9 +47,13 @@ export function toBackendPayload(item: TariffItem) {
     recurringPeriod,
     salesMode: item.salesMode === 'application' ? 'manual' : item.salesMode,
     isActive: item.isActiveInFunnel,
+    oldPrice: item.oldPrice !== undefined ? item.oldPrice : undefined,
+    managerUrl: item.managerUrl || undefined,
+    buttonText: item.buttonText || undefined,
     mediaType: item.mediaType || undefined,
     mediaFileId: item.mediaFileId || undefined,
     mediaAssetId: item.mediaAssetId || undefined,
+    mediaAssets: item.mediaAssets || undefined,
     deliverables: item.deliverables.map((d) => {
       const base: Record<string, unknown> = {
         type: d.type,
@@ -119,7 +123,12 @@ export function mapBackendTariff(raw: Record<string, unknown>, idx = 0): TariffI
     id: String(raw.id || `t_${idx}`),
     name: String(raw.name || 'Тариф'),
     price: Number(raw.price) || 0,
-    oldPrice: raw.oldPrice ? Number(raw.oldPrice) : null,
+    oldPrice:
+      raw.oldPrice !== undefined && raw.oldPrice !== null
+        ? Number(raw.oldPrice)
+        : raw.old_price !== undefined && raw.old_price !== null
+        ? Number(raw.old_price)
+        : null,
     paymentType: isRecurring ? 'subscription' : 'one_time',
     billingPeriod: isRecurring ? billingPeriod : undefined,
     salesMode,
@@ -132,9 +141,12 @@ export function mapBackendTariff(raw: Record<string, unknown>, idx = 0): TariffI
     buyersCount: Number(raw.total_buyers ?? raw.totalBuyers ?? raw.buyersCount) || 0,
     revenue: Number(raw.total_revenue ?? raw.totalRevenue ?? raw.revenue) || 0,
     description: typeof raw.description === 'string' ? raw.description : undefined,
+    managerUrl: (raw.manager_url as string) || (raw.managerUrl as string) || null,
+    buttonText: (raw.button_text as string) || (raw.buttonText as string) || null,
     mediaType: (raw.media_type as 'photo' | 'video') || (raw.mediaType as 'photo' | 'video') || null,
     mediaFileId: (raw.media_file_id as string) || (raw.mediaFileId as string) || null,
     mediaAssetId: (raw.media_asset_id as string) || (raw.mediaAssetId as string) || null,
+    mediaAssets: (raw.media_assets as import('../types').NodeMediaAsset[]) || (raw.mediaAssets as import('../types').NodeMediaAsset[]) || undefined,
     deliverables,
     createdAt: raw.created_at ? String(raw.created_at) : raw.createdAt ? String(raw.createdAt) : new Date().toISOString(),
     updatedAt: raw.updated_at ? String(raw.updated_at) : raw.updatedAt ? String(raw.updatedAt) : undefined,
@@ -165,7 +177,11 @@ export function tariffItemToTariff(item: TariffItem): Tariff {
     id: item.id,
     name: item.name,
     price: item.price,
+    oldPrice: item.oldPrice,
     description: item.description && item.description.trim() ? item.description : (d ? d.title : item.name),
+    managerUrl: item.managerUrl || null,
+    buttonText: item.buttonText || null,
+    salesMode: item.salesMode,
     hasDelivery: Boolean(item.deliverables && item.deliverables.length > 0),
     actionType,
     actionData,
@@ -173,6 +189,7 @@ export function tariffItemToTariff(item: TariffItem): Tariff {
     mediaType: item.mediaType || null,
     mediaFileId: item.mediaFileId || null,
     mediaAssetId: item.mediaAssetId || null,
+    mediaAssets: item.mediaAssets || null,
     installments: item.paymentType === 'subscription',
     deliverables: item.deliverables,
   };
@@ -213,19 +230,31 @@ export function tariffToTariffItem(t: Tariff, idx = 0): TariffItem {
     }
   }
 
+  const rawSales = (t as unknown as Record<string, unknown>).salesMode || t.salesMode;
+  const salesMode: 'auto' | 'application' | 'hybrid' =
+    rawSales === 'manual' || rawSales === 'application'
+      ? 'application'
+      : rawSales === 'hybrid'
+      ? 'hybrid'
+      : 'auto';
+
   return {
     id: String(t.id || `t_${idx}`),
     name: t.name || `Тариф ${idx + 1}`,
     price: typeof t.price === 'number' ? t.price : Number(t.price) || 0,
+    oldPrice: t.oldPrice ? Number(t.oldPrice) : null,
     paymentType: t.installments ? 'subscription' : 'one_time',
-    salesMode: 'auto',
+    salesMode,
     isActiveInFunnel: true,
     buyersCount: 0,
     revenue: 0,
     description: t.description,
+    managerUrl: t.managerUrl || null,
+    buttonText: t.buttonText || null,
     mediaType: t.mediaType || null,
     mediaFileId: t.mediaFileId || null,
     mediaAssetId: t.mediaAssetId || null,
+    mediaAssets: t.mediaAssets || undefined,
     deliverables,
   };
 }
