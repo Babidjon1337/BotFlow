@@ -84,3 +84,4 @@ Rules:
 - Before committing, run `git status` and `git diff`, stage only files related to the work done.
 - Never commit secrets, tokens, or credentials.
 - Run checks (tests / build / lint) before committing when they were part of the task.
+- Always push committed changes to the remote repository (`git push`).
