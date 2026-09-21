@@ -27,7 +27,7 @@ export const ACCOUNT_TABS: AccountTabDef[] = [
   { id: 'bots', label: 'Мои боты', short: 'Боты' },
   { id: 'billing', label: 'Подписка', short: 'Подписка' },
   { id: 'profile', label: 'Профиль', short: 'Профиль' },
-  { id: 'admin', label: 'Управление сервисом', short: 'Админ' },
+  { id: 'admin', label: 'Админка', short: 'Админка' },
 ];
 
 export const BOT_VIEWS: Array<{
@@ -36,10 +36,10 @@ export const BOT_VIEWS: Array<{
   comingSoon?: boolean;
 }> = [
   { id: 'overview', label: 'Обзор' },
+  { id: 'integrations', label: 'Интеграции' },
   { id: 'scenario', label: 'Сценарий' },
   { id: 'tariffs', label: 'Тарифы' },
   { id: 'audience', label: 'Аудитория' },
-  { id: 'integrations', label: 'Интеграции' },
   { id: 'broadcasts', label: 'Рассылки' },
 ];
 

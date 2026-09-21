@@ -79,33 +79,43 @@ export function Sidebar({
             </button>
           );
         })}
+
+        {isAdmin && (
+          <div className="pt-3">
+            <p className="px-3 pb-1.5 text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+              Сервис
+            </p>
+            <button
+              type="button"
+              onClick={() => onAccountTab('admin')}
+              aria-current={route.level === 'account' && route.tab === 'admin' ? 'page' : undefined}
+              className={cn(
+                'group relative flex w-full cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all select-none',
+                route.level === 'account' && route.tab === 'admin'
+                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-600 dark:text-amber-400 shadow-2xs ring-1 ring-amber-500/30'
+                  : 'border-amber-500/25 bg-amber-500/5 text-amber-600/90 dark:text-amber-400/90 hover:bg-amber-500/15 hover:border-amber-500/40 hover:text-amber-600 dark:hover:text-amber-300',
+              )}
+            >
+              <ShieldCheck className="size-4 shrink-0 transition-transform group-hover:scale-110" />
+              <span>Админка</span>
+              <span className="ml-auto rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                PRO
+              </span>
+            </button>
+          </div>
+        )}
       </nav>
 
-      <div className="space-y-2 px-3 pb-4">
-        {isAdmin && (
-          <button
-            type="button"
-            onClick={() => onAccountTab('admin')}
-            aria-current={route.level === 'account' && route.tab === 'admin' ? 'page' : undefined}
-            className={cn(
-              'nav-press flex w-full cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-body-sm font-semibold transition-colors',
-              route.level === 'account' && route.tab === 'admin'
-                ? 'bg-accent text-accent-foreground'
-                : 'text-fg-secondary hover:bg-muted hover:text-foreground',
-            )}
-          >
-            <ShieldCheck className="size-5 shrink-0" />
-            Управление сервисом
-          </button>
-        )}
+      <div className="flex items-center justify-between border-t border-border/50 px-4 py-3">
+        <span className="text-[11px] text-fg-tertiary font-mono">v2.4</span>
         <button
           type="button"
           onClick={toggleTheme}
           aria-label={dark ? 'Включить светлую тему' : 'Включить тёмную тему'}
           title={dark ? 'Светлая тема' : 'Тёмная тема'}
-          className="flex size-9 cursor-pointer items-center justify-center rounded-full text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
+          className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
         >
-          {dark ? <Sun className="size-[18px]" /> : <Moon className="size-[18px]" />}
+          {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </button>
       </div>
     </aside>
