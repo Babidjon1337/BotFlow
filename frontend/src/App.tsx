@@ -84,6 +84,7 @@ export default function App() {
   const { requestBotSelection } = useBotSelectionGuard();
 
   const [route, setRoute] = useState<AppRoute>(() => loadStoredRoute());
+  const [openTariffCreateModal, setOpenTariffCreateModal] = useState(false);
   const [isBotCreating, setIsBotCreating] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [hasFocusedTextField, setHasFocusedTextField] = useState(false);
@@ -429,12 +430,24 @@ export default function App() {
               )
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'scenario' && (
-              funnelWorkspaceReady ? <Build key="scenario" /> : <FunnelLoadStateView key="scenario-state" />
+              funnelWorkspaceReady ? (
+                <Build
+                  key="scenario"
+                  onNavigateToCreateTariff={() => {
+                    setOpenTariffCreateModal(true);
+                    setRoute({ level: 'bot', view: 'tariffs' });
+                  }}
+                />
+              ) : (
+                <FunnelLoadStateView key="scenario-state" />
+              )
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'tariffs' && appState.activeBot && (
               <BotTariffsScreen
                 key="tariffs"
                 bot={appState.activeBot}
+                initialOpenCreate={openTariffCreateModal}
+                onResetInitialOpenCreate={() => setOpenTariffCreateModal(false)}
               />
             )}
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'integrations' && appState.activeBot && (

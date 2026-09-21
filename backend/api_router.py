@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import uuid
 from uuid import UUID
-from sqlalchemy import select
+
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -65,8 +65,14 @@ from database.requests.client_payment_rq import (
     requeue_client_payment_delivery,
 )
 from database.requests.billing_rq import cancel_subscription_auto_renew
-from database.requests.gateway_rq import create_gateway_connection, list_gateway_connections
-from database.requests.connected_chat_rq import list_connected_chats, delete_connected_chat
+from database.requests.gateway_rq import (
+    create_gateway_connection,
+    list_gateway_connections,
+)
+from database.requests.connected_chat_rq import (
+    list_connected_chats,
+    delete_connected_chat,
+)
 from database.requests.tariff_rq import (
     create_tariff,
     get_tariff_by_id,
@@ -129,7 +135,11 @@ from schemas.api_schemas import (
     TariffUpdateRequest,
 )
 from services.saas_billing import BillingError, PRODUCTS, create_checkout
-from services.entitlements import available_lifetime_licenses, is_pro_active, is_user_vip
+from services.entitlements import (
+    available_lifetime_licenses,
+    is_pro_active,
+    is_user_vip,
+)
 from services.funnel_readiness import evaluate_funnel_readiness, format_readiness_errors
 from services.bot_lifecycle import BotLifecycleService
 from services.bot_entitlement import BotEntitlementService
@@ -219,7 +229,10 @@ def _readiness_reason_details(reasons: list[str]) -> list[dict[str, str]]:
     )
     return [
         {
-            "code": next((code for phrase, code in codes if phrase in reason), "configuration_invalid"),
+            "code": next(
+                (code for phrase, code in codes if phrase in reason),
+                "configuration_invalid",
+            ),
             "message": reason,
         }
         for reason in reasons
@@ -284,7 +297,9 @@ async def _toggle_client_bot(
     allow_admin_entitlement_bypass: bool,
 ) -> dict:
     """Apply the one shared start/stop policy for owners and administrators."""
-    new_status = "active" if action in ["start", "active", "activate", "true", "1"] else "draft"
+    new_status = (
+        "active" if action in ["start", "active", "activate", "true", "1"] else "draft"
+    )
 
     dedicated_subscription = (
         await get_bot_subscription(bot.id) if new_status == "active" else None
@@ -293,8 +308,7 @@ async def _toggle_client_bot(
     if new_status == "active":
         bot_tariffs = await _tariffs_for_bot(bot)
         auto_tariffs = [
-            t for t in bot_tariffs
-            if t.is_active and t.sales_mode in {"auto", "hybrid"}
+            t for t in bot_tariffs if t.is_active and t.sales_mode in {"auto", "hybrid"}
         ]
         if auto_tariffs:
             if not bot.payment_provider:
@@ -330,7 +344,9 @@ async def _toggle_client_bot(
                 bot = await assign_lifetime_license(bot.id) or bot
             for owner_bot in owner_bots:
                 if owner_bot.id != bot.id and owner_bot.status == "active":
-                    await set_bot_lifecycle_state(owner_bot.id, "paused", "subscription")
+                    await set_bot_lifecycle_state(
+                        owner_bot.id, "paused", "subscription"
+                    )
 
     try:
         if new_status == "active":
@@ -340,7 +356,9 @@ async def _toggle_client_bot(
     except ValueError as exc:
         msg = str(exc)
         if "Bot is not ready for this lifecycle transition: " in msg:
-            raw_reasons = msg.split("Bot is not ready for this lifecycle transition: ", 1)[1]
+            raw_reasons = msg.split(
+                "Bot is not ready for this lifecycle transition: ", 1
+            )[1]
             reasons = [r.strip() for r in raw_reasons.split(";") if r.strip()]
             user_msg = format_readiness_errors(reasons)
         elif "Cannot transition archived or incompatible bot" in msg:
@@ -366,6 +384,7 @@ async def _toggle_client_bot(
         raise HTTPException(status_code=404, detail="Бот не найден")
     try:
         from services.event_bus import event_bus
+
         owner_tg = getattr(getattr(bot, "owner", None), "telegram_id", None)
         if owner_tg:
             event_bus.publish_user(
@@ -391,7 +410,9 @@ async def _toggle_client_bot(
     }
 
 
-def _merged_payment_credentials(bot, incoming: dict | None, provider_changed: bool) -> dict:
+def _merged_payment_credentials(
+    bot, incoming: dict | None, provider_changed: bool
+) -> dict:
     """Apply partial credential changes without ever returning secrets to the client."""
     existing: dict = {}
     if not provider_changed and getattr(bot, "payment_creds_enc", None):
@@ -408,14 +429,20 @@ def _merged_payment_credentials(bot, incoming: dict | None, provider_changed: bo
 
 
 def _subscription_status(user) -> str:
-    return "active" if is_pro_active(user) else ("expired" if user.subscription_ends_at else "none")
+    return (
+        "active"
+        if is_pro_active(user)
+        else ("expired" if user.subscription_ends_at else "none")
+    )
 
 
 def _user_payload(user, telegram_id: int) -> dict:
     return {
         "telegram_id": telegram_id,
         "subscription_status": _subscription_status(user),
-        "subscription_until": user.subscription_ends_at.isoformat() if user.subscription_ends_at else None,
+        "subscription_until": (
+            user.subscription_ends_at.isoformat() if user.subscription_ends_at else None
+        ),
         "slots_bought": user.lifetime_slots,
         "subscription_auto_renew": user.subscription_auto_renew,
         "subscription_retry_count": user.subscription_retry_count,
@@ -470,7 +497,10 @@ async def get_current_user(request: Request) -> TelegramUser:
         try:
             telegram_user = validate_init_data(init_data)
         except TelegramAuthError as exc:
-            msg = AUTH_ERROR_TRANSLATIONS.get(str(exc), "Ошибка авторизации через Telegram. Откройте приложение заново.")
+            msg = AUTH_ERROR_TRANSLATIONS.get(
+                str(exc),
+                "Ошибка авторизации через Telegram. Откройте приложение заново.",
+            )
             raise HTTPException(status_code=401, detail=msg) from exc
         await _ensure_account_is_active(telegram_user.telegram_id, request=request)
         if state is not None:
@@ -487,7 +517,9 @@ async def get_current_user(request: Request) -> TelegramUser:
     raise HTTPException(status_code=401, detail="Требуется авторизация через Telegram.")
 
 
-async def _ensure_account_is_active(telegram_id: int, request: Request | None = None) -> None:
+async def _ensure_account_is_active(
+    telegram_id: int, request: Request | None = None
+) -> None:
     """Reject a paused SaaS account across all authenticated Mini App routes."""
     account = await get_user_by_tg_id(telegram_id)
     if account and account.is_disabled:
@@ -505,7 +537,9 @@ async def get_current_admin(request: Request) -> TelegramUser:
     """Resolve a Telegram identity and enforce the server-side admin allowlist."""
     current_user = await get_current_user(request)
     if current_user.telegram_id not in ADMIN_TELEGRAM_IDS:
-        raise HTTPException(status_code=403, detail="Требуются права администратора платформы.")
+        raise HTTPException(
+            status_code=403, detail="Требуются права администратора платформы."
+        )
     return current_user
 
 
@@ -534,7 +568,10 @@ async def auth_user(request: Request, body: dict = None):
         try:
             telegram_user = validate_init_data(init_data)
         except TelegramAuthError as exc:
-            msg = AUTH_ERROR_TRANSLATIONS.get(str(exc), "Ошибка авторизации через Telegram. Откройте приложение заново.")
+            msg = AUTH_ERROR_TRANSLATIONS.get(
+                str(exc),
+                "Ошибка авторизации через Telegram. Откройте приложение заново.",
+            )
             raise HTTPException(status_code=401, detail=msg) from exc
     else:
         development_user = _get_development_user(request)
@@ -728,7 +765,9 @@ async def get_admin_bots_endpoint(
 ):
     """List operational bot metadata for administrators only."""
     await get_current_admin(request)
-    bots, total = await list_admin_bots(query=query, status=status, page=page, limit=limit)
+    bots, total = await list_admin_bots(
+        query=query, status=status, page=page, limit=limit
+    )
     return {"bots": bots, "total": total, "page": page, "limit": limit}
 
 
@@ -788,9 +827,7 @@ async def grant_admin_bot_subscription_endpoint(
 
 
 @api_router.delete("/api/admin/bots/{bot_id}/subscription")
-async def revoke_admin_bot_subscription_endpoint(
-    bot_id: int, request: Request
-):
+async def revoke_admin_bot_subscription_endpoint(bot_id: int, request: Request):
     """Revoke a bot's subscription or lifetime license from the admin panel."""
     admin = await get_current_admin(request)
     try:
@@ -813,7 +850,11 @@ async def admin_bot_readiness_endpoint(bot_id: int, request: Request):
     return {
         "isReady": is_ready,
         "reasons": reasons,
-        "summary": format_readiness_errors(reasons) if not is_ready else "Воронка готова к запуску.",
+        "summary": (
+            format_readiness_errors(reasons)
+            if not is_ready
+            else "Воронка готова к запуску."
+        ),
     }
 
 
@@ -844,7 +885,9 @@ async def get_admin_saas_payments_endpoint(
 ):
     """List BotFlow's own payment history. Provider truth is read-only here."""
     await get_current_admin(request)
-    payments, total = await list_admin_saas_payments(status=status, page=page, limit=limit)
+    payments, total = await list_admin_saas_payments(
+        status=status, page=page, limit=limit
+    )
     return {"payments": payments, "total": total, "page": page, "limit": limit}
 
 
@@ -870,12 +913,18 @@ async def retry_admin_operation_endpoint(payment_id: UUID, request: Request):
         event_bus.publish_user(
             admin.telegram_id,
             "operation_failed",
-            {"operation": "payment_delivery_retry", "targetId": str(payment_id), "error": str(exc)},
+            {
+                "operation": "payment_delivery_retry",
+                "targetId": str(payment_id),
+                "error": str(exc),
+            },
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     try:
-        result = await process_client_payment_fulfillment(payment_id, request.app.state.session)
+        result = await process_client_payment_fulfillment(
+            payment_id, request.app.state.session
+        )
         await write_admin_audit_log(
             actor_telegram_id=admin.telegram_id,
             action="payment_delivery_retry",
@@ -897,7 +946,11 @@ async def retry_admin_operation_endpoint(payment_id: UUID, request: Request):
         event_bus.publish_user(
             admin.telegram_id,
             "operation_failed",
-            {"operation": "payment_delivery_retry", "targetId": str(payment_id), "error": str(exc)},
+            {
+                "operation": "payment_delivery_retry",
+                "targetId": str(payment_id),
+                "error": str(exc),
+            },
         )
         raise
 
@@ -927,6 +980,7 @@ async def get_admin_system_endpoint(request: Request):
 
 # ── Спец-ссылки доступа (период / бессрочно / один бот бесплатно) ──
 
+
 def _access_link_payload(link) -> dict:
     return {
         "id": str(link.id),
@@ -953,7 +1007,9 @@ def _parse_iso_datetime(raw, field: str):
     try:
         return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Некорректная дата: {field}") from exc
+        raise HTTPException(
+            status_code=400, detail=f"Некорректная дата: {field}"
+        ) from exc
 
 
 @api_router.get("/api/admin/access-links")
@@ -982,7 +1038,9 @@ async def create_access_link_endpoint(request: Request, body: dict):
             expires_at=_parse_iso_datetime(body.get("expiresAt"), "окончание доступа"),
             note=str(body.get("note") or "") or None,
             max_activations=int(max_activations),
-            valid_until=_parse_iso_datetime(body.get("validUntil"), "срок жизни ссылки"),
+            valid_until=_parse_iso_datetime(
+                body.get("validUntil"), "срок жизни ссылки"
+            ),
             free_bots_count=int(free_bots_count),
             is_permanent=is_permanent,
         )
@@ -1015,12 +1073,15 @@ async def create_billing_checkout(request: Request, body: BillingCheckoutRequest
     if checkout_email and ("@" not in checkout_email or len(checkout_email) > 320):
         raise HTTPException(status_code=422, detail="Введите корректный email.")
     if body.email and checkout_email != user.email:
-        user = await update_user_notification_settings(
-            user.id,
-            email=checkout_email,
-            email_receipts_enabled=user.email_receipts_enabled,
-            email_billing_notifications_enabled=user.email_billing_notifications_enabled,
-        ) or user
+        user = (
+            await update_user_notification_settings(
+                user.id,
+                email=checkout_email,
+                email_receipts_enabled=user.email_receipts_enabled,
+                email_billing_notifications_enabled=user.email_billing_notifications_enabled,
+            )
+            or user
+        )
     try:
         # Итог берём из серверного квоута бота: база 990 ₽ + доплаты за функционал.
         quote_total_rub: int | None = None
@@ -1046,7 +1107,9 @@ async def create_billing_checkout(request: Request, body: BillingCheckoutRequest
 
 
 @api_router.put("/api/profile/notification-settings")
-async def update_notification_settings(request: Request, body: NotificationSettingsRequest):
+async def update_notification_settings(
+    request: Request, body: NotificationSettingsRequest
+):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     email = body.email.strip().lower() if body.email else None
@@ -1100,24 +1163,34 @@ async def list_gateway_connections_api(request: Request):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     connections = await list_gateway_connections(user.id)
-    return {"connections": [
-        {
-            "id": str(connection.id),
-            "provider": connection.provider,
-            "displayName": connection.display_name,
-            "status": connection.status,
-            "verifiedAt": connection.verified_at.isoformat() if connection.verified_at else None,
-            "createdAt": connection.created_at.isoformat(),
-        }
-        for connection in connections
-    ]}
+    return {
+        "connections": [
+            {
+                "id": str(connection.id),
+                "provider": connection.provider,
+                "displayName": connection.display_name,
+                "status": connection.status,
+                "verifiedAt": (
+                    connection.verified_at.isoformat()
+                    if connection.verified_at
+                    else None
+                ),
+                "createdAt": connection.created_at.isoformat(),
+            }
+            for connection in connections
+        ]
+    }
 
 
 @api_router.post("/api/gateway-connections")
-async def create_gateway_connection_api(request: Request, body: GatewayConnectionCreateRequest):
+async def create_gateway_connection_api(
+    request: Request, body: GatewayConnectionCreateRequest
+):
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
-    is_valid, message = await validate_payment_credentials(body.provider, body.credentials)
+    is_valid, message = await validate_payment_credentials(
+        body.provider, body.credentials
+    )
     if not is_valid:
         raise HTTPException(status_code=400, detail=message)
     connection = await create_gateway_connection(
@@ -1140,7 +1213,9 @@ async def create_gateway_connection_api(request: Request, body: GatewayConnectio
 async def list_bots(request: Request):
     current_user = await get_current_user(request)
     state = getattr(request, "state", None)
-    user = (getattr(state, "db_user", None) if state is not None else None) or await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    user = (
+        getattr(state, "db_user", None) if state is not None else None
+    ) or await create_user_if_not_exists(telegram_id=current_user.telegram_id)
     bots = await get_user_bots(owner_id=user.id)
     subscriptions = await get_user_bot_subscriptions(owner_id=user.id)
     bot_ids = [b.id for b in bots]
@@ -1161,7 +1236,7 @@ async def list_bots(request: Request):
             resp.subscription_amount_rub = subscription.amount_rub
             resp.subscription_auto_renew = subscription.auto_renew
         bots_resp.append(resp)
-        
+
     return {"bots": [b.model_dump(by_alias=True) for b in bots_resp]}
 
 
@@ -1174,7 +1249,9 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
     if getattr(body, "owner_user_id", None) and is_admin:
         owner_candidate = await get_user_by_id(body.owner_user_id)
         if not owner_candidate:
-            raise HTTPException(status_code=404, detail="Указанный пользователь не найден.")
+            raise HTTPException(
+                status_code=404, detail="Указанный пользователь не найден."
+            )
         target_owner = owner_candidate
 
     user_bots = await get_user_bots(owner_id=target_owner.id)
@@ -1184,7 +1261,11 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
         active_paid_count = 0
         for b in user_bots:
             sub = await get_bot_subscription(b.id)
-            if sub and sub.status == "active" and (sub.ends_at is None or sub.ends_at > datetime.now(timezone.utc)):
+            if (
+                sub
+                and sub.status == "active"
+                and (sub.ends_at is None or sub.ends_at > datetime.now(timezone.utc))
+            ):
                 active_paid_count += 1
         if len(user_bots) >= allowed_slots + active_paid_count:
             raise HTTPException(
@@ -1231,12 +1312,12 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
 
         existing = await get_bot_by_tg_id(tg_bot_id)
         if existing:
-            raise HTTPException(status_code=409, detail="Этот бот уже добавлен в систему.")
+            raise HTTPException(
+                status_code=409, detail="Этот бот уже добавлен в систему."
+            )
         token_enc = crypto.encrypt(body.token)
     creds_enc = (
-        crypto.encrypt(json.dumps(body.payment_creds))
-        if body.payment_creds
-        else None
+        crypto.encrypt(json.dumps(body.payment_creds)) if body.payment_creds else None
     )
 
     bot = await create_bot_config(
@@ -1269,7 +1350,9 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
             allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
         )
     except Exception as exc:
-        logger.warning("Не удалось установить webhook для нового бота %s: %s", bot.id, exc)
+        logger.warning(
+            "Не удалось установить webhook для нового бота %s: %s", bot.id, exc
+        )
         try:
             await delete_bot_config(bot.id)
         except Exception as cleanup_exc:
@@ -1305,7 +1388,11 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
     effective_provider = body.payment_provider or bot.payment_provider
     _validate_installments(
         effective_provider,
-        body.offer_installments if body.offer_installments is not None else bot.offer_installments,
+        (
+            body.offer_installments
+            if body.offer_installments is not None
+            else bot.offer_installments
+        ),
     )
 
     if body.display_name is not None:
@@ -1355,14 +1442,15 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
                 allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
             )
         except Exception as e:
-            raise HTTPException(
-                status_code=400, detail=f"Неверный токен: {e}"
-            )
+            raise HTTPException(status_code=400, detail=f"Неверный токен: {e}")
         update_data["bot_token_enc"] = crypto.encrypt(body.token)
         update_data["media_sync_done"] = False
         # Keep the webhook only for the owner's /start synchronization, but do
         # not leave the replacement bot publicly serving an incomplete funnel.
-        if getattr(bot, "lifecycle_status", None) != "archived" and bot.status != "archived":
+        if (
+            getattr(bot, "lifecycle_status", None) != "archived"
+            and bot.status != "archived"
+        ):
             await bot_lifecycle_service.transition(bot, "paused", reason="integration")
             update_data["status"] = bot.status
             update_data["lifecycle_status"] = bot.lifecycle_status
@@ -1403,9 +1491,7 @@ async def delete_bot(bot_id: int, request: Request):
         temp_bot = Bot(token=token, session=request.app.state.session)
         await temp_bot.delete_webhook()
     except Exception as e:
-        logger.warning(
-            f"Ошибка удаления вебхука при удалении бота {bot_id}: {e}"
-        )
+        logger.warning(f"Ошибка удаления вебхука при удалении бота {bot_id}: {e}")
 
     await delete_bot_config(bot_id)
     return {"status": "ok", "message": "Бот удален"}
@@ -1450,7 +1536,11 @@ async def get_bot_readiness(bot_id: int, request: Request):
         "isReady": is_ready,
         "reasons": reasons,
         "reasonDetails": _readiness_reason_details(reasons),
-        "summary": format_readiness_errors(reasons) if not is_ready else "Воронка готова к запуску.",
+        "summary": (
+            format_readiness_errors(reasons)
+            if not is_ready
+            else "Воронка готова к запуску."
+        ),
     }
 
 
@@ -1491,7 +1581,11 @@ async def verify_chat_delivery_endpoint(
         )
     except ChatAccessError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"status": "ok", "chatTitle": chat.title or str(chat.id), "chatType": chat.type}
+    return {
+        "status": "ok",
+        "chatTitle": chat.title or str(chat.id),
+        "chatType": chat.type,
+    }
 
 
 @api_router.get("/api/bots/{bot_id}/connected-chats")
@@ -1503,10 +1597,10 @@ async def get_connected_chats_endpoint(bot_id: int, request: Request):
     from aiogram import Bot
     from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
     from services.security import crypto
-    
+
     token = crypto.decrypt(bot_config.bot_token_enc)
     telegram_bot = Bot(token=token, session=request.app.state.session)
-    
+
     verified_chats = []
     for chat in chats:
         try:
@@ -1517,7 +1611,12 @@ async def get_connected_chats_endpoint(bot_id: int, request: Request):
                 verified_chats.append(chat)
         except (TelegramForbiddenError, TelegramBadRequest) as e:
             # Bot was kicked, or chat no longer exists/is inaccessible
-            logger.warning("Auto-removing connected chat %s for bot %s due to Telegram error: %s", chat.chat_id, bot_id, e)
+            logger.warning(
+                "Auto-removing connected chat %s for bot %s due to Telegram error: %s",
+                chat.chat_id,
+                bot_id,
+                e,
+            )
             await delete_connected_chat(bot_id, chat.chat_id)
         except Exception:
             # For network timeouts or other errors, assume it's still connected
@@ -1525,7 +1624,12 @@ async def get_connected_chats_endpoint(bot_id: int, request: Request):
 
     return {
         "chats": [
-            {"id": str(chat.id), "chatId": chat.chat_id, "title": chat.title, "chatType": chat.chat_type}
+            {
+                "id": str(chat.id),
+                "chatId": chat.chat_id,
+                "title": chat.title,
+                "chatType": chat.chat_type,
+            }
             for chat in verified_chats
         ]
     }
@@ -1554,7 +1658,10 @@ async def list_bot_tariffs_endpoint(bot_id: int, request: Request):
     tariffs = await list_tariffs_by_bot_id(bot_id)
     stats = await get_tariff_summary_stats(bot_id)
     return {
-        "tariffs": [TariffApiResponse.from_orm_tariff(t).model_dump(by_alias=True) for t in tariffs],
+        "tariffs": [
+            TariffApiResponse.from_orm_tariff(t).model_dump(by_alias=True)
+            for t in tariffs
+        ],
         "total": len(tariffs),
         "stats": {
             "totalTariffs": stats["total_tariffs"],
@@ -1569,7 +1676,9 @@ async def list_bot_tariffs_endpoint(bot_id: int, request: Request):
 
 
 @api_router.get("/api/bots/{bot_id}/tariffs/stats", response_model=TariffStatsResponse)
-@api_router.get("/api/bots/{bot_id}/tariffs/summary", response_model=TariffStatsResponse)
+@api_router.get(
+    "/api/bots/{bot_id}/tariffs/summary", response_model=TariffStatsResponse
+)
 async def get_bot_tariffs_stats_endpoint(bot_id: int, request: Request):
     """Return summary statistics for bot tariffs (total, active, buyers, revenue)."""
     await get_owned_bot(bot_id, request)
@@ -1585,8 +1694,12 @@ async def get_bot_tariffs_stats_endpoint(bot_id: int, request: Request):
     }
 
 
-@api_router.post("/api/bots/{bot_id}/tariffs/upload", response_model=TariffFileUploadResponse)
-@api_router.post("/api/bots/{bot_id}/tariffs/upload-file", response_model=TariffFileUploadResponse)
+@api_router.post(
+    "/api/bots/{bot_id}/tariffs/upload", response_model=TariffFileUploadResponse
+)
+@api_router.post(
+    "/api/bots/{bot_id}/tariffs/upload-file", response_model=TariffFileUploadResponse
+)
 @api_router.post("/api/bots/{bot_id}/upload", response_model=TariffFileUploadResponse)
 async def upload_tariff_deliverable_file_endpoint(
     bot_id: int,
@@ -1600,7 +1713,9 @@ async def upload_tariff_deliverable_file_endpoint(
     if not payload:
         raise HTTPException(status_code=400, detail="Файл пуст.")
     if len(payload) > MAX_TARIFF_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="Размер файла не должен превышать 100 МБ.")
+        raise HTTPException(
+            status_code=413, detail="Размер файла не должен превышать 100 МБ."
+        )
 
     file_uuid = uuid.uuid4()
     orig_name = file.filename or "deliverable_file"
@@ -1638,7 +1753,13 @@ async def get_tariff_deliverable_file_endpoint(
     """Download a previously uploaded tariff deliverable file."""
     await get_owned_bot(bot_id, request)
     safe_filename = os.path.basename(filename)
-    file_path = Path(__file__).resolve().parent / "uploads" / "tariffs" / str(bot_id) / safe_filename
+    file_path = (
+        Path(__file__).resolve().parent
+        / "uploads"
+        / "tariffs"
+        / str(bot_id)
+        / safe_filename
+    )
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="Файл не найден.")
     return FileResponse(path=file_path, filename=safe_filename)
@@ -1668,7 +1789,9 @@ async def create_tariff_endpoint(
     return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
 
 
-@api_router.get("/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse)
+@api_router.get(
+    "/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse
+)
 async def get_tariff_endpoint(
     bot_id: int,
     tariff_id: str,
@@ -1682,7 +1805,9 @@ async def get_tariff_endpoint(
     return TariffApiResponse.from_orm_tariff(tariff).model_dump(by_alias=True)
 
 
-@api_router.put("/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse)
+@api_router.put(
+    "/api/bots/{bot_id}/tariffs/{tariff_id}", response_model=TariffApiResponse
+)
 async def update_tariff_endpoint(
     bot_id: int,
     tariff_id: str,
@@ -1737,6 +1862,7 @@ async def _tariffs_for_bot(bot) -> list:
         return list(bot.tariffs)
     try:
         from database.requests.tariff_rq import list_tariffs_by_bot_id
+
         return await list_tariffs_by_bot_id(bot.id)
     except Exception:
         return []
@@ -1834,12 +1960,19 @@ async def upload_bot_media(
     """Store a Telegram file_id for one bot; raw uploads are never persisted."""
     bot = await get_owned_bot(bot_id, request)
     if not bot.media_sync_done:
-        raise HTTPException(status_code=409, detail="Сначала нажмите /start в созданном боте для синхронизации.")
+        raise HTTPException(
+            status_code=409,
+            detail="Сначала нажмите /start в созданном боте для синхронизации.",
+        )
     content_type = (file.content_type or "").lower()
     media_type = (
-        "photo" if content_type.startswith("image/")
-        else "video" if content_type.startswith("video/")
-        else "document" if content_type else None
+        "photo"
+        if content_type.startswith("image/")
+        else (
+            "video"
+            if content_type.startswith("video/")
+            else "document" if content_type else None
+        )
     )
     if not media_type:
         raise HTTPException(status_code=415, detail="Не удалось определить тип файла.")
@@ -1853,56 +1986,94 @@ async def upload_bot_media(
         )
     schema = dict(bot.funnel_schema or {})
     nodes = list(schema.get("nodes") or [])
-    target_node = None if is_broadcast_media else next(
-        (node for node in nodes if node.get("id") == node_id), None
+    target_node = (
+        None
+        if is_broadcast_media
+        else next((node for node in nodes if node.get("id") == node_id), None)
     )
     target_tariff_id: str | None = None
-    if not is_broadcast_media and target_node is None and node_id.startswith("payment:tariff:"):
+    if (
+        not is_broadcast_media
+        and target_node is None
+        and node_id.startswith("payment:tariff:")
+    ):
         target_tariff_id = node_id.removeprefix("payment:tariff:")
-        payment_node = next((node for node in nodes if node.get("id") == "payment"), None)
-        tariffs = payment_node.get("tariffs") if isinstance(payment_node, dict) else None
-        if not target_tariff_id or not isinstance(tariffs, list) or not any(
-            str(tariff.get("id")) == target_tariff_id for tariff in tariffs if isinstance(tariff, dict)
+        payment_node = next(
+            (node for node in nodes if node.get("id") == "payment"), None
+        )
+        tariffs = (
+            payment_node.get("tariffs") if isinstance(payment_node, dict) else None
+        )
+        if (
+            not target_tariff_id
+            or not isinstance(tariffs, list)
+            or not any(
+                str(tariff.get("id")) == target_tariff_id
+                for tariff in tariffs
+                if isinstance(tariff, dict)
+            )
         ):
             target_tariff_id = None
     if not is_broadcast_media and target_node is None and target_tariff_id is None:
         raise HTTPException(status_code=404, detail="Блок воронки не найден")
     if target_tariff_id is not None and media_type == "document":
-        raise HTTPException(status_code=415, detail="Для тарифа можно использовать только фото или видео.")
+        raise HTTPException(
+            status_code=415,
+            detail="Для тарифа можно использовать только фото или видео.",
+        )
     payload = await file.read(20 * 1024 * 1024 + 1)
     if not payload or len(payload) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=413, detail="Размер файла должен быть не больше 20 МБ.")
+        raise HTTPException(
+            status_code=413, detail="Размер файла должен быть не больше 20 МБ."
+        )
 
     from aiogram import Bot
     from aiogram.types import BufferedInputFile
     from database.requests.media_rq import create_media_asset
 
-    telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
+    telegram_bot = Bot(
+        token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session
+    )
     sent_message = None
     thumbnail_file_id = None
     try:
-        upload = BufferedInputFile(payload, filename=file.filename or f"{node_id}.{media_type}")
+        upload = BufferedInputFile(
+            payload, filename=file.filename or f"{node_id}.{media_type}"
+        )
         if media_type == "photo":
-            sent_message = await telegram_bot.send_photo(bot.owner.telegram_id, upload, disable_notification=True)
+            sent_message = await telegram_bot.send_photo(
+                bot.owner.telegram_id, upload, disable_notification=True
+            )
             telegram_file_id = sent_message.photo[-1].file_id
         elif media_type == "video":
-            sent_message = await telegram_bot.send_video(bot.owner.telegram_id, upload, disable_notification=True)
+            sent_message = await telegram_bot.send_video(
+                bot.owner.telegram_id, upload, disable_notification=True
+            )
             telegram_file_id = sent_message.video.file_id
             if sent_message.video and sent_message.video.thumbnail:
                 thumbnail_file_id = sent_message.video.thumbnail.file_id
         else:
-            sent_message = await telegram_bot.send_document(bot.owner.telegram_id, upload, disable_notification=True)
+            sent_message = await telegram_bot.send_document(
+                bot.owner.telegram_id, upload, disable_notification=True
+            )
             telegram_file_id = sent_message.document.file_id
     except Exception as exc:
         logger.warning("Не удалось синхронизировать медиа для бота %s: %s", bot_id, exc)
-        raise HTTPException(status_code=502, detail="Telegram не смог обработать файл. Повторите попытку.") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Telegram не смог обработать файл. Повторите попытку.",
+        ) from exc
     finally:
         if sent_message is not None:
             try:
-                await telegram_bot.delete_message(bot.owner.telegram_id, sent_message.message_id)
+                await telegram_bot.delete_message(
+                    bot.owner.telegram_id, sent_message.message_id
+                )
             except Exception as exc:
                 # The file_id is already received; a failed cleanup must not discard the upload.
-                logger.info("Не удалось удалить временное медиа для бота %s: %s", bot_id, exc)
+                logger.info(
+                    "Не удалось удалить временное медиа для бота %s: %s", bot_id, exc
+                )
 
     current_bot = await get_bot_by_id(bot.id)
     if (
@@ -1918,16 +2089,22 @@ async def upload_bot_media(
 
     current_schema = dict(current_bot.funnel_schema or {})
     current_nodes = list(current_schema.get("nodes") or [])
-    current_node = None if is_broadcast_media else next(
-        (node for node in current_nodes if node.get("id") == node_id), None
+    current_node = (
+        None
+        if is_broadcast_media
+        else next((node for node in current_nodes if node.get("id") == node_id), None)
     )
-    current_payment_node = next((node for node in current_nodes if node.get("id") == "payment"), None)
+    current_payment_node = next(
+        (node for node in current_nodes if node.get("id") == "payment"), None
+    )
     current_tariff = None
     if target_tariff_id and isinstance(current_payment_node, dict):
         current_tariff = next(
             (
-                tariff for tariff in (current_payment_node.get("tariffs") or [])
-                if isinstance(tariff, dict) and str(tariff.get("id")) == target_tariff_id
+                tariff
+                for tariff in (current_payment_node.get("tariffs") or [])
+                if isinstance(tariff, dict)
+                and str(tariff.get("id")) == target_tariff_id
             ),
             None,
         )
@@ -1961,7 +2138,12 @@ async def upload_bot_media(
 
     # Медиа рассылки не пишется в воронку: рассылка ссылается на ассет по id.
     if is_broadcast_media:
-        return {"id": str(asset.id), "nodeId": node_id, "mediaType": media_type, "fileId": telegram_file_id}
+        return {
+            "id": str(asset.id),
+            "nodeId": node_id,
+            "mediaType": media_type,
+            "fileId": telegram_file_id,
+        }
 
     media_target = current_tariff if current_tariff is not None else current_node
     assert media_target is not None
@@ -1973,20 +2155,32 @@ async def upload_bot_media(
     assets_list = media_target.get("mediaAssets")
     if not isinstance(assets_list, list) or len(assets_list) == 0:
         assets_list = []
-        if existing_asset_id and existing_file_id and str(existing_asset_id) != str(asset.id):
-            assets_list.append({
-                "mediaFileId": existing_file_id,
-                "mediaAssetId": str(existing_asset_id),
-                "mediaType": existing_type,
-            })
+        if (
+            existing_asset_id
+            and existing_file_id
+            and str(existing_asset_id) != str(asset.id)
+        ):
+            assets_list.append(
+                {
+                    "mediaFileId": existing_file_id,
+                    "mediaAssetId": str(existing_asset_id),
+                    "mediaType": existing_type,
+                }
+            )
 
     # Заменяем прежнюю одиночную запись в массиве (если была) на новую.
-    assets_list = [a for a in assets_list if isinstance(a, dict) and str(a.get("mediaAssetId")) != str(asset.id)]
-    assets_list.append({
-        "mediaFileId": telegram_file_id,
-        "mediaAssetId": str(asset.id),
-        "mediaType": media_type,
-    })
+    assets_list = [
+        a
+        for a in assets_list
+        if isinstance(a, dict) and str(a.get("mediaAssetId")) != str(asset.id)
+    ]
+    assets_list.append(
+        {
+            "mediaFileId": telegram_file_id,
+            "mediaAssetId": str(asset.id),
+            "mediaType": media_type,
+        }
+    )
     media_target["mediaAssets"] = assets_list[-10:]
     media_target["mediaFileId"] = media_target["mediaAssets"][0]["mediaFileId"]
     media_target["mediaAssetId"] = media_target["mediaAssets"][0]["mediaAssetId"]
@@ -2016,15 +2210,21 @@ async def create_large_media_session(bot_id: int, request: Request):
     if not bot_username and bot.bot_token_enc:
         try:
             from aiogram import Bot
+
             token = crypto.decrypt(bot.bot_token_enc)
             temp_bot = Bot(token=token, session=request.app.state.session)
             me = await temp_bot.get_me()
             if me and me.username:
                 bot_username = me.username.lstrip("@")
                 from database.requests.bot_rq import update_bot_config
+
                 await update_bot_config(bot.id, username=bot_username)
         except Exception as exc:
-            logger.warning("Не удалось определить username бота %s через Telegram API: %s", bot.id, exc)
+            logger.warning(
+                "Не удалось определить username бота %s через Telegram API: %s",
+                bot.id,
+                exc,
+            )
 
     if not bot_username:
         raise HTTPException(
@@ -2032,7 +2232,11 @@ async def create_large_media_session(bot_id: int, request: Request):
             detail="Не удалось определить username бота. Убедитесь, что токен бота указан и валиден.",
         )
 
-    from services.media_upload_session import create_upload_session, get_node_human_title
+    from services.media_upload_session import (
+        create_upload_session,
+        get_node_human_title,
+    )
+
     node_title = get_node_human_title(node_id, bot.funnel_schema)
     owner_tg_id = bot.owner.telegram_id if getattr(bot, "owner", None) else bot.owner_id
     session = create_upload_session(
@@ -2051,10 +2255,13 @@ async def create_large_media_session(bot_id: int, request: Request):
 
 
 @api_router.get("/api/bots/{bot_id}/media-upload-session/{session_id}")
-async def get_large_media_session_status(bot_id: int, session_id: str, request: Request):
+async def get_large_media_session_status(
+    bot_id: int, session_id: str, request: Request
+):
     """Check status and newly uploaded assets of a large media upload session."""
     bot = await get_owned_bot(bot_id, request)
     from services.media_upload_session import get_upload_session
+
     session = get_upload_session(session_id)
     if not session or session.bot_id != bot.id:
         return {
@@ -2078,7 +2285,10 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
     """Stream a saved Telegram file for the owner's Mini App preview only."""
     bot = await get_owned_bot(bot_id, request)
     from aiogram import Bot
-    from database.requests.media_rq import get_bot_media_asset, get_thumbnail_media_asset
+    from database.requests.media_rq import (
+        get_bot_media_asset,
+        get_thumbnail_media_asset,
+    )
 
     asset = await get_bot_media_asset(bot.id, asset_id)
     if not asset:
@@ -2091,20 +2301,28 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
     target_asset = thumb_asset if thumb_asset else asset
 
     try:
-        telegram_bot = Bot(token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session)
+        telegram_bot = Bot(
+            token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session
+        )
         telegram_file = await telegram_bot.get_file(target_asset.telegram_file_id)
         payload = io.BytesIO()
         await telegram_bot.download_file(telegram_file.file_path, destination=payload)
     except Exception as exc:
         logger.warning("Не удалось получить preview медиа %s: %s", asset_id, exc)
-        raise HTTPException(status_code=502, detail="Не удалось получить файл из Telegram.") from exc
+        raise HTTPException(
+            status_code=502, detail="Не удалось получить файл из Telegram."
+        ) from exc
 
     return Response(
         content=payload.getvalue(),
-        media_type=target_asset.mime_type or ("image/jpeg" if thumb_asset else (asset.mime_type or "application/octet-stream")),
+        media_type=target_asset.mime_type
+        or (
+            "image/jpeg"
+            if thumb_asset
+            else (asset.mime_type or "application/octet-stream")
+        ),
         headers={"Cache-Control": "private, max-age=300"},
     )
-
 
 
 @api_router.delete("/api/bots/{bot_id}/leads")
@@ -2112,7 +2330,11 @@ async def reset_bot_leads(bot_id: int, request: Request):
     """Archive CRM leads without resetting history or destroying payments."""
     await get_owned_bot(bot_id, request)
     archived_count = await archive_leads_by_bot_id(bot_id)
-    return {"status": "ok", "deletedCount": archived_count, "archivedCount": archived_count}
+    return {
+        "status": "ok",
+        "deletedCount": archived_count,
+        "archivedCount": archived_count,
+    }
 
 
 @api_router.post("/api/bots/{bot_id}/invoices")
@@ -2128,9 +2350,13 @@ async def send_manual_invoice(
     nodes = (bot.funnel_schema or {}).get("nodes", [])
     payment_node = next((node for node in nodes if node.get("id") == "payment"), None)
     available = (payment_node or {}).get("tariffs") or []
-    tariffs = [tariff for tariff in available if str(tariff.get("id")) in set(body.tariff_ids)]
+    tariffs = [
+        tariff for tariff in available if str(tariff.get("id")) in set(body.tariff_ids)
+    ]
     if not tariffs:
-        raise HTTPException(status_code=400, detail="Выберите действующий тариф из воронки")
+        raise HTTPException(
+            status_code=400, detail="Выберите действующий тариф из воронки"
+        )
 
     from aiogram import Bot
     from aiogram.client.default import DefaultBotProperties
@@ -2139,12 +2365,17 @@ async def send_manual_invoice(
     import uuid
 
     if not bot.payment_provider or not bot.payment_creds_enc:
-        raise HTTPException(status_code=400, detail="Сначала подключите платёжную систему")
+        raise HTTPException(
+            status_code=400, detail="Сначала подключите платёжную систему"
+        )
     batch_id = uuid.uuid4()
     payments = [
         await create_client_payment(
-            bot_id=bot.id, lead_id=lead.id, provider=bot.payment_provider,
-            tariff=tariff, invoice_batch_id=batch_id,
+            bot_id=bot.id,
+            lead_id=lead.id,
+            provider=bot.payment_provider,
+            tariff=tariff,
+            invoice_batch_id=batch_id,
         )
         for tariff in tariffs
     ]
@@ -2158,16 +2389,25 @@ async def send_manual_invoice(
         await telegram_bot.send_message(
             lead.telegram_id,
             "🧾 <b>Выберите товар для оплаты</b>\n\nНажмите нужный тариф — покажем описание, цену и ссылку.",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(
-                    text=f"{payment.tariff_snapshot.get('name', 'Тариф')} · {payment.amount:,.0f} ₽".replace(",", " "),
-                    callback_data=f"manual_invoice:{payment.id}",
-                )
-            ] for payment in payments]),
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=f"{payment.tariff_snapshot.get('name', 'Тариф')} · {payment.amount:,.0f} ₽".replace(
+                                ",", " "
+                            ),
+                            callback_data=f"manual_invoice:{payment.id}",
+                        )
+                    ]
+                    for payment in payments
+                ]
+            ),
         )
     except Exception as exc:
         logger.exception("Не удалось отправить ручной счёт")
-        raise HTTPException(status_code=502, detail="Не удалось отправить счёт в Telegram") from exc
+        raise HTTPException(
+            status_code=502, detail="Не удалось отправить счёт в Telegram"
+        ) from exc
     return {"status": "ok", "message": "Счёт отправлен"}
 
 
@@ -2180,8 +2420,7 @@ async def get_bot_leads_endpoint(
         bot_id, search=search, page=page, limit=limit
     )
     leads_resp = [
-        LeadApiResponse.from_orm_lead(l).model_dump(by_alias=True)
-        for l in leads
+        LeadApiResponse.from_orm_lead(l).model_dump(by_alias=True) for l in leads
     ]
     return {"leads": leads_resp, "total": total}
 
@@ -2192,9 +2431,7 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
     leads, total = await get_leads_by_bot_id(bot_id, limit=10000, include_archived=True)
     views = total
     clicks = sum(
-        1
-        for l in leads
-        if l.current_step_id and l.current_step_id != "node_start"
+        1 for l in leads if l.current_step_id and l.current_step_id != "node_start"
     )
     sales, revenue = await get_client_payment_stats(bot_id)
     conversion = round((sales / views * 100), 1) if views > 0 else 0.0
@@ -2208,7 +2445,10 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
         "funnel_data": [
             {"name": "Старт", "value": views},
             {"name": "Клик", "value": clicks},
-            {"name": "Дожим 1", "value": sum(1 for l in leads if l.current_step_id == "push1")},
+            {
+                "name": "Дожим 1",
+                "value": sum(1 for l in leads if l.current_step_id == "push1"),
+            },
             {"name": "Оплата", "value": sales},
         ],
         # Keep the response shape compatible without inventing a daily history.
@@ -2234,7 +2474,9 @@ async def get_bot_chart_endpoint(
 # ── R7: аудитория и рассылки ─────────────────────────────────
 
 
-@api_router.get("/api/bots/{bot_id}/audience/summary", response_model=AudienceSummaryResponse)
+@api_router.get(
+    "/api/bots/{bot_id}/audience/summary", response_model=AudienceSummaryResponse
+)
 async def get_audience_summary_endpoint(bot_id: int, request: Request):
     """Честные счётчики активной аудитории бота по фильтрам рассылок."""
     await get_owned_bot(bot_id, request)
@@ -2285,13 +2527,21 @@ async def create_broadcast_endpoint(
         event_bus.publish_user(
             owner_tg_id,
             "broadcast:status_changed",
-            {"botId": bot.id, "broadcastId": str(broadcast.id), "status": broadcast.status},
+            {
+                "botId": bot.id,
+                "broadcastId": str(broadcast.id),
+                "status": broadcast.status,
+            },
         )
     else:
         await event_bus.publish_bot(
             bot.id,
             "broadcast:status_changed",
-            {"botId": bot.id, "broadcastId": str(broadcast.id), "status": broadcast.status},
+            {
+                "botId": bot.id,
+                "broadcastId": str(broadcast.id),
+                "status": broadcast.status,
+            },
         )
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
 
@@ -2323,7 +2573,9 @@ async def get_broadcast_endpoint(broadcast_id: UUID, request: Request):
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
 
 
-@api_router.post("/api/broadcasts/{broadcast_id}/retry", response_model=BroadcastApiResponse)
+@api_router.post(
+    "/api/broadcasts/{broadcast_id}/retry", response_model=BroadcastApiResponse
+)
 async def retry_broadcast_endpoint(broadcast_id: UUID, request: Request):
     """Повторяет только неудачные доставки; успешные не дублируются."""
     try:
@@ -2332,16 +2584,24 @@ async def retry_broadcast_endpoint(broadcast_id: UUID, request: Request):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if requeued == 0:
-        raise HTTPException(status_code=400, detail="Нет неудачных доставок для повтора")
+        raise HTTPException(
+            status_code=400, detail="Нет неудачных доставок для повтора"
+        )
     await event_bus.publish_bot(
         broadcast.bot_id,
         "broadcast:status_changed",
-        {"botId": broadcast.bot_id, "broadcastId": str(broadcast.id), "status": "queued"},
+        {
+            "botId": broadcast.bot_id,
+            "broadcastId": str(broadcast.id),
+            "status": "queued",
+        },
     )
     return BroadcastApiResponse.from_orm_broadcast(broadcast).model_dump(by_alias=True)
 
 
-@api_router.post("/api/broadcasts/{broadcast_id}/cancel", response_model=BroadcastApiResponse)
+@api_router.post(
+    "/api/broadcasts/{broadcast_id}/cancel", response_model=BroadcastApiResponse
+)
 async def cancel_broadcast_endpoint(broadcast_id: UUID, request: Request):
     """Отменяет рассылку, которая ещё не начала отправляться."""
     broadcast = await _get_owned_broadcast(broadcast_id, request)
@@ -2354,7 +2614,11 @@ async def cancel_broadcast_endpoint(broadcast_id: UUID, request: Request):
         await event_bus.publish_bot(
             broadcast.bot_id,
             "broadcast:status_changed",
-            {"botId": broadcast.bot_id, "broadcastId": str(updated.id), "status": updated.status},
+            {
+                "botId": broadcast.bot_id,
+                "broadcastId": str(updated.id),
+                "status": updated.status,
+            },
         )
     return BroadcastApiResponse.from_orm_broadcast(updated).model_dump(by_alias=True)
 
@@ -2398,8 +2662,3 @@ async def sse_events_endpoint(request: Request):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-
-
-

@@ -24,6 +24,7 @@ import {
   toBackendPayload,
   tariffItemToTariff,
   tariffToTariffItem,
+  stripTelegramHtml,
 } from '../utils/tariffMappers';
 
 interface PaymentBlockEditorProps {
@@ -41,6 +42,7 @@ interface PaymentBlockEditorProps {
   onUploadTariffMedia?: (tariffId: string, file: File) => Promise<void>;
   onUploadLargeTariffMedia?: (tariffId: string, file?: File) => void;
   onRemoveTariffMedia?: (tariffId: string) => void;
+  onNavigateToCreateTariff?: () => void;
 }
 
 const MAX_TARIFF_SELECTION_CHARACTERS = 4096;
@@ -134,6 +136,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
   onManagerTextChange,
   onUploadPaymentMedia,
   onRemovePaymentMedia,
+  onNavigateToCreateTariff,
 }) => {
   const { showConfirm } = useAlert();
 
@@ -414,6 +417,53 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
 
       <hr className="border-[var(--color-border)] my-1" />
 
+      {/* ─── Динамический блок: Сообщение перед кнопками (если >= 2 тарифов) ─── */}
+      <AnimatePresence>
+        {selectedCount >= 2 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.15 }}
+            className="flex flex-col gap-2 p-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xs overflow-hidden mb-1"
+          >
+            <div className="flex items-center gap-1.5">
+              <label
+                className="text-[13px] font-semibold text-[var(--color-foreground)]"
+                style={{ display: 'block', marginBottom: 0 }}
+              >
+                Сообщение перед кнопками тарифов
+              </label>
+              <InfoTooltip
+                title="Меню выбора тарифа"
+                text={`Клиент увидит этот текст и инлайн-кнопки с тарифами (${selectedCount} шт.).`}
+              />
+            </div>
+            <p className="text-[11px] text-[var(--color-foreground-tertiary)] -mt-1">
+              Текст и медиа над кнопками выбора тарифа в Telegram.
+            </p>
+            <TariffDescriptionEditor
+              value={node?.tariffSelectionText || 'Выберите подходящий тариф:'}
+              placeholder="Выберите подходящий тариф:"
+              helperText="Сообщение для клиента"
+              maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
+              onChange={(value) => onChange('tariffSelectionText', value)}
+              botId={botId}
+              mediaFileId={node?.mediaFileId}
+              mediaAssetId={node?.mediaAssetId}
+              mediaType={
+                node?.mediaType === 'photo' || node?.mediaType === 'video'
+                  ? node.mediaType
+                  : null
+              }
+              onUploadMedia={onUploadPaymentMedia}
+              onRemoveMedia={onRemovePaymentMedia}
+              mediaHint="Фото или видео над текстом выбора тарифа · до 20 МБ"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ─── Выбор тарифов из каталога ─── */}
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -459,6 +509,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
           <div className="flex flex-col gap-2">
             {catalogTariffs.map((item) => {
               const isChecked = selectedIds.has(item.id);
+              const cleanDescription = item.description ? stripTelegramHtml(item.description) : '';
 
               return (
                 <div
@@ -499,9 +550,9 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                       </span>
                     </div>
 
-                    {item.description && (
-                      <p className="text-[11px] text-[var(--color-foreground-secondary)] line-clamp-1 mt-0.5">
-                        {item.description}
+                    {cleanDescription && (
+                      <p className="text-[11px] text-[var(--color-foreground-secondary)] line-clamp-2 mt-0.5 leading-relaxed">
+                        {cleanDescription}
                       </p>
                     )}
 
@@ -552,59 +603,18 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
         {/* "+ Создать новый тариф" Button */}
         <button
           type="button"
-          onClick={handleOpenCreateModal}
-          className="flex items-center justify-center gap-2 w-full h-10 border border-dashed border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary-soft)] rounded-xl text-xs font-semibold hover:opacity-90 active:scale-[0.99] transition-all shadow-2xs mt-1"
+          onClick={() => {
+            if (onNavigateToCreateTariff) {
+              onNavigateToCreateTariff();
+            } else {
+              handleOpenCreateModal();
+            }
+          }}
+          className="flex items-center justify-center gap-2 w-full h-10 border border-dashed border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary-soft)] rounded-xl text-xs font-semibold hover:opacity-90 active:scale-[0.99] transition-all shadow-2xs mt-1 cursor-pointer"
         >
           <Plus size={15} /> Создать новый тариф
         </button>
       </div>
-
-      {/* ─── Динамический блок: Сообщение перед кнопками (только если >= 2 тарифов) ─── */}
-      <AnimatePresence>
-        {selectedCount >= 2 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.15 }}
-            className="flex flex-col gap-2 p-4 rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-2xs overflow-hidden mt-1"
-          >
-            <div className="flex items-center gap-1.5">
-              <label
-                className="text-[13px] font-semibold text-[var(--color-foreground)]"
-                style={{ display: 'block', marginBottom: 0 }}
-              >
-                Сообщение перед кнопками тарифов
-              </label>
-              <InfoTooltip
-                title="Меню выбора тарифа"
-                text={`Клиент увидит этот текст и инлайн-кнопки с тарифами (${selectedCount} шт.).`}
-              />
-            </div>
-            <p className="text-[11px] text-[var(--color-foreground-tertiary)] -mt-1">
-              Текст и медиа над кнопками выбора тарифа в Telegram.
-            </p>
-            <TariffDescriptionEditor
-              value={node?.tariffSelectionText || 'Выберите подходящий тариф:'}
-              placeholder="Выберите подходящий тариф:"
-              helperText="Сообщение для клиента"
-              maxCharacters={MAX_TARIFF_SELECTION_CHARACTERS}
-              onChange={(value) => onChange('tariffSelectionText', value)}
-              botId={botId}
-              mediaFileId={node?.mediaFileId}
-              mediaAssetId={node?.mediaAssetId}
-              mediaType={
-                node?.mediaType === 'photo' || node?.mediaType === 'video'
-                  ? node.mediaType
-                  : null
-              }
-              onUploadMedia={onUploadPaymentMedia}
-              onRemoveMedia={onRemovePaymentMedia}
-              mediaHint="Фото или видео над текстом выбора тарифа · до 20 МБ"
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ─── Tariff Editor Modal ─── */}
       {isModalOpen && (

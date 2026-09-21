@@ -31,6 +31,10 @@ export interface TariffItem {
   buyersCount: number;
   revenue: number;
   description?: string;
+  mediaType?: 'photo' | 'video' | null;
+  mediaFileId?: string | null;
+  mediaAssetId?: string | null;
+  mediaUrl?: string | null;
   deliverables: TariffDeliverable[];
   createdAt?: string;
   updatedAt?: string;

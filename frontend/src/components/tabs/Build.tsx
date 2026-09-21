@@ -233,7 +233,11 @@ const MessageBubble = ({
   </div>
 );
 
-export const Build = () => {
+interface BuildProps {
+  onNavigateToCreateTariff?: () => void;
+}
+
+export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
   const {
     appState,
     blocks,
@@ -1060,6 +1064,7 @@ export const Build = () => {
                   onUploadTariffMedia={handleTariffMediaUpload}
                   onUploadLargeTariffMedia={(tariffId, file) => handleLargeFileDetected(`payment:tariff:${tariffId}`, file)}
                   onRemoveTariffMedia={removeTariffMedia}
+                  onNavigateToCreateTariff={onNavigateToCreateTariff}
                 />
               </div>
             </FunnelCard>

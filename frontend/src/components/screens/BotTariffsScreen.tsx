@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Plus,
   Megaphone,
@@ -12,7 +12,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
-import type { TariffItem, TariffMetrics } from '../../types/tariff';
+import type { TariffItem } from '../../types/tariff';
 import { apiService } from '../../services/api';
 import { useAppState } from '../../providers/AppStateProvider';
 import { TariffEditorModal } from '../sheets/TariffEditorModal';
@@ -20,10 +20,13 @@ import {
   toBackendPayload,
   mapBackendTariff,
   tariffItemToTariff,
+  stripTelegramHtml,
 } from '../../utils/tariffMappers';
 
 interface BotTariffsScreenProps {
   bot: BotConfig;
+  initialOpenCreate?: boolean;
+  onResetInitialOpenCreate?: () => void;
 }
 
 function formatNumber(num: number | undefined | null): string {
@@ -53,23 +56,15 @@ function getPeriodSuffix(period?: string): string {
       return '/ мес';
   }
 }
-interface BackendStats {
-  totalTariffs?: number;
-  activeCount?: number;
-  totalBuyers?: number;
-  totalRevenue?: number;
-}
 
-export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
+export function BotTariffsScreen({
+  bot,
+  initialOpenCreate,
+  onResetInitialOpenCreate,
+}: BotTariffsScreenProps) {
   const { setToastMessage, setToastType } = useAppState();
 
   const [tariffs, setTariffs] = useState<TariffItem[]>([]);
-  const [metrics, setMetrics] = useState<TariffMetrics>({
-    totalCount: 0,
-    activeInFunnelCount: 0,
-    buyersCount: 0,
-    totalRevenue: 0,
-  });
   const [isLoading, setIsLoading] = useState(true);
 
   // Editor Modal State
@@ -80,20 +75,14 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
   const [tariffToDelete, setTariffToDelete] = useState<TariffItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Calculate or reconcile metrics
-  const calculatedMetrics = useMemo(() => {
-    const totalCount = tariffs.length;
-    const activeInFunnelCount = tariffs.filter((t) => t.isActiveInFunnel).length;
-    const computedBuyers = tariffs.reduce((sum, t) => sum + (t.buyersCount || 0), 0);
-    const computedRevenue = tariffs.reduce((sum, t) => sum + (t.revenue || 0), 0);
-
-    return {
-      totalCount,
-      activeInFunnelCount,
-      buyersCount: Math.max(metrics.buyersCount || 0, computedBuyers),
-      totalRevenue: Math.max(metrics.totalRevenue || 0, computedRevenue),
-    };
-  }, [tariffs, metrics]);
+  // Auto-open create modal if navigated from another screen
+  useEffect(() => {
+    if (initialOpenCreate) {
+      setSelectedTariff(null);
+      setIsEditorOpen(true);
+      onResetInitialOpenCreate?.();
+    }
+  }, [initialOpenCreate, onResetInitialOpenCreate]);
 
   // Load tariffs with graceful fallback
   useEffect(() => {
@@ -111,18 +100,6 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
               mapBackendTariff(t as unknown as Record<string, unknown>, i)
             );
             setTariffs(mapped);
-            if (!Array.isArray(res)) {
-              const obj = res as { stats?: BackendStats };
-              if (obj.stats) {
-                const s = obj.stats;
-                setMetrics({
-                  totalCount: s.totalTariffs ?? mapped.length,
-                  activeInFunnelCount: s.activeCount ?? 0,
-                  buyersCount: s.totalBuyers ?? 0,
-                  totalRevenue: s.totalRevenue ?? 0,
-                });
-              }
-            }
             setIsLoading(false);
             return;
           }
@@ -204,11 +181,6 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         : [...tariffs, savedItem];
 
       setTariffs(updatedTariffs);
-      setMetrics((prev) => ({
-        ...prev,
-        totalCount: updatedTariffs.length,
-        activeInFunnelCount: updatedTariffs.filter((t) => t.isActiveInFunnel).length,
-      }));
 
       // If dedicated API wasn't available, sync funnel payment node
       if (!savedSuccessfully) {
@@ -252,11 +224,6 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
 
       const updated = tariffs.filter((t) => t.id !== tariffToDelete.id);
       setTariffs(updated);
-      setMetrics((prev) => ({
-        ...prev,
-        totalCount: updated.length,
-        activeInFunnelCount: updated.filter((t) => t.isActiveInFunnel).length,
-      }));
 
       // Funnel sync fallback
       try {
@@ -319,40 +286,6 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
         </button>
       </div>
 
-      {/* 2. Top Summary Metrics */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {/* Metric 1 */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-xs">
-          <div className="mb-1 text-xs font-medium text-fg-secondary">Всего тарифов</div>
-          <div className="font-accent tabular-nums text-2xl font-bold text-foreground">
-            {calculatedMetrics.totalCount}
-          </div>
-        </div>
-
-        {/* Metric 2 */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-xs">
-          <div className="mb-1 text-xs font-medium text-fg-secondary">Активны в воронке</div>
-          <div className="font-accent tabular-nums text-2xl font-bold text-foreground">
-            {calculatedMetrics.activeInFunnelCount}
-          </div>
-        </div>
-
-        {/* Metric 3 */}
-        <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-4 shadow-xs">
-          <div className="mb-1 text-xs font-medium text-fg-secondary">Покупателей</div>
-          <div className="flex items-end gap-2">
-            <div className="font-accent tabular-nums text-2xl font-bold text-foreground">
-              {calculatedMetrics.buyersCount}
-            </div>
-            <div className="pb-0.5 text-xs font-medium text-success">
-              <span className="font-accent tabular-nums">
-                +{formatNumber(calculatedMetrics.totalRevenue)} ₽
-              </span>{' '}
-              выручка
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* 3. Catalog Grid or Loading / Empty state */}
       {isLoading ? (
@@ -426,6 +359,13 @@ export function BotTariffsScreen({ bot }: BotTariffsScreenProps) {
                     <h3 className="text-lg font-bold leading-snug text-foreground">
                       {tariff.name}
                     </h3>
+
+                    {/* Description preview */}
+                    {tariff.description && stripTelegramHtml(tariff.description) && (
+                      <p className="text-xs text-fg-secondary line-clamp-2 leading-relaxed">
+                        {stripTelegramHtml(tariff.description)}
+                      </p>
+                    )}
                   </div>
 
                   {/* Price Section */}

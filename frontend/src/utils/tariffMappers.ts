@@ -13,6 +13,22 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
+export function stripTelegramHtml(html?: string | null): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/p>/gi, ' ')
+    .replace(/<\/blockquote>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function toBackendPayload(item: TariffItem) {
   const isSubscription = item.paymentType === 'subscription';
   let recurringPeriod: string | undefined = undefined;
@@ -31,6 +47,9 @@ export function toBackendPayload(item: TariffItem) {
     recurringPeriod,
     salesMode: item.salesMode === 'application' ? 'manual' : item.salesMode,
     isActive: item.isActiveInFunnel,
+    mediaType: item.mediaType || undefined,
+    mediaFileId: item.mediaFileId || undefined,
+    mediaAssetId: item.mediaAssetId || undefined,
     deliverables: item.deliverables.map((d) => {
       const base: Record<string, unknown> = {
         type: d.type,
@@ -113,6 +132,9 @@ export function mapBackendTariff(raw: Record<string, unknown>, idx = 0): TariffI
     buyersCount: Number(raw.total_buyers ?? raw.totalBuyers ?? raw.buyersCount) || 0,
     revenue: Number(raw.total_revenue ?? raw.totalRevenue ?? raw.revenue) || 0,
     description: typeof raw.description === 'string' ? raw.description : undefined,
+    mediaType: (raw.media_type as 'photo' | 'video') || (raw.mediaType as 'photo' | 'video') || null,
+    mediaFileId: (raw.media_file_id as string) || (raw.mediaFileId as string) || null,
+    mediaAssetId: (raw.media_asset_id as string) || (raw.mediaAssetId as string) || null,
     deliverables,
     createdAt: raw.created_at ? String(raw.created_at) : raw.createdAt ? String(raw.createdAt) : new Date().toISOString(),
     updatedAt: raw.updated_at ? String(raw.updated_at) : raw.updatedAt ? String(raw.updatedAt) : undefined,
@@ -148,6 +170,9 @@ export function tariffItemToTariff(item: TariffItem): Tariff {
     actionType,
     actionData,
     chatType,
+    mediaType: item.mediaType || null,
+    mediaFileId: item.mediaFileId || null,
+    mediaAssetId: item.mediaAssetId || null,
     installments: item.paymentType === 'subscription',
     deliverables: item.deliverables,
   };
@@ -198,6 +223,9 @@ export function tariffToTariffItem(t: Tariff, idx = 0): TariffItem {
     buyersCount: 0,
     revenue: 0,
     description: t.description,
+    mediaType: t.mediaType || null,
+    mediaFileId: t.mediaFileId || null,
+    mediaAssetId: t.mediaAssetId || null,
     deliverables,
   };
 }

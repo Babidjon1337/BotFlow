@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
   Plus,
-  ChevronDown,
   Megaphone,
   Users,
   FileText,
@@ -11,6 +10,10 @@ import {
   RefreshCw,
   AlertCircle,
   Loader2,
+  Zap,
+  UserCheck,
+  Layers,
+  ArrowLeft,
 } from 'lucide-react';
 import type {
   TariffItem,
@@ -20,6 +23,7 @@ import type {
   BillingPeriod,
 } from '../../types/tariff';
 import { apiService } from '../../services/api';
+import { TariffDescriptionEditor } from '../TariffDescriptionEditor';
 
 interface ConnectedChat {
   id: string;
@@ -50,6 +54,42 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
+const BILLING_PERIODS: { id: BillingPeriod; label: string; days: string }[] = [
+  { id: 'week', label: '1 неделя', days: 'каждые 7 дней' },
+  { id: 'month', label: '1 месяц', days: 'каждые 30 дней' },
+  { id: '3months', label: '3 месяца', days: 'каждые 90 дней' },
+  { id: 'year', label: '1 год', days: 'каждые 365 дней' },
+];
+
+const SALES_MODES: {
+  id: SalesMode;
+  label: string;
+  icon: typeof Zap;
+  description: string;
+}[] = [
+  {
+    id: 'auto',
+    label: 'Автопродажа',
+    icon: Zap,
+    description:
+      'Клиент оплачивает онлайн через подключённую кассу и бот автоматически выдаёт доступ к материалам.',
+  },
+  {
+    id: 'application',
+    label: 'Через менеджера',
+    icon: UserCheck,
+    description:
+      'Вместо онлайн-оплаты бот выводит кнопку связи с менеджером для консультации или выставления счёта вручную.',
+  },
+  {
+    id: 'hybrid',
+    label: 'Гибрид',
+    icon: Layers,
+    description:
+      'Клиент получает две кнопки: моментальная онлайн-оплата картой и связь с менеджером для консультации.',
+  },
+];
+
 interface TariffEditorFormProps {
   onClose: () => void;
   onSave: (tariff: TariffItem) => Promise<void> | void;
@@ -75,22 +115,25 @@ function TariffEditorForm({
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>(tariff?.billingPeriod || 'month');
   const [salesMode, setSalesMode] = useState<SalesMode>(tariff?.salesMode || 'auto');
   const [isActiveInFunnel, setIsActiveInFunnel] = useState(tariff?.isActiveInFunnel !== false);
+  const [mediaType, setMediaType] = useState<'photo' | 'video' | null>(tariff?.mediaType || null);
+  const [mediaFileId, setMediaFileId] = useState<string | null>(tariff?.mediaFileId || null);
+  const [mediaAssetId, setMediaAssetId] = useState<string | null>(tariff?.mediaAssetId || null);
+
   const [deliverables, setDeliverables] = useState<TariffDeliverable[]>(() =>
     tariff?.deliverables ? [...tariff.deliverables] : []
   );
 
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  // Deliverables Sub-Modal State
+  const [isDeliverableModalOpen, setIsDeliverableModalOpen] = useState(false);
+  const [pickerStep, setPickerStep] = useState<'menu' | 'channel' | 'group' | 'link'>('menu');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Chat picker sub-view
-  const [chatPickerOpen, setChatPickerOpen] = useState<'channel' | 'group' | null>(null);
+  // Connected Chats
   const [connectedChats, setConnectedChats] = useState<ConnectedChat[]>([]);
   const [isLoadingChats, setIsLoadingChats] = useState(false);
   const [chatLoadError, setChatLoadError] = useState<string | null>(null);
 
   // Custom link sub-view
-  const [linkModalOpen, setLinkModalOpen] = useState(false);
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkError, setLinkError] = useState('');
@@ -102,31 +145,23 @@ function TariffEditorForm({
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Close dropdown on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsDropdownOpen(false);
-      }
-    };
-    if (isDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [isDropdownOpen]);
-
-  // Close modal on Escape key
+  // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose();
+        if (isDeliverableModalOpen) {
+          setIsDeliverableModalOpen(false);
+          setPickerStep('menu');
+        } else {
+          onClose();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, isDeliverableModalOpen]);
 
-  // Load connected chats when picker is opened
+  // Load connected chats
   const loadConnectedChats = async () => {
     if (!botId) return;
     setIsLoadingChats(true);
@@ -141,9 +176,13 @@ function TariffEditorForm({
     }
   };
 
-  const handleOpenChatPicker = (type: 'channel' | 'group') => {
-    setIsDropdownOpen(false);
-    setChatPickerOpen(type);
+  const handleOpenDeliverablesModal = () => {
+    setPickerStep('menu');
+    setIsDeliverableModalOpen(true);
+  };
+
+  const handleSelectChatType = (type: 'channel' | 'group') => {
+    setPickerStep(type);
     void loadConnectedChats();
   };
 
@@ -151,7 +190,8 @@ function TariffEditorForm({
     const isChannel = chat.chatType === 'channel';
     if (deliverables.some((d) => d.chatId === chat.chatId)) {
       setFormError(`Этот ${isChannel ? 'канал' : 'чат'} уже добавлен в выдачу этого тарифа`);
-      setChatPickerOpen(null);
+      setIsDeliverableModalOpen(false);
+      setPickerStep('menu');
       return;
     }
     const newDeliverable: TariffDeliverable = {
@@ -163,11 +203,13 @@ function TariffEditorForm({
       accessNote: 'Персональная ссылка (1 вход)',
     };
     setDeliverables((prev) => [...prev, newDeliverable]);
-    setChatPickerOpen(null);
+    setIsDeliverableModalOpen(false);
+    setPickerStep('menu');
   };
 
   const handleFileClick = () => {
-    setIsDropdownOpen(false);
+    setIsDeliverableModalOpen(false);
+    setPickerStep('menu');
     fileInputRef.current?.click();
   };
 
@@ -178,34 +220,19 @@ function TariffEditorForm({
     setIsUploadingFile(true);
     setFormError(null);
     try {
-      let fileUrl: string | undefined;
-      let fileId: string | undefined;
-
-      try {
-        const uploadRes = await apiService.uploadTariffFile(botId, file);
-        fileUrl = uploadRes.url || uploadRes.filePath;
-        fileId = uploadRes.id;
-      } catch (uploadErr) {
-        console.error('File upload error:', uploadErr);
-        setFormError(
-          uploadErr instanceof Error
-            ? uploadErr.message
-            : 'Не удалось загрузить файл на сервер. Проверьте размер файла (до 100 МБ).'
-        );
-        return;
-      }
-
+      const res = await apiService.uploadTariffFile(botId, file);
       const newDeliverable: TariffDeliverable = {
         id: createDeliverableId(),
         type: 'file',
-        title: `Файл «${file.name}»`,
+        title: file.name,
         fileName: file.name,
         fileSize: file.size,
         fileSizeFormatted: formatFileSize(file.size),
-        fileUrl,
-        fileId,
+        fileUrl: res.filePath || res.url,
       };
       setDeliverables((prev) => [...prev, newDeliverable]);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Не удалось загрузить файл');
     } finally {
       setIsUploadingFile(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -218,94 +245,114 @@ function TariffEditorForm({
       setLinkError('Введите ссылку');
       return;
     }
-    const finalUrl =
-      trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')
-        ? trimmedUrl
-        : `https://${trimmedUrl}`;
-
-    try {
-      new URL(finalUrl);
-    } catch {
-      setLinkError('Введите корректный URL-адрес (например, https://example.com)');
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      setLinkError('Ссылка должна начинаться с http:// или https://');
       return;
     }
-
+    const title = linkTitle.trim() || trimmedUrl;
     const newDeliverable: TariffDeliverable = {
       id: createDeliverableId(),
       type: 'link',
-      title: linkTitle.trim() || 'Ссылка на доступ',
-      url: finalUrl,
-      accessNote: 'Внешняя ссылка',
+      title,
+      url: trimmedUrl,
     };
     setDeliverables((prev) => [...prev, newDeliverable]);
     setLinkTitle('');
     setLinkUrl('');
     setLinkError('');
-    setLinkModalOpen(false);
+    setIsDeliverableModalOpen(false);
+    setPickerStep('menu');
   };
 
   const handleRemoveDeliverable = (id: string) => {
     setDeliverables((prev) => prev.filter((d) => d.id !== id));
   };
 
+  const handleUploadTariffMedia = async (file: File) => {
+    if (!botId) return;
+    if (file.size > 20 * 1024 * 1024) {
+      const sizeMb = Math.round(file.size / (1024 * 1024));
+      setFormError(
+        `Файл (${sizeMb} МБ) превышает лимит браузера (20 МБ). Большие файлы можно отправить напрямую через Telegram-бота во вкладке «Сценарий».`
+      );
+      return;
+    }
+    try {
+      const media = await apiService.uploadBotMedia(
+        botId,
+        `tariff:${tariff?.id || 'new'}`,
+        file
+      );
+      setMediaType((media.mediaType as 'photo' | 'video') || 'photo');
+      setMediaFileId(media.fileId);
+      setMediaAssetId(media.id);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Не удалось загрузить медиа');
+    }
+  };
+
+  const handleUploadLargeMedia = (file?: File) => {
+    const sizeMb = file ? Math.round(file.size / (1024 * 1024)) : 0;
+    setFormError(
+      `Файл${sizeMb ? ` (${sizeMb} МБ)` : ''} превышает лимит браузера 20 МБ. Большие видео до 2 ГБ загружаются через Telegram-бота во вкладке «Сценарий».`
+    );
+  };
+
+  const handleRemoveMedia = () => {
+    setMediaType(null);
+    setMediaFileId(null);
+    setMediaAssetId(null);
+  };
+
   const handleSubmit = async () => {
+    setFormError(null);
     const trimmedName = name.trim();
     if (!trimmedName) {
       setFormError('Укажите название тарифа');
       return;
     }
 
-    const rawPriceStr = price.toString().trim();
-    if (!rawPriceStr) {
-      setFormError('Укажите стоимость тарифа');
+    const parsedPrice = parseFloat(price.replace(/\s+/g, ''));
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      setFormError('Укажите корректную стоимость');
       return;
     }
 
-    const cleanPrice = Number(rawPriceStr.replace(/\s+/g, ''));
-    if (isNaN(cleanPrice) || cleanPrice < 0) {
-      setFormError('Укажите корректную стоимость тарифа (от 0 ₽)');
+    const parsedOldPrice = oldPrice.trim()
+      ? parseFloat(oldPrice.replace(/\s+/g, ''))
+      : null;
+
+    if (parsedOldPrice !== null && parsedOldPrice <= parsedPrice) {
+      setFormError('Старая цена должна быть больше текущей стоимости');
       return;
     }
 
-    let cleanOldPrice: number | null = null;
-    const rawOldPriceStr = oldPrice.toString().trim();
-    if (rawOldPriceStr) {
-      const parsedOldPrice = Number(rawOldPriceStr.replace(/\s+/g, ''));
-      if (isNaN(parsedOldPrice) || parsedOldPrice <= 0) {
-        setFormError('Старая цена должна быть положительным числом');
-        return;
-      }
-      if (parsedOldPrice <= cleanPrice) {
-        setFormError('Старая цена должна быть выше текущей цены');
-        return;
-      }
-      cleanOldPrice = parsedOldPrice;
-    }
-
-    const tariffItem: TariffItem = {
+    const payload: TariffItem = {
       id: tariff?.id || `t_${Date.now()}`,
       name: trimmedName,
-      price: cleanPrice,
-      oldPrice: cleanOldPrice,
+      description: description.trim() || undefined,
+      price: parsedPrice,
+      oldPrice: parsedOldPrice,
       paymentType,
       billingPeriod: paymentType === 'subscription' ? billingPeriod : undefined,
       salesMode,
       isActiveInFunnel,
-      buyersCount: tariff?.buyersCount ?? 0,
-      revenue: tariff?.revenue ?? 0,
-      description: description.trim() || undefined,
+      mediaType,
+      mediaFileId,
+      mediaAssetId,
+      buyersCount: tariff?.buyersCount || 0,
+      revenue: tariff?.revenue || 0,
       deliverables,
-      createdAt: tariff?.createdAt || new Date().toISOString(),
+      createdAt: tariff?.createdAt,
       updatedAt: new Date().toISOString(),
     };
 
     setIsSubmitting(true);
-    setFormError(null);
     try {
-      await onSave(tariffItem);
+      await onSave(payload);
       onClose();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Не удалось сохранить тариф');
+      setFormError(err instanceof Error ? err.message : 'Ошибка при сохранении тарифа');
     } finally {
       setIsSubmitting(false);
     }
@@ -313,17 +360,17 @@ function TariffEditorForm({
 
   return (
     <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-xs sm:items-center sm:p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4 backdrop-blur-xs"
     >
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 30 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-card shadow-2xl sm:w-[560px] sm:rounded-[20px]"
+        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-card shadow-2xl sm:max-w-3xl sm:w-full sm:rounded-[20px]"
       >
         {/* Modal Header */}
         <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
@@ -348,37 +395,21 @@ function TariffEditorForm({
             </div>
           )}
 
-          {/* 1. Name */}
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-foreground">
-              Название тарифа <span className="text-danger">*</span>
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="например, VIP-клуб с наставничеством"
-              className="h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-foreground">
-              Описание тарифа <span className="text-xs font-normal text-fg-tertiary">(что входит)</span>
-            </label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Краткое описание тарифа для клиента в Telegram..."
-              rows={2}
-              className="w-full rounded-xl border border-border bg-card p-3 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
-            />
-          </div>
-
-          {/* 2. Price & Old Price */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
+          {/* 1. Name & Prices Grid */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-12">
+            <div className="sm:col-span-6">
+              <label className="mb-2 block text-sm font-semibold text-foreground">
+                Название тарифа <span className="text-danger">*</span>
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="например, VIP-клуб с наставничеством"
+                className="h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div className="sm:col-span-3">
               <label className="mb-2 block text-sm font-semibold text-foreground">
                 Цена, ₽ <span className="text-danger">*</span>
               </label>
@@ -387,10 +418,10 @@ function TariffEditorForm({
                 value={price}
                 onChange={(e) => setPrice(e.target.value.replace(/[^\d\s]/g, ''))}
                 placeholder="1 990"
-                className="font-accent tabular-nums h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="font-accent tabular-nums h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
-            <div>
+            <div className="sm:col-span-3">
               <label className="mb-2 block text-sm font-semibold text-fg-secondary">
                 Старая цена, ₽ <span className="text-xs font-normal text-fg-tertiary">(зачёркнуто)</span>
               </label>
@@ -399,23 +430,47 @@ function TariffEditorForm({
                 value={oldPrice}
                 onChange={(e) => setOldPrice(e.target.value.replace(/[^\d\s]/g, ''))}
                 placeholder="2 990"
-                className="font-accent tabular-nums h-11 w-full rounded-xl border border-border bg-card px-4 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className="font-accent tabular-nums h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
             </div>
           </div>
 
-          {/* 3. Payment Type */}
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-foreground">
+          {/* 2. Description (Formatted Telegram Rich Text + Photo/Video) */}
+          <div className="space-y-1.5">
+            <label className="block text-sm font-semibold text-foreground">
+              Описание тарифа{' '}
+              <span className="text-xs font-normal text-fg-tertiary">
+                (форматирование Telegram + фото или видео)
+              </span>
+            </label>
+            <TariffDescriptionEditor
+              value={description}
+              onChange={setDescription}
+              botId={botId}
+              mediaFileId={mediaFileId}
+              mediaAssetId={mediaAssetId}
+              mediaType={mediaType}
+              onUploadMedia={handleUploadTariffMedia}
+              onUploadLargeMedia={handleUploadLargeMedia}
+              onRemoveMedia={handleRemoveMedia}
+              placeholder="Опишите, что входит в тариф..."
+              helperText="Клиент увидит этот текст и медиа в Telegram при выборе тарифа"
+              mediaHint="Фото или видео над описанием тарифа в Telegram · до 20 МБ"
+            />
+          </div>
+
+          {/* 3. Payment Type & Recurring Period */}
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold text-foreground">
               Условия оплаты
             </label>
-            <div className="mb-3 flex rounded-xl bg-muted p-1">
+            <div className="flex rounded-xl bg-muted p-1">
               <button
                 type="button"
                 onClick={() => setPaymentType('one_time')}
-                className={`flex-1 rounded-lg py-2 text-sm font-medium transition-all ${
+                className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-all ${
                   paymentType === 'one_time'
-                    ? 'bg-card text-foreground shadow-sm'
+                    ? 'bg-card text-foreground shadow-xs'
                     : 'text-fg-secondary hover:text-foreground'
                 }`}
               >
@@ -424,9 +479,9 @@ function TariffEditorForm({
               <button
                 type="button"
                 onClick={() => setPaymentType('subscription')}
-                className={`flex-1 rounded-lg py-2 text-sm font-medium transition-all ${
+                className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-all ${
                   paymentType === 'subscription'
-                    ? 'bg-card text-foreground shadow-sm'
+                    ? 'bg-card text-primary shadow-xs'
                     : 'text-fg-secondary hover:text-foreground'
                 }`}
               >
@@ -435,24 +490,33 @@ function TariffEditorForm({
             </div>
 
             {paymentType === 'subscription' && (
-              <div className="rounded-xl border border-border bg-muted/40 p-4">
-                <label className="mb-2 block text-xs font-medium text-fg-secondary">
+              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5">
+                <div className="text-xs font-semibold text-foreground">
                   Период списания
-                </label>
-                <div className="relative">
-                  <select
-                    value={billingPeriod}
-                    onChange={(e) => setBillingPeriod(e.target.value as BillingPeriod)}
-                    className="h-11 w-full appearance-none rounded-xl border border-border bg-card px-4 pr-10 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="month">Каждый месяц (30 дней)</option>
-                    <option value="week">1 неделя (7 дней)</option>
-                    <option value="3months">3 месяца</option>
-                    <option value="year">1 год</option>
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-fg-tertiary" />
                 </div>
-                <p className="mt-3 text-xs leading-relaxed text-fg-secondary">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {BILLING_PERIODS.map((p) => {
+                    const isSelected = billingPeriod === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setBillingPeriod(p.id)}
+                        className={`flex flex-col items-center justify-center rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${
+                          isSelected
+                            ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                            : 'border-border bg-card text-fg-secondary hover:border-border-strong hover:text-foreground'
+                        }`}
+                      >
+                        <span>{p.label}</span>
+                        <span className="mt-0.5 text-[10px] font-normal opacity-75">
+                          {p.days}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs leading-relaxed text-fg-secondary">
                   Автосписание происходит автоматически в соответствии с выбранным периодом. Клиент может в любой момент отменить автопродление в боте без потери оплаченного срока.
                 </p>
               </div>
@@ -460,50 +524,39 @@ function TariffEditorForm({
           </div>
 
           {/* 4. Sales Mode */}
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-foreground">
+          <div className="space-y-2.5">
+            <label className="block text-sm font-semibold text-foreground">
               Способ продажи тарифа
             </label>
-            <div className="flex rounded-xl bg-muted p-1">
-              <button
-                type="button"
-                onClick={() => setSalesMode('auto')}
-                className={`flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all ${
-                  salesMode === 'auto'
-                    ? 'bg-card text-primary shadow-sm'
-                    : 'text-fg-secondary hover:text-foreground'
-                }`}
-              >
-                Автопродажа (онлайн)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSalesMode('application')}
-                className={`flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all ${
-                  salesMode === 'application'
-                    ? 'bg-card text-foreground shadow-sm'
-                    : 'text-fg-secondary hover:text-foreground'
-                }`}
-              >
-                Через менеджера
-              </button>
-              <button
-                type="button"
-                onClick={() => setSalesMode('hybrid')}
-                className={`flex-1 rounded-lg py-2 text-xs font-bold uppercase tracking-wider transition-all ${
-                  salesMode === 'hybrid'
-                    ? 'bg-card text-purple-600 dark:text-purple-400 shadow-sm'
-                    : 'text-fg-secondary hover:text-foreground'
-                }`}
-              >
-                Гибрид
-              </button>
+            <div className="grid grid-cols-3 gap-2">
+              {SALES_MODES.map((m) => {
+                const isSelected = salesMode === m.id;
+                const Icon = m.icon;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setSalesMode(m.id)}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-xs font-semibold transition-all ${
+                      isSelected
+                        ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                        : 'border-border bg-card text-fg-secondary hover:border-border-strong hover:text-foreground'
+                    }`}
+                  >
+                    <Icon className="size-3.5 shrink-0" />
+                    <span className="truncate">{m.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/40 p-3 text-xs leading-relaxed text-fg-secondary">
+              {SALES_MODES.find((m) => m.id === salesMode)?.description}
             </div>
           </div>
 
           {/* 5. Deliverables */}
-          <div>
-            <div className="mb-3 flex items-center justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-foreground">
                 Выдача доступа ({deliverables.length})
               </h3>
@@ -518,54 +571,37 @@ function TariffEditorForm({
               onChange={handleFileChange}
             />
 
-            {/* List of deliverables */}
+            {/* Existing Deliverables List */}
             {deliverables.length > 0 && (
-              <div className="mb-3 space-y-2">
-                {deliverables.map((item) => (
+              <div className="space-y-2">
+                {deliverables.map((del) => (
                   <div
-                    key={item.id}
-                    className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-xs"
+                    key={del.id}
+                    className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-2xs"
                   >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                          item.type === 'channel' || item.type === 'group'
-                            ? 'bg-primary/10 text-primary'
-                            : item.type === 'file'
-                            ? 'bg-muted text-fg-secondary'
-                            : 'bg-info-soft text-info'
-                        }`}
-                      >
-                        {item.type === 'channel' && <Megaphone className="size-4" />}
-                        {item.type === 'group' && <Users className="size-4" />}
-                        {item.type === 'file' && <FileText className="size-4" />}
-                        {item.type === 'link' && <Link2 className="size-4" />}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        {del.type === 'channel' && <Megaphone className="size-4" />}
+                        {del.type === 'group' && <Users className="size-4" />}
+                        {del.type === 'file' && <FileText className="size-4" />}
+                        {del.type === 'link' && <Link2 className="size-4" />}
                       </div>
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-foreground">
-                          {item.title}
-                          {item.type === 'file' && item.fileSizeFormatted && (
-                            <span className="ml-1 text-fg-tertiary">
-                              ({item.fileSizeFormatted})
-                            </span>
-                          )}
+                          {del.title}
                         </div>
-                        {item.accessNote && (
-                          <div className="text-xs font-medium text-success">
-                            {item.accessNote}
-                          </div>
-                        )}
-                        {item.type === 'link' && item.url && (
-                          <div className="max-w-[260px] truncate text-xs text-primary sm:max-w-[340px]">
-                            {item.url}
-                          </div>
-                        )}
+                        <div className="truncate text-xs text-fg-secondary">
+                          {del.type === 'channel' && 'Канал Telegram · персональная ссылка'}
+                          {del.type === 'group' && 'Чат / Группа Telegram · персональная ссылка'}
+                          {del.type === 'file' && `Файл ${del.fileSizeFormatted ? `· ${del.fileSizeFormatted}` : ''}`}
+                          {del.type === 'link' && (del.url || 'Внешняя ссылка')}
+                        </div>
                       </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleRemoveDeliverable(item.id)}
-                      className="rounded-md p-1.5 text-fg-tertiary transition-colors hover:bg-danger-soft hover:text-danger"
+                      onClick={() => handleRemoveDeliverable(del.id)}
+                      className="ml-2 flex size-7 shrink-0 items-center justify-center rounded-lg text-fg-tertiary transition-colors hover:bg-danger-soft hover:text-danger"
                       title="Удалить выдачу"
                     >
                       <X className="size-4" />
@@ -575,219 +611,19 @@ function TariffEditorForm({
               </div>
             )}
 
-            {/* Add Deliverable Dropdown Button */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                type="button"
-                onClick={() => setIsDropdownOpen((prev) => !prev)}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-xs font-semibold text-primary transition-colors hover:bg-primary/5 focus:outline-none"
-              >
-                <Plus className="size-3.5" />
-                Добавить выдачу
-                <ChevronDown className="ml-0.5 size-3.5 text-fg-tertiary" />
-              </button>
-
-              {/* Dropdown Menu */}
-              {isDropdownOpen && (
-                <div className="absolute left-0 right-0 top-full z-20 mt-1.5 space-y-1 rounded-xl border border-border bg-card p-1.5 shadow-xl">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenChatPicker('channel')}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Megaphone className="size-4 text-primary" />
-                    <span className="flex-1">Канал Telegram</span>
-                    <span className="text-xs text-fg-tertiary">Персональная ссылка</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenChatPicker('group')}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Users className="size-4 text-primary" />
-                    <span className="flex-1">Группа / Чат</span>
-                    <span className="text-xs text-fg-tertiary">Персональная ссылка</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleFileClick}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-                  >
-                    <FileText className="size-4 text-fg-secondary" />
-                    <span className="flex-1">Файл (PDF, архив и др.)</span>
-                    <span className="text-xs text-fg-tertiary">Загрузка с устройства</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsDropdownOpen(false);
-                      setLinkModalOpen(true);
-                    }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
-                  >
-                    <Link2 className="size-4 text-info" />
-                    <span className="flex-1">Ссылка</span>
-                    <span className="text-xs text-fg-tertiary">Любой внешний адрес</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Chat Picker Inline Panel */}
-            {chatPickerOpen && (
-              <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-sm font-semibold text-foreground">
-                    Выберите {chatPickerOpen === 'channel' ? 'канал' : 'группу'}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={loadConnectedChats}
-                      disabled={isLoadingChats}
-                      className="flex items-center gap-1 text-xs text-primary hover:underline"
-                    >
-                      <RefreshCw className={`size-3 ${isLoadingChats ? 'animate-spin' : ''}`} />
-                      Обновить
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChatPickerOpen(null)}
-                      className="text-fg-tertiary hover:text-foreground"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {isLoadingChats ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="size-5 animate-spin text-primary" />
-                  </div>
-                ) : chatLoadError ? (
-                  <div className="text-xs text-danger">{chatLoadError}</div>
-                ) : (() => {
-                  const availableChats = connectedChats.filter((c) =>
-                    chatPickerOpen === 'channel'
-                      ? c.chatType === 'channel'
-                      : c.chatType === 'group' || c.chatType === 'supergroup'
-                  );
-
-                  if (availableChats.length === 0) {
-                    const isChannel = chatPickerOpen === 'channel';
-                    return (
-                      <div className="space-y-2 text-xs text-fg-secondary">
-                        <p>
-                          Подключённые {isChannel ? 'каналы' : 'группы или чаты'} не найдены.
-                        </p>
-                        <div className="space-y-1 rounded-lg border border-border bg-card p-3">
-                          <p className="font-semibold text-foreground">
-                            Как подключить {isChannel ? 'канал' : 'группу'}:
-                          </p>
-                          <p>1. Откройте {isChannel ? 'канал' : 'чат'} в Telegram.</p>
-                          <p>
-                            2. Добавьте бота в администраторы с правом приглашения участников.
-                          </p>
-                          <p>3. Нажмите «Обновить» выше.</p>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="max-h-48 space-y-1 overflow-y-auto">
-                      {availableChats.map((chat) => (
-                        <button
-                          key={chat.chatId}
-                          type="button"
-                          onClick={() => handleSelectChat(chat)}
-                          className="flex w-full items-center justify-between rounded-lg border border-border bg-card p-2.5 text-left text-sm transition-colors hover:border-primary hover:bg-muted"
-                        >
-                          <span className="font-medium text-foreground">{chat.title}</span>
-                          <span className="text-xs text-primary">Выбрать →</span>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Link Input Inline Panel */}
-            {linkModalOpen && (
-              <div className="mt-3 space-y-3 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-foreground">Добавление ссылки</span>
-                  <button
-                    type="button"
-                    onClick={() => setLinkModalOpen(false)}
-                    className="text-fg-tertiary hover:text-foreground"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">
-                    Название (опционально)
-                  </label>
-                  <input
-                    type="text"
-                    value={linkTitle}
-                    onChange={(e) => setLinkTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddLink();
-                      }
-                    }}
-                    placeholder="например, База знаний или Личный кабинет"
-                    className="h-9 w-full rounded-lg border border-border bg-card px-3 text-xs text-foreground focus:border-primary focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-fg-secondary">
-                    URL-адрес ссылки
-                  </label>
-                  <input
-                    type="text"
-                    value={linkUrl}
-                    onChange={(e) => {
-                      setLinkUrl(e.target.value);
-                      if (linkError) setLinkError('');
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAddLink();
-                      }
-                    }}
-                    placeholder="https://example.com/course"
-                    className="h-9 w-full rounded-lg border border-border bg-card px-3 text-xs text-foreground focus:border-primary focus:outline-none"
-                  />
-                  {linkError && <span className="mt-1 text-xs text-danger">{linkError}</span>}
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setLinkModalOpen(false)}
-                    className="h-8 rounded-lg px-3 text-xs text-fg-secondary hover:bg-muted"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddLink}
-                    className="h-8 rounded-lg bg-primary px-4 text-xs font-medium text-white hover:bg-primary-hover"
-                  >
-                    Добавить
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Add Deliverable Trigger Button */}
+            <button
+              type="button"
+              onClick={handleOpenDeliverablesModal}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-xs font-semibold text-primary transition-colors hover:bg-primary/5 focus:outline-none"
+            >
+              <Plus className="size-3.5" />
+              Добавить выдачу доступа
+            </button>
 
             {isUploadingFile && (
-              <div className="mt-2 flex items-center gap-2 text-xs text-primary">
-                <Loader2 className="size-4 animate-spin" />
+              <div className="flex items-center gap-2 text-xs text-primary">
+                <Loader2 className="size-3.5 animate-spin" />
                 <span>Загрузка файла...</span>
               </div>
             )}
@@ -848,6 +684,323 @@ function TariffEditorForm({
           </button>
         </div>
       </motion.div>
+
+      {/* ─── Deliverables Sub-Modal Overlay (Поверх окна) ─── */}
+      <AnimatePresence>
+        {isDeliverableModalOpen && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setIsDeliverableModalOpen(false);
+                setPickerStep('menu');
+              }
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.18 }}
+              className="w-full max-w-md rounded-2xl border border-border bg-card p-5 shadow-2xl text-foreground"
+            >
+              {/* Menu Step */}
+              {pickerStep === 'menu' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-foreground">
+                        Добавить выдачу доступа
+                      </h3>
+                      <p className="text-xs text-fg-secondary mt-0.5">
+                        Выберите, что получит клиент после оплаты или заявки
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsDeliverableModalOpen(false)}
+                      className="flex size-7 items-center justify-center rounded-full text-fg-secondary hover:bg-muted"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {/* Channel */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectChatType('channel')}
+                      className="flex w-full items-center gap-3.5 rounded-xl border border-border p-3 text-left transition-all hover:border-primary hover:bg-primary/5 group"
+                    >
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Megaphone className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                          Канал Telegram
+                        </div>
+                        <div className="text-xs text-fg-secondary">
+                          Бот создаст персональную ссылку на 1 вход в закрытый канал
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Group */}
+                    <button
+                      type="button"
+                      onClick={() => handleSelectChatType('group')}
+                      className="flex w-full items-center gap-3.5 rounded-xl border border-border p-3 text-left transition-all hover:border-primary hover:bg-primary/5 group"
+                    >
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                        <Users className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                          Группа / Чат Telegram
+                        </div>
+                        <div className="text-xs text-fg-secondary">
+                          Персональная пригласительная ссылка в закрытое сообщество
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* File */}
+                    <button
+                      type="button"
+                      onClick={handleFileClick}
+                      className="flex w-full items-center gap-3.5 rounded-xl border border-border p-3 text-left transition-all hover:border-primary hover:bg-primary/5 group"
+                    >
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-purple-500/10 text-purple-500">
+                        <FileText className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                          Файл любого формата
+                        </div>
+                        <div className="text-xs text-fg-secondary">
+                          PDF, чек-лист, таблица, архив с загрузкой с устройства
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Link */}
+                    <button
+                      type="button"
+                      onClick={() => setPickerStep('link')}
+                      className="flex w-full items-center gap-3.5 rounded-xl border border-border p-3 text-left transition-all hover:border-primary hover:bg-primary/5 group"
+                    >
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                        <Link2 className="size-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                          Внешняя ссылка
+                        </div>
+                        <div className="text-xs text-fg-secondary">
+                          Ссылка на курс, Notion, Google Drive или личный кабинет
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Channel / Group Picker Step */}
+              {(pickerStep === 'channel' || pickerStep === 'group') && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setPickerStep('menu')}
+                      className="flex items-center gap-1 text-xs font-semibold text-fg-secondary hover:text-foreground"
+                    >
+                      <ArrowLeft className="size-3.5" />
+                      Назад
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={loadConnectedChats}
+                        disabled={isLoadingChats}
+                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <RefreshCw className={`size-3 ${isLoadingChats ? 'animate-spin' : ''}`} />
+                        Обновить
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsDeliverableModalOpen(false);
+                          setPickerStep('menu');
+                        }}
+                        className="flex size-7 items-center justify-center rounded-full text-fg-secondary hover:bg-muted"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">
+                      Выберите {pickerStep === 'channel' ? 'канал' : 'группу'}
+                    </h3>
+                    <p className="text-xs text-fg-secondary mt-0.5">
+                      Бот должен быть администратором с правом приглашения
+                    </p>
+                  </div>
+
+                  {isLoadingChats ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="size-6 animate-spin text-primary" />
+                    </div>
+                  ) : chatLoadError ? (
+                    <div className="text-xs text-danger p-3 rounded-xl bg-danger-soft">
+                      {chatLoadError}
+                    </div>
+                  ) : (() => {
+                    const availableChats = connectedChats.filter((c) =>
+                      pickerStep === 'channel'
+                        ? c.chatType === 'channel'
+                        : c.chatType === 'group' || c.chatType === 'supergroup'
+                    );
+
+                    if (availableChats.length === 0) {
+                      const isChannel = pickerStep === 'channel';
+                      return (
+                        <div className="space-y-3 rounded-xl border border-border bg-muted/30 p-4 text-xs text-fg-secondary">
+                          <p className="font-semibold text-foreground">
+                            Подключённые {isChannel ? 'каналы' : 'группы'} не найдены
+                          </p>
+                          <ol className="list-decimal pl-4 space-y-1">
+                            <li>Откройте {isChannel ? 'канал' : 'чат'} в Telegram.</li>
+                            <li>
+                              Добавьте бота в администраторы с правом добавления участников.
+                            </li>
+                            <li>Нажмите кнопку «Обновить» выше.</li>
+                          </ol>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="max-h-60 space-y-2 overflow-y-auto">
+                        {availableChats.map((chat) => (
+                          <button
+                            key={chat.chatId}
+                            type="button"
+                            onClick={() => handleSelectChat(chat)}
+                            className="flex w-full items-center justify-between rounded-xl border border-border p-3 text-left transition-colors hover:border-primary hover:bg-primary/5"
+                          >
+                            <span className="text-sm font-medium text-foreground truncate">
+                              {chat.title}
+                            </span>
+                            <span className="text-xs font-semibold text-primary shrink-0 ml-2">
+                              Выбрать →
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* Link Step */}
+              {pickerStep === 'link' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setPickerStep('menu')}
+                      className="flex items-center gap-1 text-xs font-semibold text-fg-secondary hover:text-foreground"
+                    >
+                      <ArrowLeft className="size-3.5" />
+                      Назад
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsDeliverableModalOpen(false);
+                        setPickerStep('menu');
+                      }}
+                      className="flex size-7 items-center justify-center rounded-full text-fg-secondary hover:bg-muted"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <h3 className="text-base font-bold text-foreground">
+                      Добавить ссылку
+                    </h3>
+                    <p className="text-xs text-fg-secondary mt-0.5">
+                      Укажите название и адрес внешней ссылки
+                    </p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-foreground mb-1">
+                        Название ссылки
+                      </label>
+                      <input
+                        type="text"
+                        value={linkTitle}
+                        onChange={(e) => setLinkTitle(e.target.value)}
+                        placeholder="например, База знаний или Личный кабинет"
+                        className="h-10 w-full rounded-xl border border-border bg-card px-3 text-xs text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-foreground mb-1">
+                        URL ссылки <span className="text-danger">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={linkUrl}
+                        onChange={(e) => {
+                          setLinkUrl(e.target.value);
+                          if (linkError) setLinkError('');
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddLink();
+                          }
+                        }}
+                        placeholder="https://example.com/course"
+                        className="h-10 w-full rounded-xl border border-border bg-card px-3 text-xs text-foreground focus:border-primary focus:outline-none"
+                      />
+                      {linkError && (
+                        <span className="mt-1 block text-xs text-danger">
+                          {linkError}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setPickerStep('menu')}
+                      className="h-9 rounded-xl px-3 text-xs font-semibold text-fg-secondary hover:bg-muted"
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddLink}
+                      className="h-9 rounded-xl bg-primary px-4 text-xs font-semibold text-white hover:bg-primary-hover shadow-xs"
+                    >
+                      Добавить
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
