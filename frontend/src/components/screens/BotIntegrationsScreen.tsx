@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, Play, Settings2 } from 'lucide-react';
+import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, RefreshCw, Send, Settings2 } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
 import { Button } from '../ui/button';
 import { PageHeader } from '../common/PageHeader';
@@ -72,7 +72,8 @@ function TelegramGlyph({ active }: { active: boolean }) {
  * 4. Оферта.
  */
 export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
-  const { setAppState, setToastMessage, setToastType } = useAppState();
+  const { setAppState, setToastMessage, setToastType, isAdmin } = useAppState();
+  const [isSyncing, setIsSyncing] = useState(false);
   const hasToken = Boolean(bot.username && bot.username !== '@unknown');
   const hasCashier = Boolean(bot.hasPaymentCredentials);
   const cashierName = bot.paymentProvider
@@ -236,6 +237,27 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     else window.open(url, '_blank', 'noreferrer');
   };
 
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const { apiService: api } = await import('../../services/api');
+      await api.syncMedia(bot.id);
+      setAppState((prev) => ({
+        ...prev,
+        bots: prev.bots.map((b) => (b.id === bot.id ? { ...b, mediaSyncDone: true } : b)),
+        activeBot: prev.activeBot?.id === bot.id ? { ...prev.activeBot, mediaSyncDone: true } : prev.activeBot,
+      }));
+      setToastType('success');
+      setToastMessage('Бот успешно синхронизирован!');
+    } catch (error) {
+      setToastType('error');
+      setToastMessage(error instanceof Error ? error.message : 'Не удалось выполнить синхронизацию.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const saveOffer = async () => {
     if (isSavingOffer) return;
     const value = offerUrl.trim();
@@ -315,7 +337,9 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
             highlightedBlock === 'platform'
               ? 'border-primary ring-2 ring-primary/40 bg-accent/40 shadow-sm'
               : hasToken
-                ? 'border-primary/30 bg-accent'
+                ? bot.mediaSyncDone
+                  ? 'border-primary/20 bg-card shadow-sm'
+                  : 'border-primary/40 bg-primary/5 shadow-sm'
                 : 'border-border bg-card'
           }`}
         >
@@ -331,17 +355,31 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           <div className="mt-1.5 sm:mt-2">
             <StatusBadge
               tone={bot.mediaSyncDone ? 'success' : hasToken ? 'warning' : 'neutral'}
-              label={bot.mediaSyncDone ? 'Готов' : hasToken ? 'Нужен START' : 'Не подключён'}
+              label={bot.mediaSyncDone ? 'Готов к работе' : hasToken ? 'Ожидает /start' : 'Не подключён'}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => { setTokenFormOpen((open) => !open); setToken(''); setTokenError(null); }}
-            className="mt-2 inline-flex items-center gap-1 text-micro font-semibold text-primary hover:underline sm:mt-2.5"
-          >
-            <KeyRound className="size-3" aria-hidden="true" />
-            {hasToken ? 'Изменить токен' : 'Вставить токен'}
-          </button>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => { setTokenFormOpen((open) => !open); setToken(''); setTokenError(null); }}
+              className="inline-flex items-center gap-1 text-micro font-medium text-fg-secondary hover:text-fg-primary transition-colors"
+            >
+              <KeyRound className="size-3" aria-hidden="true" />
+              {hasToken ? 'Изменить токен' : 'Вставить токен'}
+            </button>
+            {hasToken && (
+              <button
+                type="button"
+                onClick={() => void handleManualSync()}
+                disabled={isSyncing}
+                title="Синхронизировать медиа и сценарий"
+                className="inline-flex items-center gap-1 text-micro font-medium text-primary hover:underline disabled:opacity-50"
+              >
+                <RefreshCw className={`size-3 ${isSyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                {isSyncing ? 'Синхронизация…' : 'Синхр.'}
+              </button>
+            )}
+          </div>
         </article>
 
         {(['vk', 'max'] as const).map(platform => (
@@ -407,31 +445,57 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
         </div>
       )}
 
-      {/* Шаг START — заметный блок с пульсацией, пока бот не синхронизирован */}
+      {/* Шаг START / Синхронизация — стильный блок с действиями для пользователя и администратора */}
       {hasToken && !bot.mediaSyncDone && (
-        <div className="relative overflow-hidden rounded-[16px] border border-warning/40 bg-warning-soft/50 p-4 sm:p-5">
-          <span className="pointer-events-none absolute -right-6 -top-6 size-24 animate-pulse rounded-full bg-warning/20" aria-hidden />
-          <div className="relative flex flex-wrap items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="flex items-center gap-2 text-body font-bold text-fg-primary">
-                <span className="flex size-6 animate-pulse items-center justify-center rounded-full bg-warning text-white">
-                  <Play className="size-3" aria-hidden />
-                </span>
-                Остался один шаг: нажмите START
-              </p>
-              <p className="mt-1.5 max-w-lg text-body-sm leading-relaxed text-fg-secondary">
-                Откройте своего бота и отправьте команду <b className="text-fg-primary">/start</b> —
-                мы синхронизируем сценарий и медиа. Mini App останется открытым.
-              </p>
+        <div className="relative overflow-hidden rounded-[18px] border border-border bg-card p-4 sm:p-5 shadow-sm">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5 min-w-0">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#229ED9]/15 text-[#229ED9] border border-[#229ED9]/30">
+                <Send className="size-5" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-body font-bold text-fg-primary">
+                    Синхронизация Telegram-бота
+                  </h4>
+                  <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-micro font-medium text-warning border border-warning/30">
+                    Ожидает первый запуск
+                  </span>
+                  {isAdmin && (
+                    <span className="rounded-full bg-primary/15 px-2.5 py-0.5 text-micro font-medium text-primary border border-primary/30">
+                      Режим администратора
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-body-sm text-fg-secondary leading-relaxed max-w-2xl">
+                  Для отправки файлов и сценариев боту требуется первый запуск. Откройте бота и отправьте команду{' '}
+                  <b className="text-fg-primary">/start</b>{' '}
+                  {isAdmin ? '(как администратор вы можете отправить команду /start за пользователя)' : ''} либо нажмите кнопку синхронизации.
+                </p>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={openBotInTelegram}
-              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-[var(--radius-control)] bg-[#229ED9] px-5 text-body-sm font-bold text-white shadow-sm transition-all hover:opacity-90 active:translate-y-px"
-            >
-              Открыть бота и нажать /start
-              <ExternalLink className="size-4" aria-hidden="true" />
-            </button>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start lg:self-center">
+              <button
+                type="button"
+                onClick={openBotInTelegram}
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#229ED9] px-4 text-body-sm font-semibold text-white shadow-sm transition-all hover:bg-[#1f8ec4] active:scale-[0.98]"
+              >
+                <ExternalLink className="size-4" aria-hidden="true" />
+                Открыть бота и нажать /start
+              </button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleManualSync()}
+                disabled={isSyncing}
+                className="h-10 px-4 rounded-xl border-border hover:bg-muted text-fg-primary gap-2"
+              >
+                <RefreshCw className={`size-4 text-primary ${isSyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                {isSyncing ? 'Синхронизируем…' : 'Синхронизировать'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

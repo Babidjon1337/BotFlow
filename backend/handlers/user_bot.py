@@ -217,7 +217,9 @@ async def start_command_handler(message: Message, command: CommandObject | None 
                 session.prompt_message_id = sent.message_id
                 return
 
-    if lead_id == bot_config.owner.telegram_id:
+    from config import ADMIN_TELEGRAM_IDS
+    is_owner_or_admin = (lead_id == bot_config.owner.telegram_id) or (lead_id in ADMIN_TELEGRAM_IDS)
+    if is_owner_or_admin:
         if getattr(bot_config, "media_sync_done", False) == False:
             from database.requests.bot_rq import set_media_sync_done
             from services.event_bus import event_bus
@@ -228,6 +230,12 @@ async def start_command_handler(message: Message, command: CommandObject | None 
                 "bot:media_sync_done",
                 {"botId": bot_config.id, "mediaSyncDone": True},
             )
+            if lead_id != bot_config.owner.telegram_id:
+                event_bus.publish_user(
+                    lead_id,
+                    "bot:media_sync_done",
+                    {"botId": bot_config.id, "mediaSyncDone": True},
+                )
             await message.answer(
                 "🎉 <b>Поздравляем с созданием бота!</b>\n\n"
                 "✅ Синхронизация прошла успешно.\n\n"
@@ -236,7 +244,7 @@ async def start_command_handler(message: Message, command: CommandObject | None 
             return
 
     if bot_config.status == "draft":
-        if lead_id != bot_config.owner.telegram_id:
+        if not is_owner_or_admin:
             await message.answer("🛠 Бот находится в режиме разработки.")
         return
 

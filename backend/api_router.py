@@ -1929,19 +1929,30 @@ async def save_bot_funnel_endpoint(
 @api_router.post("/api/bots/{bot_id}/media-sync")
 async def sync_bot_media(bot_id: int, request: Request):
     bot = await get_owned_bot(bot_id, request)
+    from database.requests.bot_rq import set_media_sync_done
+    await set_media_sync_done(bot.id, True)
+
+    current_user = getattr(request.state, "user", None)
     owner_tg_id = getattr(getattr(bot, "owner", None), "telegram_id", None)
+    current_tg_id = getattr(current_user, "telegram_id", None) if current_user else None
+
     if owner_tg_id:
         event_bus.publish_user(
             owner_tg_id,
             "bot:media_sync_done",
             {"botId": bot_id, "mediaSyncDone": True},
         )
-    else:
-        await event_bus.publish_bot(
-            bot_id,
+    if current_tg_id and current_tg_id != owner_tg_id:
+        event_bus.publish_user(
+            current_tg_id,
             "bot:media_sync_done",
             {"botId": bot_id, "mediaSyncDone": True},
         )
+    await event_bus.publish_bot(
+        bot_id,
+        "bot:media_sync_done",
+        {"botId": bot_id, "mediaSyncDone": True},
+    )
     return {
         "status": "ok",
         "message": "Синхронизация медиа выполнена",
@@ -1999,7 +2010,7 @@ async def upload_bot_media(
     if is_tariff_media:
         target_tariff_id = node_id.removeprefix("payment:tariff:").removeprefix("tariff:")
 
-    if not is_broadcast_media and not is_tariff_media and target_node is None:
+    if not is_broadcast_media and target_node is None and target_tariff_id is None:
         raise HTTPException(status_code=404, detail="Блок воронки не найден")
     if target_tariff_id is not None and media_type == "document":
         raise HTTPException(
@@ -2020,39 +2031,74 @@ async def upload_bot_media(
         token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session
     )
     sent_message = None
+    successful_chat_id = None
     thumbnail_file_id = None
+
+    current_user = getattr(request.state, "user", None)
+    current_tg_id = getattr(current_user, "telegram_id", None) if current_user else None
+    owner_tg_id = getattr(getattr(bot, "owner", None), "telegram_id", None)
+
+    candidate_chat_ids = []
+    if current_tg_id:
+        candidate_chat_ids.append(current_tg_id)
+    if owner_tg_id and owner_tg_id not in candidate_chat_ids:
+        candidate_chat_ids.append(owner_tg_id)
+
     try:
-        upload = BufferedInputFile(
-            payload, filename=file.filename or f"{node_id}.{media_type}"
-        )
-        if media_type == "photo":
-            sent_message = await telegram_bot.send_photo(
-                bot.owner.telegram_id, upload, disable_notification=True
+        last_error = None
+        for chat_id in candidate_chat_ids:
+            try:
+                upload = BufferedInputFile(
+                    payload, filename=file.filename or f"{node_id}.{media_type}"
+                )
+                if media_type == "photo":
+                    sent_message = await telegram_bot.send_photo(
+                        chat_id, upload, disable_notification=True
+                    )
+                    telegram_file_id = sent_message.photo[-1].file_id
+                elif media_type == "video":
+                    sent_message = await telegram_bot.send_video(
+                        chat_id, upload, disable_notification=True
+                    )
+                    telegram_file_id = sent_message.video.file_id
+                    if sent_message.video and sent_message.video.thumbnail:
+                        thumbnail_file_id = sent_message.video.thumbnail.file_id
+                else:
+                    sent_message = await telegram_bot.send_document(
+                        chat_id, upload, disable_notification=True
+                    )
+                    telegram_file_id = sent_message.document.file_id
+                successful_chat_id = chat_id
+                break
+            except Exception as e:
+                last_error = e
+                logger.info(
+                    "Попытка отправить временное медиа в chat_id=%s не удалась: %s",
+                    chat_id,
+                    e,
+                )
+                continue
+
+        if sent_message is None:
+            if last_error:
+                raise last_error
+            raise HTTPException(
+                status_code=400,
+                detail="Для загрузки медиа нажмите /start в боте (владелец или администратор).",
             )
-            telegram_file_id = sent_message.photo[-1].file_id
-        elif media_type == "video":
-            sent_message = await telegram_bot.send_video(
-                bot.owner.telegram_id, upload, disable_notification=True
-            )
-            telegram_file_id = sent_message.video.file_id
-            if sent_message.video and sent_message.video.thumbnail:
-                thumbnail_file_id = sent_message.video.thumbnail.file_id
-        else:
-            sent_message = await telegram_bot.send_document(
-                bot.owner.telegram_id, upload, disable_notification=True
-            )
-            telegram_file_id = sent_message.document.file_id
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Не удалось синхронизировать медиа для бота %s: %s", bot_id, exc)
         raise HTTPException(
             status_code=502,
-            detail="Telegram не смог обработать файл. Повторите попытку.",
+            detail="Telegram не смог обработать файл. Убедитесь, что вы нажали /start в боте.",
         ) from exc
     finally:
-        if sent_message is not None:
+        if sent_message is not None and successful_chat_id is not None:
             try:
                 await telegram_bot.delete_message(
-                    bot.owner.telegram_id, sent_message.message_id
+                    successful_chat_id, sent_message.message_id
                 )
             except Exception as exc:
                 # The file_id is already received; a failed cleanup must not discard the upload.
