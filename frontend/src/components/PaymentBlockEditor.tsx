@@ -24,7 +24,6 @@ import {
   toBackendPayload,
   tariffItemToTariff,
   tariffToTariffItem,
-  stripTelegramHtml,
 } from '../utils/tariffMappers';
 
 interface PaymentBlockEditorProps {
@@ -63,25 +62,21 @@ function getPeriodSuffix(period?: string): string {
 
 function renderDeliverableBadges(deliverables: TariffDeliverable[]) {
   if (!deliverables || deliverables.length === 0) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-[var(--color-surface-2)] text-[var(--color-foreground-tertiary)]">
-        Без выдачи
-      </span>
-    );
+    return null;
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+    <div className="flex flex-wrap items-center gap-1 mt-0.5">
       {deliverables.map((d) => {
         if (d.type === 'channel') {
           return (
             <span
               key={d.id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
               title={d.title}
             >
-              <Megaphone size={11} className="shrink-0" />
-              <span className="truncate max-w-[130px]">{d.title || 'Канал'}</span>
+              <Megaphone size={10} className="shrink-0" />
+              <span className="truncate max-w-[110px]">{d.title || 'Канал'}</span>
             </span>
           );
         }
@@ -89,11 +84,11 @@ function renderDeliverableBadges(deliverables: TariffDeliverable[]) {
           return (
             <span
               key={d.id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
               title={d.title}
             >
-              <Users size={11} className="shrink-0" />
-              <span className="truncate max-w-[130px]">{d.title || 'Чат'}</span>
+              <Users size={10} className="shrink-0" />
+              <span className="truncate max-w-[110px]">{d.title || 'Чат'}</span>
             </span>
           );
         }
@@ -101,22 +96,22 @@ function renderDeliverableBadges(deliverables: TariffDeliverable[]) {
           return (
             <span
               key={d.id}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
               title={d.title}
             >
-              <FileText size={11} className="shrink-0" />
-              <span className="truncate max-w-[130px]">{d.fileName || d.title || 'Файл'}</span>
+              <FileText size={10} className="shrink-0" />
+              <span className="truncate max-w-[110px]">{d.fileName || d.title || 'Файл'}</span>
             </span>
           );
         }
         return (
           <span
             key={d.id}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
             title={d.title}
           >
-            <Link2 size={11} className="shrink-0" />
-            <span className="truncate max-w-[130px]">{d.title || 'Ссылка'}</span>
+            <Link2 size={10} className="shrink-0" />
+            <span className="truncate max-w-[110px]">{d.title || 'Ссылка'}</span>
           </span>
         );
       })}
@@ -449,75 +444,78 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
           <div className="flex flex-col gap-2">
             {catalogTariffs.map((item) => {
               const isChecked = selectedIds.has(item.id);
-              const cleanDescription = item.description ? stripTelegramHtml(item.description) : '';
 
               return (
                 <div
                   key={item.id}
                   onClick={() => handleToggleTariff(item)}
-                  className={`group relative flex items-start gap-3 p-3.5 rounded-2xl border transition-all cursor-pointer select-none ${
+                  className={`group relative flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer select-none ${
                     isChecked
-                      ? 'border-primary/40 bg-primary/5 shadow-sm'
+                      ? 'border-primary/50 bg-primary/5 shadow-2xs'
                       : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]/50'
                   }`}
                 >
-                  {/* Custom Checkbox */}
-                  <div className="pt-0.5 shrink-0">
+                  {/* Custom Checkbox + Title & Deliverables */}
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
                     <div
-                      className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${
+                      className={`w-4.5 h-4.5 rounded-md border flex items-center justify-center shrink-0 transition-all ${
                         isChecked
                           ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white shadow-2xs'
                           : 'border-[var(--color-border-strong)] bg-[var(--color-surface)] group-hover:border-[var(--color-primary)]'
                       }`}
                     >
-                      {isChecked && <Check size={13} strokeWidth={3} />}
+                      {isChecked && <Check size={12} strokeWidth={3} />}
+                    </div>
+
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[13px] font-semibold text-[var(--color-foreground)] truncate leading-snug">
+                          {item.name || 'Без названия'}
+                        </span>
+                        {item.paymentType === 'subscription' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/10 text-primary shrink-0 leading-none">
+                            {getPeriodSuffix(item.billingPeriod).replace('/', '').trim()}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Deliverable Badges */}
+                      {renderDeliverableBadges(item.deliverables)}
                     </div>
                   </div>
 
-                  {/* Tariff Details */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[13px] font-semibold text-[var(--color-foreground)] truncate leading-snug">
-                        {item.name || 'Без названия'}
-                      </p>
-                      <span className="font-accent text-[13px] font-bold tabular-nums text-[var(--color-primary)] shrink-0">
+                  {/* Price + Actions */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-baseline gap-1.5 text-right">
+                      {typeof item.oldPrice === 'number' && item.oldPrice > (item.price || 0) && (
+                        <span className="text-[11px] line-through text-[var(--color-foreground-tertiary)] tabular-nums">
+                          {item.oldPrice.toLocaleString('ru-RU')} ₽
+                        </span>
+                      )}
+                      <span className="font-accent text-[13px] font-bold tabular-nums text-[var(--color-primary)]">
                         {item.price ? `${item.price.toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
-                        {item.paymentType === 'subscription' && (
-                          <span className="text-[11px] font-medium text-[var(--color-foreground-tertiary)] ml-1">
-                            {getPeriodSuffix(item.billingPeriod)}
-                          </span>
-                        )}
                       </span>
                     </div>
 
-                    {cleanDescription && (
-                      <p className="text-[11px] text-[var(--color-foreground-secondary)] line-clamp-2 mt-0.5 leading-relaxed">
-                        {cleanDescription}
-                      </p>
-                    )}
-
-                    {/* Deliverable Badges */}
-                    {renderDeliverableBadges(item.deliverables)}
-                  </div>
-
-                  {/* Actions (Pencil & Trash) */}
-                  <div className="flex items-center gap-1 shrink-0 ml-1 pt-0.5" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEditModal(item)}
-                      className="p-1.5 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface)] transition-colors"
-                      title="Редактировать тариф"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteTariff(item)}
-                      className="p-1.5 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
-                      title="Удалить тариф"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    {/* Actions (Pencil & Trash) */}
+                    <div className="flex items-center gap-0.5 ml-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditModal(item)}
+                        className="p-1.5 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] transition-colors"
+                        title="Редактировать тариф"
+                      >
+                        <Pencil size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteTariff(item)}
+                        className="p-1.5 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
+                        title="Удалить тариф"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

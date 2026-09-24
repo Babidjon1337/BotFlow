@@ -105,6 +105,13 @@ export default function App() {
       setRoute({ level: 'account', tab: 'admin' });
       setActiveTab('admin_stats');
       setAdminOrigin(false);
+      const ownBot = appState.bots[0] || null;
+      setAppState(prev => ({ ...prev, activeBot: ownBot }));
+      if (ownBot) {
+        localStorage.setItem('bot_father_activeBotId', ownBot.id);
+      } else {
+        localStorage.removeItem('bot_father_activeBotId');
+      }
     } else {
       setRoute({ level: 'account', tab: 'bots' });
       setActiveTab('manage');

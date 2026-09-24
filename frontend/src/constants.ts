@@ -13,28 +13,6 @@ export const INITIAL_BLOCKS: FunnelNode[] = [
     y: 50,
   },
   {
-    id: 'push1',
-    step: 'Дожим 1',
-    subtitle: 'Через 1 час',
-    delay: '1 час',
-    kind: 'reminder',
-    content: '',
-    buttonText: '',
-    x: 250,
-    y: 200,
-  },
-  {
-    id: 'push2',
-    step: 'Дожим 2',
-    subtitle: 'Через 24 часа',
-    delay: '24 часа',
-    kind: 'reminder',
-    content: '',
-    buttonText: '',
-    x: 250,
-    y: 350,
-  },
-  {
     id: 'payment',
     step: 'Оплата',
     subtitle: 'Счет на оплату',
@@ -43,9 +21,7 @@ export const INITIAL_BLOCKS: FunnelNode[] = [
     content: '',
     buttonText: '',
     paymentMode: 'auto',
-    tariffs: [
-      { id: 't1', name: '', price: 0, description: '', actionType: 'link', actionData: '' }
-    ],
+    tariffs: [],
     x: 500,
     y: 200,
   }

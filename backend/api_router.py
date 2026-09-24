@@ -1866,8 +1866,8 @@ async def delete_tariff_endpoint(
 
 
 async def _tariffs_for_bot(bot) -> list:
-    if hasattr(bot, "tariffs") and bot.tariffs is not None:
-        return list(bot.tariffs)
+    if "tariffs" in getattr(bot, "__dict__", {}) and bot.__dict__["tariffs"] is not None:
+        return list(bot.__dict__["tariffs"])
     try:
         from database.requests.tariff_rq import list_tariffs_by_bot_id
 

@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, CheckCircle2, Trash2 } from 'lucide-react';
 
 interface FunnelCardProps {
   stepId: string;
   title: string;
   isComplete: boolean;
   defaultExpanded?: boolean;
+  onDelete?: () => void;
   children: React.ReactNode;
 }
 
-export const FunnelCard = ({ stepId, title, isComplete, defaultExpanded = false, children }: FunnelCardProps) => {
+export const FunnelCard = ({ stepId, title, isComplete, defaultExpanded = false, onDelete, children }: FunnelCardProps) => {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (
@@ -73,9 +74,25 @@ export const FunnelCard = ({ stepId, title, isComplete, defaultExpanded = false,
             {title}
           </span>
         </div>
-        <motion.div animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
-          <ChevronRight size={16} style={{ color: 'var(--color-foreground-tertiary)' }} />
-        </motion.div>
+        <div className="flex items-center gap-1.5">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              className="p-1 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+              title="Удалить шаг"
+              aria-label="Удалить шаг"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
+          <motion.div animate={{ rotate: isExpanded ? 90 : 0 }} transition={{ duration: 0.15 }}>
+            <ChevronRight size={16} style={{ color: 'var(--color-foreground-tertiary)' }} />
+          </motion.div>
+        </div>
       </button>
 
       <AnimatePresence>

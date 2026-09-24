@@ -23,19 +23,27 @@ export function normalizeFunnelNodes(nodes: FunnelNode[]): FunnelNode[] {
     return [];
   };
 
-  const requiredNodes = INITIAL_BLOCKS.map(defaultNode => {
-    const saved = savedById.get(defaultNode.id);
-    const merged = { ...defaultNode, ...saved };
-    merged.mediaAssets = normalizeNodeMedia(merged);
-    return merged;
-  });
+  const startNode = savedById.get('start') || INITIAL_BLOCKS[0];
+  const paymentNode = savedById.get('payment') || INITIAL_BLOCKS[1];
 
-  const extraNodes = nodes
-    .filter(node => !INITIAL_BLOCKS.some(defaultNode => defaultNode.id === node.id))
+  const middleNodes = nodes
+    .filter(node => node.id !== 'start' && node.id !== 'payment')
     .map(node => ({
       ...node,
       mediaAssets: normalizeNodeMedia(node),
     }));
 
-  return [...requiredNodes, ...extraNodes];
+  const normalizedStart: FunnelNode = {
+    ...INITIAL_BLOCKS[0],
+    ...startNode,
+    mediaAssets: normalizeNodeMedia(startNode),
+  };
+
+  const normalizedPayment: FunnelNode = {
+    ...INITIAL_BLOCKS[1],
+    ...paymentNode,
+    mediaAssets: normalizeNodeMedia(paymentNode),
+  };
+
+  return [normalizedStart, ...middleNodes, normalizedPayment];
 }

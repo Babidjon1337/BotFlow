@@ -4,7 +4,6 @@ import {
   RotateCcw,
   ShieldAlert,
   Power,
-  Settings,
   Clock,
   CreditCard,
   Receipt,
@@ -14,9 +13,10 @@ import {
   XCircle,
   MessageCircle,
   AlertTriangle,
+  Plus,
 } from "lucide-react";
 import { EmptyBotState } from "../EmptyBotState";
-import type { NodeMediaAsset } from "../../types";
+import type { NodeMediaAsset, FunnelNode } from "../../types";
 import { FunnelCard } from "../FunnelCard";
 import { TelegramTextEditor, SyncedMediaPreview } from "../TelegramTextEditor";
 import { PaymentBlockEditor } from "../PaymentBlockEditor";
@@ -246,24 +246,20 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     updateBlock,
     updateBlockFields,
     theme,
-    setSheet,
     handleCreateBotClick: onCreateBot,
     setToastMessage,
     setToastType,
     setAppState,
     getFunnelRevision,
     getFunnelWorkspaceGeneration,
+    replaceFunnelWorkspace,
     markFunnelSaved,
   } = useAppState();
-
-  const onOpenSettings = () => setSheet("bot_settings");
 
   const getBlock = (id: string) => blocks.find((b) => b.id === id);
 
   // Interactive Preview state
-  const [previewScreen, setPreviewScreen] = useState<
-    "start" | "push1" | "push2" | "tariffs" | "invoice" | "manager"
-  >("start");
+  const [previewScreen, setPreviewScreen] = useState<string>("start");
   const [selectedTariff, setSelectedTariff] = useState<Tariff | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const { showAlert, showConfirm } = useAlert();
@@ -652,18 +648,15 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     getBlock("start")?.buttonText?.trim() &&
     (paymentMode === "hybrid" ? !!getBlock("start")?.buttonText2?.trim() : true)
   );
-  
-  const isPush1Complete = !!(
-    checkHasContent(getBlock("push1")?.content) &&
-    getBlock("push1")?.buttonText?.trim() &&
-    (paymentMode === "hybrid" ? !!getBlock("push1")?.buttonText2?.trim() : true)
+
+  const reminderBlocks = blocks.filter((b) => b.kind === "reminder");
+
+  const isReminderComplete = (block: FunnelNode) => !!(
+    checkHasContent(block.content) &&
+    block.buttonText?.trim() &&
+    (paymentMode === "hybrid" ? !!block.buttonText2?.trim() : true)
   );
 
-  const isPush2Complete = !!(
-    checkHasContent(getBlock("push2")?.content) &&
-    getBlock("push2")?.buttonText?.trim() &&
-    (paymentMode === "hybrid" ? !!getBlock("push2")?.buttonText2?.trim() : true)
-  );
   const isPaymentComplete = !!(
     paymentBlock?.tariffs?.length &&
     paymentBlock.tariffs.every((t) =>
@@ -683,16 +676,82 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
   );
 
   const isAllBlocksComplete =
-    isStartComplete && isPush1Complete && isPush2Complete && isPaymentComplete;
+    isStartComplete && reminderBlocks.every(isReminderComplete) && isPaymentComplete;
 
   const funnelSteps = [
-    { label: "Старт", complete: isStartComplete },
-    { label: "Дожим 1", complete: isPush1Complete },
-    { label: "Дожим 2", complete: isPush2Complete },
-    { label: "Оплата и выдача", complete: isPaymentComplete },
+    { id: "start", label: "Старт", complete: isStartComplete },
+    ...reminderBlocks.map((b, idx) => ({
+      id: b.id,
+      label: b.step || `Дожим ${idx + 1}`,
+      complete: isReminderComplete(b),
+    })),
+    { id: "payment", label: "Оплата и выдача", complete: isPaymentComplete },
   ];
   const incompleteSteps = funnelSteps.filter((step) => !step.complete);
   const completedStepsCount = funnelSteps.length - incompleteSteps.length;
+
+  const handleAddDozhim = () => {
+    if (reminderBlocks.length >= 5) {
+      showAlert({
+        title: "Лимит дожимов",
+        message: "В воронку можно добавить не более 5 дожимов.",
+      });
+      return;
+    }
+    const newIndex = reminderBlocks.length + 1;
+    const newId = `push${Date.now()}`;
+    const newDozhim: FunnelNode = {
+      id: newId,
+      step: `Дожим ${newIndex}`,
+      subtitle: `Через ${newIndex === 1 ? "1ч" : `${newIndex * 12}ч`}`,
+      delay: newIndex === 1 ? "1ч" : "24ч",
+      kind: "reminder",
+      content: "",
+      buttonText: "Перейти",
+      x: 250,
+      y: 200 + newIndex * 150,
+    };
+    const paymentIdx = blocks.findIndex((b) => b.id === "payment");
+    const nextBlocks =
+      paymentIdx !== -1
+        ? [...blocks.slice(0, paymentIdx), newDozhim, ...blocks.slice(paymentIdx)]
+        : [...blocks, newDozhim];
+    replaceFunnelWorkspace(nextBlocks);
+    setSelectedBlockId(newId);
+    setPreviewScreen(newId);
+  };
+
+  const handleDeleteDozhim = (dozhimId: string) => {
+    const target = blocks.find((b) => b.id === dozhimId);
+    const title = target?.step || "дожим";
+    showConfirm({
+      title: `Удалить «${title}»?`,
+      message: "Этот шаг дожима будет удален из сценария воронки.",
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      onConfirm: () => {
+        const remainingReminders = blocks.filter(
+          (b) => b.kind === "reminder" && b.id !== dozhimId
+        );
+        const nextBlocks = blocks
+          .filter((b) => b.id !== dozhimId)
+          .map((b) => {
+            if (b.kind === "reminder") {
+              const idx = remainingReminders.findIndex((r) => r.id === b.id) + 1;
+              return { ...b, step: `Дожим ${idx}` };
+            }
+            return b;
+          });
+        replaceFunnelWorkspace(nextBlocks);
+        if (selectedBlockId === dozhimId) {
+          setSelectedBlockId("start");
+        }
+        if (previewScreen === dozhimId) {
+          setPreviewScreen("start");
+        }
+      },
+    });
+  };
 
 
   const handlePreviewButtonClick = (btnIndex: 1 | 2) => {
@@ -791,16 +850,6 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
               </>
             )}
           </div>
-
-          <button
-            type="button"
-            className="size-9 rounded-lg flex items-center justify-center border border-border text-fg-secondary hover:bg-[var(--color-surface-2)] transition-colors"
-            onClick={onOpenSettings}
-            title="Настройки бота"
-            aria-label="Открыть настройки бота"
-          >
-            <Settings size={16} />
-          </button>
 
           <button
             type="button"
@@ -913,127 +962,85 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
               </div>
             </FunnelCard>
 
-            <div className="flex items-center justify-center my-0.5 py-1 relative">
-              <div className="absolute w-[2px] h-full bg-[var(--color-border)] left-1/2 -translate-x-1/2" />
-              <div className="relative z-10 px-3 py-1 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] text-[11px] font-semibold text-[var(--color-foreground-secondary)] flex items-center gap-1.5 shadow-sm">
-                <Clock size={12} className="text-[var(--color-primary)]" />
-                <span>Через {getBlock("push1")?.delay || "1ч"}</span>
+            {reminderBlocks.map((block, idx) => (
+              <div key={block.id} className="flex flex-col gap-2">
+                <div className="flex items-center justify-center my-0.5 py-1 relative">
+                  <div className="absolute w-[2px] h-full bg-[var(--color-border)] left-1/2 -translate-x-1/2" />
+                  <div className="relative z-10 px-3 py-1 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] text-[11px] font-semibold text-[var(--color-foreground-secondary)] flex items-center gap-1.5 shadow-sm">
+                    <Clock size={12} className="text-[var(--color-primary)]" />
+                    <span>Через {block.delay || (idx === 0 ? "1ч" : "24ч")}</span>
+                  </div>
+                </div>
+
+                <FunnelCard
+                  stepId={block.id}
+                  title={block.step || `Дожим ${idx + 1}`}
+                  isComplete={isReminderComplete(block)}
+                  onDelete={() => handleDeleteDozhim(block.id)}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    <div onClick={() => setSelectedBlockId(block.id)}>
+                      <label className="text-label" style={{ display: "block", marginBottom: "8px" }}>
+                        Текст дожима
+                      </label>
+                      <RichTextEditor
+                        value={block.content || ""}
+                        onChange={(v) => updateBlock(block.id, "content", v)}
+                        placeholder="Напомните о себе. Добавьте причину принять решение сейчас."
+                        hasMedia={!!block.media}
+                        botId={appState.activeBot!.id}
+                        mediaFileId={block.mediaFileId}
+                        mediaAssetId={block.mediaAssetId}
+                        mediaType={block.mediaType}
+                        mediaAssets={block.mediaAssets ?? []}
+                        onUploadMedia={(file) => handleMediaUpload(block.id, file)}
+                        onUploadLargeMedia={(file) => handleLargeFileDetected(block.id, file)}
+                        onRemoveMedia={(assetId) => removeMedia(block.id, assetId)}
+                        onReorderMedia={(newAssets) => handleReorderMedia(block.id, newAssets)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <ButtonInput
+                        label={paymentMode === "hybrid" ? "Кнопка 1 (Покупка)" : "Текст кнопки"}
+                        value={block.buttonText || ""}
+                        onChange={(v) => updateBlock(block.id, "buttonText", v)}
+                        placeholder={paymentMode === "hybrid" ? "Купить сейчас" : "Перейти"}
+                      />
+                      {paymentMode === "hybrid" && (
+                        <ButtonInput
+                          label="Кнопка 2 (Консультация)"
+                          value={block.buttonText2 || ""}
+                          onChange={(v) => updateBlock(block.id, "buttonText2", v)}
+                          placeholder="Записаться на консультацию"
+                        />
+                      )}
+                    </div>
+                    {/* Delay selector — at bottom, secondary control */}
+                    <div className="-mx-5 -mb-6 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-b-[var(--radius-lg)]">
+                      <TimerPresets
+                        value={block.delay || (idx === 0 ? "1ч" : "24ч")}
+                        onChange={(val) => updateBlock(block.id, "delay", val)}
+                        presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
+                      />
+                    </div>
+                  </div>
+                </FunnelCard>
               </div>
+            ))}
+
+            {/* Кнопка добавления дожима */}
+            <div className="flex flex-col items-center justify-center my-2 relative">
+              {reminderBlocks.length < 5 && (
+                <button
+                  type="button"
+                  onClick={handleAddDozhim}
+                  className="group relative z-10 inline-flex items-center gap-2 rounded-xl border border-dashed border-[var(--color-primary)] bg-[var(--color-primary-soft)]/20 px-4 py-2 text-xs font-bold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary-soft)]/40 hover:scale-[1.01] active:scale-[0.98] shadow-2xs"
+                >
+                  <Plus size={14} className="transition-transform group-hover:rotate-90" />
+                  <span>Добавить дожим</span>
+                </button>
+              )}
             </div>
-
-            <FunnelCard
-              stepId="push1"
-              title="Дожим 1"
-              isComplete={isPush1Complete}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div onClick={() => setSelectedBlockId("push1")}>
-                  <label className="text-label" style={{ display: "block", marginBottom: "8px" }}>
-                    Текст дожима
-                  </label>
-                  <RichTextEditor
-                    value={getBlock("push1")?.content || ""}
-                    onChange={(v) => updateBlock("push1", "content", v)}
-                    placeholder="Напомните о себе. Добавьте причину принять решение сейчас."
-                    hasMedia={!!getBlock("push1")?.media}
-                    botId={appState.activeBot.id}
-                    mediaFileId={getBlock("push1")?.mediaFileId}
-                    mediaAssetId={getBlock("push1")?.mediaAssetId}
-                    mediaType={getBlock("push1")?.mediaType}
-                    mediaAssets={getBlock("push1")?.mediaAssets ?? []}
-                    onUploadMedia={(file) => handleMediaUpload("push1", file)}
-                    onUploadLargeMedia={(file) => handleLargeFileDetected("push1", file)}
-                    onRemoveMedia={(assetId) => removeMedia("push1", assetId)}
-                    onReorderMedia={(newAssets) => handleReorderMedia("push1", newAssets)}
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <ButtonInput
-                    label={paymentMode === "hybrid" ? "Кнопка 1 (Покупка)" : "Текст кнопки"}
-                    value={getBlock("push1")?.buttonText || ""}
-                    onChange={(v) => updateBlock("push1", "buttonText", v)}
-                    placeholder={paymentMode === "hybrid" ? "Купить сейчас" : "Перейти"}
-                  />
-                  {paymentMode === "hybrid" && (
-                    <ButtonInput
-                      label="Кнопка 2 (Консультация)"
-                      value={getBlock("push1")?.buttonText2 || ""}
-                      onChange={(v) => updateBlock("push1", "buttonText2", v)}
-                      placeholder="Записаться на консультацию"
-                    />
-                  )}
-                </div>
-                {/* Delay selector — at bottom, secondary control */}
-                <div className="-mx-5 -mb-6 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-b-[var(--radius-lg)]">
-                  <TimerPresets
-                    value={getBlock("push1")?.delay || "1ч"}
-                    onChange={(val) => updateBlock("push1", "delay", val)}
-                    presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
-                  />
-                </div>
-              </div>
-            </FunnelCard>
-
-            <div className="flex items-center justify-center my-0.5 py-1 relative">
-              <div className="absolute w-[2px] h-full bg-[var(--color-border)] left-1/2 -translate-x-1/2" />
-              <div className="relative z-10 px-3 py-1 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] text-[11px] font-semibold text-[var(--color-foreground-secondary)] flex items-center gap-1.5 shadow-sm">
-                <Clock size={12} className="text-[var(--color-primary)]" />
-                <span>Через {getBlock("push2")?.delay || "24ч"}</span>
-              </div>
-            </div>
-
-            <FunnelCard
-              stepId="push2"
-              title="Дожим 2"
-              isComplete={isPush2Complete}
-            >
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div onClick={() => setSelectedBlockId("push2")}>
-                  <label className="text-label" style={{ display: "block", marginBottom: "8px" }}>
-                    Текст дожима
-                  </label>
-                  <RichTextEditor
-                    value={getBlock("push2")?.content || ""}
-                    onChange={(v) => updateBlock("push2", "content", v)}
-                    placeholder="Последний дожим — покажите упущенную выгоду или срочность предложения."
-                    hasMedia={!!getBlock("push2")?.media}
-                    botId={appState.activeBot.id}
-                    mediaFileId={getBlock("push2")?.mediaFileId}
-                    mediaAssetId={getBlock("push2")?.mediaAssetId}
-                    mediaType={getBlock("push2")?.mediaType}
-                    mediaAssets={getBlock("push2")?.mediaAssets ?? []}
-                    onUploadMedia={(file) => handleMediaUpload("push2", file)}
-                    onUploadLargeMedia={(file) => handleLargeFileDetected("push2", file)}
-                    onRemoveMedia={(assetId) => removeMedia("push2", assetId)}
-                    onReorderMedia={(newAssets) => handleReorderMedia("push2", newAssets)}
-                  />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <ButtonInput
-                    label={paymentMode === "hybrid" ? "Кнопка 1 (Покупка)" : "Текст кнопки"}
-                    value={getBlock("push2")?.buttonText || ""}
-                    onChange={(v) => updateBlock("push2", "buttonText", v)}
-                    placeholder={paymentMode === "hybrid" ? "Купить сейчас" : "Забрать скидку"}
-                  />
-                  {paymentMode === "hybrid" && (
-                    <ButtonInput
-                      label="Кнопка 2 (Консультация)"
-                      value={getBlock("push2")?.buttonText2 || ""}
-                      onChange={(v) => updateBlock("push2", "buttonText2", v)}
-                      placeholder="Записаться на консультацию"
-                    />
-                  )}
-                </div>
-                {/* Delay selector — at bottom, secondary control */}
-                <div className="-mx-5 -mb-6 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-b-[var(--radius-lg)]">
-                  <TimerPresets
-                    value={getBlock("push2")?.delay || "24ч"}
-                    onChange={(val) => updateBlock("push2", "delay", val)}
-                    presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
-                  />
-                </div>
-              </div>
-            </FunnelCard>
 
             <div className="flex items-center justify-center my-0.5 py-1 relative">
               <div className="absolute w-[2px] h-full bg-[var(--color-border)] left-1/2 -translate-x-1/2" />
@@ -1209,30 +1216,18 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                       Осталось заполнить несколько полей слева (цены, тексты и т.д.), чтобы воронка заработала.
                     </p>
                     <div className="flex flex-col gap-2 text-left w-full max-w-[210px] bg-[var(--color-surface-2)] p-3.5 rounded-xl border border-[var(--color-border)] text-[11px]">
-                      <div className="flex items-center gap-2">
-                        {isStartComplete ? <CheckCircle2 size={15} className="text-[var(--color-success)] shrink-0" /> : <XCircle size={15} className="text-[var(--color-warning)] shrink-0" />}
-                        <span className={isStartComplete ? "text-[var(--color-foreground)] font-medium" : "text-[var(--color-warning)] font-semibold"}>
-                          Шаг 1: Старт
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isPush1Complete ? <CheckCircle2 size={15} className="text-[var(--color-success)] shrink-0" /> : <XCircle size={15} className="text-[var(--color-warning)] shrink-0" />}
-                        <span className={isPush1Complete ? "text-[var(--color-foreground)] font-medium" : "text-[var(--color-warning)] font-semibold"}>
-                          Шаг 2: Дожим 1
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isPush2Complete ? <CheckCircle2 size={15} className="text-[var(--color-success)] shrink-0" /> : <XCircle size={15} className="text-[var(--color-warning)] shrink-0" />}
-                        <span className={isPush2Complete ? "text-[var(--color-foreground)] font-medium" : "text-[var(--color-warning)] font-semibold"}>
-                          Шаг 3: Дожим 2
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {isPaymentComplete ? <CheckCircle2 size={15} className="text-[var(--color-success)] shrink-0" /> : <XCircle size={15} className="text-[var(--color-warning)] shrink-0" />}
-                        <span className={isPaymentComplete ? "text-[var(--color-foreground)] font-medium" : "text-[var(--color-warning)] font-semibold"}>
-                          Шаг 4: Оплата / Тарифы
-                        </span>
-                      </div>
+                      {funnelSteps.map((step, idx) => (
+                        <div key={step.id} className="flex items-center gap-2">
+                          {step.complete ? (
+                            <CheckCircle2 size={15} className="text-[var(--color-success)] shrink-0" />
+                          ) : (
+                            <XCircle size={15} className="text-[var(--color-warning)] shrink-0" />
+                          )}
+                          <span className={step.complete ? "text-[var(--color-foreground)] font-medium" : "text-[var(--color-warning)] font-semibold"}>
+                            Шаг {idx + 1}: {step.label}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ) : (
@@ -1248,28 +1243,24 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                     }}
                   >
                     {/* Step Switcher Pills inside Emulator */}
-                    <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl shrink-0 gap-1 text-[11px] border border-[var(--color-border)]">
+                    <div className="flex bg-[var(--color-surface-2)] p-1 rounded-xl shrink-0 gap-1 text-[11px] border border-[var(--color-border)] overflow-x-auto scrollbar-none">
                       <button
                         onClick={() => setPreviewScreen("start")}
-                        className={`flex-1 py-1.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${previewScreen === "start" ? "bg-[var(--color-primary)] text-white shadow-sm font-semibold" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
+                        className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${previewScreen === "start" ? "bg-[var(--color-primary)] text-white shadow-sm font-semibold" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
                       >
                         <MessageSquare size={12} />
                         <span>Старт</span>
                       </button>
-                      <button
-                        onClick={() => setPreviewScreen("push1")}
-                        className={`flex-1 py-1.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${previewScreen === "push1" ? "bg-[var(--color-primary)] text-white shadow-sm font-semibold" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
-                      >
-                        <Clock size={12} />
-                        <span>Дожим 1</span>
-                      </button>
-                      <button
-                        onClick={() => setPreviewScreen("push2")}
-                        className={`flex-1 py-1.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 ${previewScreen === "push2" ? "bg-[var(--color-primary)] text-white shadow-sm font-semibold" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
-                      >
-                        <Clock size={12} />
-                        <span>Дожим 2</span>
-                      </button>
+                      {reminderBlocks.map((r, idx) => (
+                        <button
+                          key={r.id}
+                          onClick={() => setPreviewScreen(r.id)}
+                          className={`flex-1 py-1.5 px-2.5 rounded-lg font-medium transition-colors flex items-center justify-center gap-1 whitespace-nowrap ${previewScreen === r.id ? "bg-[var(--color-primary)] text-white shadow-sm font-semibold" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}
+                        >
+                          <Clock size={12} />
+                          <span>{r.step || `Дожим ${idx + 1}`}</span>
+                        </button>
+                      ))}
                     </div>
 
                     <AnimatePresence mode="popLayout">
@@ -1304,74 +1295,41 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                         </motion.div>
                       )}
 
-                      {/* Screen: Push 1 */}
-                      {previewScreen === "push1" && (
-                        <motion.div
-                          key="push1"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "10px",
-                          }}
-                        >
-                          <div className="self-center text-[11px] font-semibold text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] border border-[var(--color-border)] px-3 py-1 rounded-full flex items-center gap-1 shadow-2xs">
-                            <Clock size={11} className="text-[var(--color-primary)]" />
-                            <span>Через {getBlock("push1")?.delay || "1ч"} (если не купил)</span>
-                          </div>
-                          <MessageBubble
-                            text={getBlock("push1")?.content}
-                            button={getBlock("push1")?.buttonText}
-                            button2={
-                              paymentMode === "hybrid"
-                                ? getBlock("push1")?.buttonText2
-                                : undefined
-                            }
-                            mediaAssetId={getBlock("push1")?.mediaAssetId}
-                            mediaType={getBlock("push1")?.mediaType}
-                    mediaAssets={getBlock("push1")?.mediaAssets ?? []}
-                            botId={appState.activeBot.id}
-                            theme={theme}
-                            onButtonClick={handlePreviewButtonClick}
-                          />
-                        </motion.div>
-                      )}
-
-                      {/* Screen: Push 2 */}
-                      {previewScreen === "push2" && (
-                        <motion.div
-                          key="push2"
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0 }}
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "10px",
-                          }}
-                        >
-                          <div className="self-center text-[11px] font-semibold text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] border border-[var(--color-border)] px-3 py-1 rounded-full flex items-center gap-1 shadow-2xs">
-                            <Clock size={11} className="text-[var(--color-primary)]" />
-                            <span>Через {getBlock("push2")?.delay || "24ч"} (если не купил)</span>
-                          </div>
-                          <MessageBubble
-                            text={getBlock("push2")?.content}
-                            button={getBlock("push2")?.buttonText}
-                            button2={
-                              paymentMode === "hybrid"
-                                ? getBlock("push2")?.buttonText2
-                                : undefined
-                            }
-                            mediaAssetId={getBlock("push2")?.mediaAssetId}
-                            mediaType={getBlock("push2")?.mediaType}
-                    mediaAssets={getBlock("push2")?.mediaAssets ?? []}
-                            botId={appState.activeBot.id}
-                            theme={theme}
-                            onButtonClick={handlePreviewButtonClick}
-                          />
-                        </motion.div>
+                      {/* Dynamic Screens: Reminders */}
+                      {reminderBlocks.map((r, rIdx) =>
+                        previewScreen === r.id ? (
+                          <motion.div
+                            key={r.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "10px",
+                            }}
+                          >
+                            <div className="self-center text-[11px] font-semibold text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] border border-[var(--color-border)] px-3 py-1 rounded-full flex items-center gap-1 shadow-2xs">
+                              <Clock size={11} className="text-[var(--color-primary)]" />
+                              <span>Через {r.delay || (rIdx === 0 ? "1ч" : "24ч")} (если не купил)</span>
+                            </div>
+                            <MessageBubble
+                              text={r.content}
+                              button={r.buttonText}
+                              button2={
+                                paymentMode === "hybrid"
+                                  ? r.buttonText2
+                                  : undefined
+                              }
+                              mediaAssetId={r.mediaAssetId}
+                              mediaType={r.mediaType}
+                              mediaAssets={r.mediaAssets ?? []}
+                              botId={appState.activeBot!.id}
+                              theme={theme}
+                              onButtonClick={handlePreviewButtonClick}
+                            />
+                          </motion.div>
+                        ) : null
                       )}
 
                       {/* Screen: Tariffs Selection */}

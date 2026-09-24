@@ -16,6 +16,7 @@ import {
   Link2,
   MoreHorizontal,
   Plus,
+  Power,
   RefreshCw,
   ScanSearch,
   Search,
@@ -24,7 +25,6 @@ import {
   Workflow,
   X,
   Users,
-  Settings,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
 import { useAlert } from "../AlertProvider";
@@ -1754,8 +1754,8 @@ function AdminBotRow({
   onRevokeSubscription,
   onEditFunnel,
   onOpenIntegrations,
-  onOpenWorkspace,
-  onOpenSettings,
+  onOpenWorkspace: _onOpenWorkspace,
+  onOpenSettings: _onOpenSettings,
 }: {
   bot: AdminBot;
   busy: boolean;
@@ -1856,77 +1856,34 @@ function AdminBotRow({
             </button>
           ) : null}
 
-          {/* Кнопка открытия воркспейса бота */}
-          {onOpenWorkspace ? (
-            <button
-              type="button"
-              onClick={() => onOpenWorkspace(bot)}
-              disabled={busy}
-              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-              title="Открыть полный воркспейс бота (обзор, CRM, статистика)"
-            >
-              <Bot size={15} aria-hidden="true" />
-              Воркспейс
-            </button>
-          ) : null}
-
-          {onOpenSettings ? (
-            <button
-              type="button"
-              onClick={() => onOpenSettings(bot)}
-              disabled={busy}
-              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-xs font-bold text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-foreground)] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-              title="Быстрые настройки бота в модальном окне"
-            >
-              <Settings size={15} aria-hidden="true" />
-              Настройки
-            </button>
-          ) : null}
-
-          {onOpenGrant ? (
-            <button
-              type="button"
-              onClick={() => onOpenGrant(bot)}
-              disabled={busy}
-              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-              title="Выдать или продлить бесплатный период на бота"
-            >
-              <Gift size={15} aria-hidden="true" />
-              {hasActiveSub ? "Продлить (+3 мес)" : "+3 мес бесплатно"}
-            </button>
-          ) : null}
-
+          {/* Кнопка запуска (в формате как в сценарии воронки) */}
           <button
             type="button"
             onClick={() => onAction(bot, isActive ? "stop" : "start")}
             disabled={busy || bot.status === "archived"}
-            className={`inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl px-3.5 text-xs font-bold text-white transition-opacity disabled:opacity-60 ${
-              isActive ? "bg-[var(--color-danger)] hover:opacity-90" : "bg-[var(--color-success)] hover:opacity-90"
-            }`}
+            className="size-10 rounded-xl flex items-center justify-center border transition-colors shrink-0 disabled:opacity-60"
+            style={{
+              borderColor: isActive
+                ? "var(--color-success-soft)"
+                : "var(--color-border)",
+              color: isActive
+                ? "var(--color-success)"
+                : "var(--color-foreground-tertiary)",
+              background: isActive
+                ? "var(--color-success-soft)"
+                : "var(--color-surface)",
+            }}
+            title={isActive ? "Остановить бота" : "Запустить бота"}
+            aria-label={isActive ? "Остановить бота" : "Запустить бота"}
           >
-            {busy ? "Выполняем…" : isActive ? "Остановить" : "Запустить"}
-          </button>
-          <button
-            type="button"
-            onClick={() => onCheckReadiness(bot)}
-            disabled={busy}
-            title="Проверить готовность к запуску"
-            aria-label="Проверить готовность"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
-          >
-            <ScanSearch size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onAction(bot, "reinstall_webhook")}
-            disabled={busy}
-            title="Переустановить webhook"
-            aria-label="Переустановить webhook"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
-          >
-            <Link2 size={16} aria-hidden="true" />
+            {busy ? (
+              <div className="animate-spin size-4 border-2 border-current border-t-transparent rounded-full" />
+            ) : (
+              <Power size={17} />
+            )}
           </button>
 
+          {/* Кнопка [ ••• ] с выпадающими действиями */}
           <div className="relative">
             <button
               type="button"
@@ -1942,25 +1899,50 @@ function AdminBotRow({
               <>
                 <div className="fixed inset-0 z-30" role="presentation" onClick={() => setMenuOpen(false)} />
                 <div className="absolute right-0 top-[calc(100%+6px)] z-40 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl">
-                  {hasActiveSub && onRevokeSubscription ? (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onRevokeSubscription(bot);
-                        }}
-                        disabled={busy}
-                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-soft)] disabled:opacity-60"
-                      >
-                        <ShieldAlert size={14} /> Отозвать подписку бота
-                      </button>
-                      <div className="my-1 border-t border-[var(--color-border)]" />
-                    </>
+                  {/* • Проверить готовность */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onCheckReadiness(bot);
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+                  >
+                    <ScanSearch size={14} className="text-[var(--color-foreground-secondary)]" /> Проверить готовность
+                  </button>
+
+                  {/* • + 3 мес */}
+                  {onOpenGrant ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onOpenGrant(bot);
+                      }}
+                      disabled={busy}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+                    >
+                      <Gift size={14} className="text-[var(--color-primary)]" /> + 3 мес
+                    </button>
                   ) : null}
-                  <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-foreground-tertiary)]">
-                    Опасная зона
-                  </p>
+
+                  {/* • Переустановить Webhook */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onAction(bot, "reinstall_webhook");
+                    }}
+                    disabled={busy}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-60"
+                  >
+                    <Link2 size={14} className="text-[var(--color-foreground-secondary)]" /> Переустановить Webhook
+                  </button>
+
+                  <div className="my-1 border-t border-[var(--color-border)]" />
+
+                  {/* • Очистить лиды CRM */}
                   <button
                     type="button"
                     onClick={() => {
@@ -1970,8 +1952,23 @@ function AdminBotRow({
                     disabled={busy}
                     className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-soft)] disabled:opacity-60"
                   >
-                    <Trash2Icon /> Очистить список лидов (CRM)
+                    <Trash2Icon /> Очистить лиды CRM
                   </button>
+
+                  {/* Отозвать подписку бота (если активна) */}
+                  {hasActiveSub && onRevokeSubscription ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onRevokeSubscription(bot);
+                      }}
+                      disabled={busy}
+                      className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger-soft)] disabled:opacity-60"
+                    >
+                      <ShieldAlert size={14} /> Отозвать подписку бота
+                    </button>
+                  ) : null}
                 </div>
               </>
             )}

@@ -145,16 +145,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const savedBotId = localStorage.getItem('bot_father_activeBotId');
         let restoredBot = mappedBots.find(b => b.id === savedBotId);
 
-        // If savedBotId is not in user's own bots, but the user is an admin, fetch the bot!
+        // If savedBotId is not in user's own bots, but the user is an admin, fetch the bot as activeBot without adding to own bots list
         if (!restoredBot && savedBotId && res.user.is_admin) {
           try {
             const { apiService } = await import('../services/api');
             const apiBot = await apiService.getBot(savedBotId);
             if (apiBot) {
               restoredBot = mapApiBot(apiBot);
-              if (!mappedBots.some(b => b.id === restoredBot!.id)) {
-                mappedBots.push(restoredBot);
-              }
             }
           } catch (e) {
             console.warn('Could not restore admin managed bot:', e);
@@ -281,15 +278,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (botSelectionInProgressRef.current) return { status: 'busy' };
 
     let targetBot = appState.bots.find(bot => bot.id === botId);
+    let isForeignBot = false;
     if (!targetBot) {
       try {
         const { apiService } = await import('../services/api');
         const apiBot = await apiService.getBot(botId);
         targetBot = mapApiBot(apiBot);
-        setAppState(prev => ({
-          ...prev,
-          bots: prev.bots.some(b => b.id === targetBot!.id) ? prev.bots : [...prev.bots, targetBot!],
-        }));
+        isForeignBot = true;
       } catch {
         return { status: 'error', message: 'Выбранный бот больше недоступен.' };
       }
@@ -314,9 +309,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setBlocks(nextBlocks);
       setSelectedBlockId('start');
       setFunnelLoadState({ botId, status: 'ready', error: null });
+      if (!isForeignBot) {
+        localStorage.setItem('bot_father_activeBotId', botId);
+      }
       setAppState(prev => ({
         ...prev,
-        bots: prev.bots.some(b => b.id === targetBot!.id) ? prev.bots : [...prev.bots, targetBot!],
         activeBot: targetBot,
         isDirty: false,
       }));
