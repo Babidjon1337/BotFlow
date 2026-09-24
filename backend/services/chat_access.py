@@ -100,8 +100,18 @@ async def issue_paid_chat_invites(
         # Return all grants for this payment (may be multiple rows)
         return [existing.invite_link]
 
-    raw_data = str(tariff.get("actionData") or tariff.get("action_data") or "")
-    chat_ids = _parse_chat_ids(raw_data)
+    deliverables = tariff.get("deliverables")
+    chat_ids: List[str] = []
+    if deliverables and isinstance(deliverables, list):
+        for d in deliverables:
+            if isinstance(d, dict) and d.get("type") in ("channel", "group"):
+                cid = d.get("chatId") or d.get("chat_id")
+                if cid:
+                    chat_ids.append(str(cid).strip())
+    if not chat_ids:
+        raw_data = str(tariff.get("actionData") or tariff.get("action_data") or "")
+        chat_ids = _parse_chat_ids(raw_data)
+
     raw_access_mode = tariff.get("chatAccessMode") or tariff.get("chat_access_mode") or "member"
     token = crypto.decrypt(bot_config.bot_token_enc)
     bot = Bot(token=token, session=http_session, default=DefaultBotProperties(parse_mode="HTML"))
@@ -121,10 +131,11 @@ async def issue_paid_chat_invites(
             chat_access_mode = str(raw_access_mode)
             
         chat = await verify_chat_delivery(bot_config, chat_id, chat_access_mode, http_session)
+        link_title = f"Доступ {str(payment.id)[:8]}" if getattr(payment, "provider", "") == "free" else f"Оплата {str(payment.id)[:8]}"
         try:
             invite = await bot.create_chat_invite_link(
                 chat_id=chat.id,
-                name=f"Оплата {str(payment.id)[:8]}",
+                name=link_title,
                 member_limit=1,
             )
         except Exception as exc:

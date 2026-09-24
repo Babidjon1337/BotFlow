@@ -676,7 +676,10 @@ async def _send_tariff_invoice(
     tariff_details = f"<b>{escape(tariff_name)}</b>"
     if tariff_description:
         tariff_details += f"\n\n{to_telegram_html(tariff_description)}"
-    tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽</b>".replace(",", " ")
+    if amount > 0:
+        tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽</b>".replace(",", " ")
+    else:
+        tariff_details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
     message_text = to_telegram_html(message_text)
     if message_text:
         message_text = f"{message_text}\n\n{tariff_details}"
@@ -744,7 +747,30 @@ async def _send_tariff_invoice(
         )
         return
 
-    # 2. Auto / Hybrid mode: requires payment link
+    # 2. Free tariff claim (Auto / Hybrid mode - no payment provider needed)
+    if amount <= 0:
+        btn_text = getattr(tariff, "button_text", None) or "🎁 Получить доступ"
+        rows = [[InlineKeyboardButton(text=btn_text, callback_data=f"claim_free_tariff:{tariff_id}")]]
+        if mode == "hybrid":
+            rows.append([manager_button])
+        if has_multiple:
+            rows.append(
+                [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
+            )
+        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+        if edit_message:
+            await _remove_callback_message(callback)
+        await _send_payment_message(
+            callback,
+            message_text,
+            pay_keyboard,
+            media_type=getattr(tariff, "media_type", None),
+            file_id=getattr(tariff, "media_file_id", None),
+            media_assets=tariff_media_assets,
+        )
+        return
+
+    # 3. Auto / Hybrid mode: requires payment link
     if not bot_config.payment_provider or not bot_config.payment_creds_enc:
         if mode == "hybrid":
             rows = [[manager_button]]
@@ -1050,6 +1076,103 @@ async def return_to_tariff_choices(callback: CallbackQuery):
     await _send_tariff_selection_message(callback, node_checkout, tariffs)
 
 
+@user_bot_router.callback_query(F.data.startswith("claim_free_tariff:"))
+async def process_free_tariff_claim(callback: CallbackQuery):
+    """Deliver free tariff access immediately without payment provider."""
+    try:
+        await callback.answer("⏳ Активируем доступ…", show_alert=False)
+    except Exception:
+        pass
+
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    funnel = await get_funnel_by_bot_id(callback.bot.id)
+    if not bot_config or not funnel:
+        await callback.message.answer("Бот временно недоступен. Попробуйте позже.")
+        return
+
+    tariff_id = callback.data.removeprefix("claim_free_tariff:")
+    node_checkout = _get_payment_node(funnel)
+    tariffs = list(getattr(node_checkout, "tariffs", []) or [])
+    tariff = next(
+        (t for t in tariffs if str(getattr(t, "id", "")) == tariff_id),
+        None,
+    )
+    if not tariff:
+        from database.requests.tariff_rq import get_tariff_by_id
+
+        db_t = await get_tariff_by_id(tariff_id)
+        if db_t and db_t.bot_id == bot_config.id:
+            tariff = db_t
+
+    if not tariff:
+        await callback.answer("Тариф не найден.", show_alert=True)
+        return
+
+    # Guard against claiming paid tariffs as free
+    price = float(getattr(tariff, "price", 0) or 0)
+    if price > 0:
+        await callback.answer("Для данного тарифа требуется оплата.", show_alert=True)
+        return
+
+    from database.requests.user_rq import get_lead, create_lead
+
+    lead = await get_lead(bot_config.id, callback.from_user.id)
+    if not lead:
+        lead = await create_lead(
+            bot_id=bot_config.id,
+            telegram_id=callback.from_user.id,
+            username=callback.from_user.username,
+            full_name=callback.from_user.full_name,
+        )
+
+    tariff_snapshot = (
+        tariff.model_dump(by_alias=True)
+        if hasattr(tariff, "model_dump")
+        else vars(tariff)
+        if hasattr(tariff, "__dict__")
+        else dict(tariff)
+    )
+
+    from database.requests.client_payment_rq import (
+        create_client_payment,
+        mark_client_payment_succeeded,
+    )
+    from services.payment_link import send_success_message
+    from decimal import Decimal
+
+    payment = await create_client_payment(
+        bot_id=bot_config.id,
+        lead_id=lead.id,
+        provider="free",
+        tariff=tariff_snapshot,
+    )
+    payment, _ = await mark_client_payment_succeeded(
+        payment_id=payment.id,
+        bot_id=bot_config.id,
+        provider="free",
+        provider_payment_id=f"free_{payment.id}",
+        amount=Decimal("0.00"),
+        currency="RUB",
+        telegram_id=callback.from_user.id,
+    )
+
+    await _remove_callback_message(callback)
+
+    try:
+        await send_success_message(
+            tg_bot_id=bot_config.tg_bot_id,
+            telegram_id=callback.from_user.id,
+            http_session=callback.bot.session,
+            tariff_snapshot=tariff_snapshot,
+            client_payment=payment,
+        )
+    except Exception as exc:
+        logger.error("Ошибка при выдаче бесплатного доступа: %s", exc)
+        await callback.message.answer(
+            "✅ Вы получили доступ к тарифу! Если возникли вопросы, свяжитесь с поддержкой."
+        )
+
+
 # ── Кнопки тарифов в рассылках: платёжный флоу, а не выдача доступа ──
 
 async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
@@ -1065,13 +1188,24 @@ async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
     mode = _payment_mode(funnel)
     if mode == "application":
         return None
-    if not bot_config.payment_provider or not bot_config.payment_creds_enc:
-        return None
     node_checkout = _get_payment_node(funnel)
     tariff_ids = [str(t) for t in (broadcast.button or {}).get("tariffIds") or []]
     by_id = {str(t.id): t for t in (getattr(node_checkout, "tariffs", []) or [])}
     selected = [by_id[i] for i in tariff_ids if i in by_id]
     if not selected:
+        return None
+
+    def _is_paid_tariff(t):
+        p = getattr(t, "price", None)
+        if p is None:
+            return True
+        try:
+            return float(p) > 0
+        except (ValueError, TypeError):
+            return True
+
+    has_paid = any(_is_paid_tariff(t) for t in selected)
+    if has_paid and (not bot_config.payment_provider or not bot_config.payment_creds_enc):
         return None
     return bot_config, funnel, node_checkout, selected
 

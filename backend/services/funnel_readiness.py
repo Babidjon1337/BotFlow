@@ -152,11 +152,11 @@ def evaluate_funnel_readiness(
             elif _visible_length(tariff.get("name")) > MAX_TARIFF_NAME_CHARACTERS:
                 reasons.append(f"Сократите название: {label} до {MAX_TARIFF_NAME_CHARACTERS} символов.")
             try:
-                price_is_valid = float(tariff.get("price", 0)) > 0
+                price_is_valid = float(tariff.get("price", 0)) >= 0
             except (TypeError, ValueError):
                 price_is_valid = False
             if not price_is_valid:
-                reasons.append(f"Укажите цену больше нуля: {label}.")
+                reasons.append(f"Укажите корректную цену: {label}.")
             if not _text(tariff.get("description")):
                 reasons.append(f"Добавьте описание: {label}.")
             elif _visible_length(tariff.get("description")) > MAX_TARIFF_DESCRIPTION_CHARACTERS:
@@ -225,13 +225,16 @@ def evaluate_funnel_readiness(
                 reasons.append("В гибридном режиме заполните вторую кнопку каждого сообщения.")
                 break
 
-    if mode in {"auto", "hybrid"}:
-        if not has_payment_provider:
-            reasons.append("Подключите платёжную систему.")
-        elif not has_payment_credentials:
-            reasons.append("Сохраните рабочие реквизиты платёжной системы.")
-
-    if bot_tariffs:
+    has_paid_tariffs = False
+    if isinstance(tariffs, list) and tariffs:
+        for t in tariffs:
+            try:
+                if float(t.get("price", 0)) > 0:
+                    has_paid_tariffs = True
+                    break
+            except (TypeError, ValueError):
+                pass
+    elif bot_tariffs:
         for t in bot_tariffs:
             is_active = (
                 getattr(t, "is_active", True)
@@ -246,11 +249,19 @@ def evaluate_funnel_readiness(
                 else (t.get("salesMode", t.get("sales_mode", "auto")) if isinstance(t, dict) else "auto")
             )
             if sales_mode in {"auto", "hybrid"}:
-                if not has_payment_provider:
-                    reasons.append("Подключите платёжную систему.")
-                elif not has_payment_credentials:
-                    reasons.append("Сохраните рабочие реквизиты платёжной системы.")
-                break
+                try:
+                    p = float(getattr(t, "price", 0) if hasattr(t, "price") else t.get("price", 0))
+                    if p > 0:
+                        has_paid_tariffs = True
+                        break
+                except (TypeError, ValueError):
+                    pass
+
+    if has_paid_tariffs and mode in {"auto", "hybrid"}:
+        if not has_payment_provider:
+            reasons.append("Подключите платёжную систему.")
+        elif not has_payment_credentials:
+            reasons.append("Сохраните рабочие реквизиты платёжной системы.")
 
     return FunnelReadiness(tuple(dict.fromkeys(reasons)))
 

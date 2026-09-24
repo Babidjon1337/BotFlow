@@ -436,13 +436,16 @@ async def send_success_message(
                 )
                 if tariff_snapshot:
                     tariff = tariff_snapshot
+                    is_free = (client_payment and getattr(client_payment, "provider", "") == "free") or (float(tariff.get("price", 0) or 0) <= 0)
+                    header_text = "✅ <b>Доступ успешно получен!</b>" if is_free else "✅ <b>Оплата успешно получена!</b>"
                     deliverables = tariff.get("deliverables")
                     if deliverables and isinstance(deliverables, list) and len(deliverables) > 0:
+                        has_group = any(isinstance(d, dict) and d.get("type") in ("channel", "group") for d in deliverables)
                         first_del = deliverables[0]
                         del_type = first_del.get("type")
-                        if del_type in ("channel", "group"):
+                        if has_group:
                             action_type = "group"
-                            action_data = first_del.get("chatId") or first_del.get("chat_id") or ""
+                            action_data = [d.get("chatId") or d.get("chat_id") for d in deliverables if isinstance(d, dict) and d.get("type") in ("channel", "group")]
                         elif del_type == "file":
                             action_type = "file"
                             action_data = first_del.get("filePath") or first_del.get("file_path") or first_del.get("url") or first_del.get("fileUrl") or first_del.get("fileId") or ""
@@ -460,11 +463,11 @@ async def send_success_message(
                         action_data = tariff.get("action_data") or tariff.get(
                             "actionData", ""
                         )
-                    if has_delivery and not str(action_data).strip():
+                    if has_delivery and not str(action_data).strip() and not isinstance(action_data, list):
                         logger.error(
-                            "The paid tariff delivery is empty for bot %s, payment %s",
+                            "The tariff delivery is empty for bot %s, payment %s",
                             bot_config.id,
-                            client_payment.id,
+                            client_payment.id if client_payment else "none",
                         )
                         try:
                             from services.billing_notifications import (
@@ -473,12 +476,12 @@ async def send_success_message(
 
                             await notify_billing_user(
                                 bot_config.owner.telegram_id,
-                                "⚠️ Оплата от пользователя получена, но в настройках тарифа не указано, что именно нужно выдать (пустое поле). Свяжитесь с клиентом вручную.",
+                                "⚠️ Пользователь оформил доступ, но в настройках тарифа не указано, что именно нужно выдать (пустое поле). Свяжитесь с клиентом вручную.",
                             )
                         except Exception:
                             pass
                         node_success = {
-                            "content": "✅ <b>Оплата успешно получена!</b>\n\nК сожалению, произошла заминка: в системе не настроена автоматическая выдача для этого тарифа. Администратор уже уведомлен об этом и свяжется с вами в ближайшее время."
+                            "content": f"{header_text}\n\nК сожалению, произошла заминка: в системе не настроена автоматическая выдача для этого тарифа. Администратор уже уведомлен об этом и свяжется с вами в ближайшее время."
                         }
                     if (
                         has_delivery
@@ -518,9 +521,17 @@ async def send_success_message(
                                 ]
                                 for i, lnk in enumerate(invite_links)
                             ]
+                            # If there are also link deliverables, append them
+                            if deliverables and isinstance(deliverables, list):
+                                for d in deliverables:
+                                    if isinstance(d, dict) and d.get("type") == "link":
+                                        l_url = d.get("url") or d.get("linkUrl")
+                                        if l_url:
+                                            buttons.append([InlineKeyboardButton(text=d.get("title") or "Открыть ссылку", url=l_url)])
+
                             title = str(tariff.get("name", "Тариф"))
                             node_success = {
-                                "content": f"✅ <b>Оплата получена!</b>\n\nДоступ к «{title}» активирован.\n"
+                                "content": f"{header_text}\n\nДоступ к «{title}» активирован.\n"
                                 + (
                                     "Ссылки персональные и каждая сработает только один раз."
                                     if len(invite_links) > 1
@@ -544,7 +555,7 @@ async def send_success_message(
 
                                 await notify_billing_user(
                                     bot_config.owner.telegram_id,
-                                    f"⚠️ Оплата от пользователя получена, но не удалось создать инвайт в закрытый чат.\nОшибка: {exc}\nСвяжитесь с клиентом вручную, чтобы выдать доступ.",
+                                    f"⚠️ Клиент оформил доступ, но не удалось создать инвайт в закрытый чат.\nОшибка: {exc}\nСвяжитесь с клиентом вручную, чтобы выдать доступ.",
                                 )
                             except Exception as notification_error:
                                 logger.warning(
@@ -554,19 +565,28 @@ async def send_success_message(
 
                             # Fallback message for the user so they are not left in the dark
                             node_success = {
-                                "content": "✅ <b>Оплата успешно получена!</b>\n\nК сожалению, произошла небольшая заминка при генерации вашей персональной ссылки на чат. Администратор уже уведомлен об этом и пришлёт вам доступ в ближайшее время. Пожалуйста, подождите немного!"
+                                "content": f"{header_text}\n\nК сожалению, произошла небольшая заминка при генерации вашей персональной ссылки на чат. Администратор уже уведомлен об этом и пришлёт вам доступ в ближайшее время. Пожалуйста, подождите немного!"
                             }
                     if has_delivery and not node_success:
+                        reply_markup = None
+                        if action_type in ["link", "text"]:
+                            # If action_data looks like a link, offer an inline button
+                            if str(action_data).startswith(("http://", "https://")):
+                                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                                reply_markup = InlineKeyboardMarkup(
+                                    inline_keyboard=[[InlineKeyboardButton(text="Открыть доступ", url=str(action_data))]]
+                                )
                         node_success = {
                             "content": (
-                                f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
+                                f"{header_text}\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
                                 if action_type in ["link", "text"]
-                                else "✅ <b>Оплата успешно получена!</b>"
+                                else header_text
                             ),
                             "media_file_id": (
                                 action_data if action_type == "file" else None
                             ),
                             "media_type": "document" if action_type == "file" else None,
+                            "reply_markup": reply_markup,
                         }
                 if not node_success:
                     node_success = configured_success

@@ -299,9 +299,16 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
                 reply_markup=reply_markup,
             )
         elif active_media_type == "document" and active_file_id:
+            doc_file = active_file_id
+            if isinstance(active_file_id, str) and (active_file_id.startswith("/uploads/") or "/" in active_file_id or "\\" in active_file_id):
+                from pathlib import Path
+                from aiogram.types import FSInputFile
+                local_path = Path(__file__).resolve().parent.parent / active_file_id.lstrip("/")
+                if local_path.exists():
+                    doc_file = FSInputFile(str(local_path))
             await bot.send_document(
                 chat_id=chat_id,
-                document=active_file_id,
+                document=doc_file,
                 caption=text,
                 reply_markup=reply_markup,
             )

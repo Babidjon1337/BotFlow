@@ -189,9 +189,9 @@ def _validate_installments(provider: str | None, enabled: bool) -> None:
 
 
 async def _tariffs_for_bot(bot) -> list:
-    if hasattr(bot, "tariffs") and bot.tariffs is not None:
+    if "tariffs" in getattr(bot, "__dict__", {}) and bot.__dict__["tariffs"] is not None:
         try:
-            return list(bot.tariffs)
+            return list(bot.__dict__["tariffs"])
         except Exception:
             pass
     if hasattr(bot, "id") and isinstance(bot.id, int):
@@ -1865,15 +1865,6 @@ async def delete_tariff_endpoint(
     return {"status": "ok", "message": "Тариф удален", "tariffId": str(tariff.id)}
 
 
-async def _tariffs_for_bot(bot) -> list:
-    if "tariffs" in getattr(bot, "__dict__", {}) and bot.__dict__["tariffs"] is not None:
-        return list(bot.__dict__["tariffs"])
-    try:
-        from database.requests.tariff_rq import list_tariffs_by_bot_id
-
-        return await list_tariffs_by_bot_id(bot.id)
-    except Exception:
-        return []
 
 
 @api_router.put("/api/bots/{bot_id}/funnel")
@@ -2000,29 +1991,15 @@ async def upload_bot_media(
         else next((node for node in nodes if node.get("id") == node_id), None)
     )
     target_tariff_id: str | None = None
-    if (
+    is_tariff_media = (
         not is_broadcast_media
         and target_node is None
-        and node_id.startswith("payment:tariff:")
-    ):
-        target_tariff_id = node_id.removeprefix("payment:tariff:")
-        payment_node = next(
-            (node for node in nodes if node.get("id") == "payment"), None
-        )
-        tariffs = (
-            payment_node.get("tariffs") if isinstance(payment_node, dict) else None
-        )
-        if (
-            not target_tariff_id
-            or not isinstance(tariffs, list)
-            or not any(
-                str(tariff.get("id")) == target_tariff_id
-                for tariff in tariffs
-                if isinstance(tariff, dict)
-            )
-        ):
-            target_tariff_id = None
-    if not is_broadcast_media and target_node is None and target_tariff_id is None:
+        and (node_id.startswith("payment:tariff:") or node_id.startswith("tariff:"))
+    )
+    if is_tariff_media:
+        target_tariff_id = node_id.removeprefix("payment:tariff:").removeprefix("tariff:")
+
+    if not is_broadcast_media and not is_tariff_media and target_node is None:
         raise HTTPException(status_code=404, detail="Блок воронки не найден")
     if target_tariff_id is not None and media_type == "document":
         raise HTTPException(
@@ -2116,7 +2093,7 @@ async def upload_bot_media(
             ),
             None,
         )
-    if not is_broadcast_media and current_node is None and current_tariff is None:
+    if not is_broadcast_media and not is_tariff_media and current_node is None and current_tariff is None:
         raise HTTPException(
             status_code=409,
             detail="Воронка была изменена. Обновите страницу и повторите загрузку.",
@@ -2154,6 +2131,44 @@ async def upload_bot_media(
         }
 
     media_target = current_tariff if current_tariff is not None else current_node
+    if is_tariff_media and media_target is None:
+        if target_tariff_id:
+            try:
+                from database.requests.tariff_rq import get_tariff_by_id, update_tariff
+                db_tariff = await get_tariff_by_id(target_tariff_id)
+                if db_tariff:
+                    existing_assets = list(getattr(db_tariff, "media_assets", []) or [])
+                    new_asset_entry = {
+                        "mediaFileId": telegram_file_id,
+                        "mediaAssetId": str(asset.id),
+                        "mediaType": media_type,
+                    }
+                    merged_assets = [a for a in existing_assets if isinstance(a, dict) and str(a.get("mediaAssetId")) != str(asset.id)]
+                    merged_assets.append(new_asset_entry)
+                    await update_tariff(
+                        db_tariff.id,
+                        media_assets=merged_assets[-10:],
+                        media_file_id=telegram_file_id,
+                        media_asset_id=str(asset.id),
+                        media_type=media_type,
+                    )
+            except Exception as e:
+                logger.debug("Could not link media to db tariff: %s", e)
+
+        return {
+            "id": str(asset.id),
+            "nodeId": node_id,
+            "mediaType": media_type,
+            "fileId": telegram_file_id,
+            "mediaAssets": [
+                {
+                    "mediaFileId": telegram_file_id,
+                    "mediaAssetId": str(asset.id),
+                    "mediaType": media_type,
+                }
+            ],
+        }
+
     assert media_target is not None
 
     existing_asset_id = media_target.get("mediaAssetId")

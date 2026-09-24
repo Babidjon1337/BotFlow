@@ -16,7 +16,8 @@ export interface TariffDescriptionEditorProps {
   mediaAssets?: import("../types").NodeMediaAsset[];
   onUploadMedia?: (file: File) => Promise<void>;
   onUploadLargeMedia?: (file?: File) => void;
-  onRemoveMedia?: () => void;
+  onRemoveMedia?: (assetId?: string) => void;
+  onReorderMedia?: (newAssets: import("../types").NodeMediaAsset[]) => void;
   mediaHint?: string;
 }
 
@@ -41,6 +42,7 @@ export function TariffDescriptionEditor({
   onUploadMedia,
   onUploadLargeMedia,
   onRemoveMedia,
+  onReorderMedia,
   mediaHint = "Клиент увидит фото или видео над описанием тарифа · до 20 МБ",
 }: TariffDescriptionEditorProps) {
   return (
@@ -59,6 +61,7 @@ export function TariffDescriptionEditor({
       onUploadMedia={onUploadMedia}
       onUploadLargeMedia={onUploadLargeMedia}
       onRemoveMedia={onRemoveMedia}
+      onReorderMedia={onReorderMedia}
       mediaHint={mediaHint}
       minHeight="min-h-[88px]"
       maxHeight="max-h-[300px]"

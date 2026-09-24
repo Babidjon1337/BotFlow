@@ -22,6 +22,7 @@ import type {
   SalesMode,
   BillingPeriod,
 } from '../../types/tariff';
+import type { NodeMediaAsset } from '../../types';
 import { apiService } from '../../services/api';
 import { TariffDescriptionEditor } from '../TariffDescriptionEditor';
 
@@ -120,10 +121,55 @@ function TariffEditorForm({
   const [mediaType, setMediaType] = useState<'photo' | 'video' | null>(tariff?.mediaType || null);
   const [mediaFileId, setMediaFileId] = useState<string | null>(tariff?.mediaFileId || null);
   const [mediaAssetId, setMediaAssetId] = useState<string | null>(tariff?.mediaAssetId || null);
+  const [mediaAssets, setMediaAssets] = useState<NodeMediaAsset[]>(() => {
+    if (tariff?.mediaAssets && tariff.mediaAssets.length > 0) {
+      return [...tariff.mediaAssets];
+    }
+    if (tariff?.mediaAssetId && tariff?.mediaFileId) {
+      return [
+        {
+          mediaAssetId: tariff.mediaAssetId,
+          mediaFileId: tariff.mediaFileId,
+          mediaType: tariff.mediaType === 'video' ? 'video' : 'photo',
+        },
+      ];
+    }
+    return [];
+  });
 
   const [deliverables, setDeliverables] = useState<TariffDeliverable[]>(() =>
     tariff?.deliverables ? [...tariff.deliverables] : []
   );
+
+  useEffect(() => {
+    setName(tariff?.name || '');
+    setDescription(tariff?.description || '');
+    setPrice(tariff?.price !== undefined && tariff.price !== null ? String(tariff.price) : '');
+    setOldPrice(tariff?.oldPrice ? String(tariff.oldPrice) : '');
+    setPaymentType(tariff?.paymentType || 'subscription');
+    setBillingPeriod(tariff?.billingPeriod || 'month');
+    setSalesMode(tariff?.salesMode || 'auto');
+    setIsActiveInFunnel(tariff?.isActiveInFunnel !== false);
+    setManagerUrl(tariff?.managerUrl || '');
+    setButtonText(tariff?.buttonText || '');
+    setMediaType(tariff?.mediaType || null);
+    setMediaFileId(tariff?.mediaFileId || null);
+    setMediaAssetId(tariff?.mediaAssetId || null);
+    setDeliverables(tariff?.deliverables ? [...tariff.deliverables] : []);
+    const initialAssets: NodeMediaAsset[] =
+      tariff?.mediaAssets && tariff.mediaAssets.length > 0
+        ? [...tariff.mediaAssets]
+        : tariff?.mediaAssetId && tariff?.mediaFileId
+        ? [
+            {
+              mediaAssetId: tariff.mediaAssetId,
+              mediaFileId: tariff.mediaFileId,
+              mediaType: tariff.mediaType === 'video' ? 'video' : 'photo',
+            },
+          ]
+        : [];
+    setMediaAssets(initialAssets);
+  }, [tariff]);
 
   // Deliverables Sub-Modal State
   const [isDeliverableModalOpen, setIsDeliverableModalOpen] = useState(false);
@@ -273,21 +319,35 @@ function TariffEditorForm({
   const handleUploadTariffMedia = async (file: File) => {
     if (!botId) return;
     if (file.size > 20 * 1024 * 1024) {
-      const sizeMb = Math.round(file.size / (1024 * 1024));
-      setFormError(
-        `Файл (${sizeMb} МБ) превышает лимит браузера (20 МБ). Большие файлы можно отправить напрямую через Telegram-бота во вкладке «Сценарий».`
-      );
+      void handleUploadLargeMedia(file);
       return;
     }
     try {
+      const tariffId = tariff?.id || 'new';
       const media = await apiService.uploadBotMedia(
         botId,
-        `tariff:${tariff?.id || 'new'}`,
+        `tariff:${tariffId}`,
         file
       );
-      setMediaType((media.mediaType as 'photo' | 'video') || 'photo');
-      setMediaFileId(media.fileId);
-      setMediaAssetId(media.id);
+      const existing = [...mediaAssets];
+      const newAssets: NodeMediaAsset[] =
+        media.mediaAssets && media.mediaAssets.length > 0
+          ? (media.mediaAssets as NodeMediaAsset[])
+          : [
+              ...existing.filter((a) => a.mediaAssetId !== media.id),
+              {
+                mediaFileId: media.fileId,
+                mediaAssetId: media.id,
+                mediaType: (media.mediaType as 'photo' | 'video') || 'photo',
+              },
+            ].slice(-10);
+
+      setMediaAssets(newAssets);
+      if (newAssets.length > 0) {
+        setMediaType(newAssets[0].mediaType === 'video' ? 'video' : 'photo');
+        setMediaFileId(newAssets[0].mediaFileId);
+        setMediaAssetId(newAssets[0].mediaAssetId);
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Не удалось загрузить медиа');
     }
@@ -305,30 +365,97 @@ function TariffEditorForm({
         window.open(session.deepLink, '_blank');
       }
       setFormError(null);
+
+      const applyAssets = (
+        assets: Array<{
+          mediaAssetId: string;
+          mediaFileId: string;
+          mediaType: 'photo' | 'video' | 'document';
+        }>
+      ) => {
+        setMediaAssets((prev) => {
+          const existingIds = new Set(prev.map((a) => a.mediaAssetId));
+          const newItems: NodeMediaAsset[] = assets
+            .filter((a) => !existingIds.has(a.mediaAssetId))
+            .map((a) => ({
+              mediaAssetId: a.mediaAssetId,
+              mediaFileId: a.mediaFileId,
+              mediaType: a.mediaType === 'video' ? 'video' : 'photo',
+            }));
+          if (newItems.length > 0) {
+            const merged = [...prev, ...newItems].slice(-10);
+            setMediaType(merged[0].mediaType === 'video' ? 'video' : 'photo');
+            setMediaFileId(merged[0].mediaFileId);
+            setMediaAssetId(merged[0].mediaAssetId);
+            return merged;
+          }
+          return prev;
+        });
+      };
+
       // Subscribe to SSE event for upload completion
       const { eventStream } = await import('../../services/eventStream');
+      let isDone = false;
       const unsub = eventStream.subscribe<{
         sessionId: string;
         nodeId: string;
         mediaAssets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: 'photo' | 'video' | 'document' }>;
       }>('media:upload_completed', (data) => {
         if (data?.mediaAssets?.length) {
-          const first = data.mediaAssets[0];
-          setMediaType(first.mediaType === 'video' ? 'video' : 'photo');
-          setMediaFileId(first.mediaFileId);
-          setMediaAssetId(first.mediaAssetId);
+          isDone = true;
+          applyAssets(data.mediaAssets);
         }
         unsub();
       });
+
+      let attempts = 0;
+      const pollTimer = setInterval(async () => {
+        if (isDone || attempts > 10) {
+          clearInterval(pollTimer);
+          return;
+        }
+        attempts += 1;
+        try {
+          const status = await apiService.getMediaUploadSession(botId, session.sessionId);
+          if (status.isCompleted && Array.isArray(status.mediaAssets) && status.mediaAssets.length > 0) {
+            isDone = true;
+            clearInterval(pollTimer);
+            unsub();
+            applyAssets(status.mediaAssets);
+          }
+        } catch {
+          // ignore
+        }
+      }, 3000);
     } catch (err) {
       setFormError(err instanceof Error ? err.message : 'Не удалось открыть бота для загрузки');
     }
   };
 
-  const handleRemoveMedia = () => {
+  const handleRemoveMedia = (assetIdToRemove?: string) => {
+    if (assetIdToRemove && mediaAssets.length > 0) {
+      const remaining = mediaAssets.filter((a) => a.mediaAssetId !== assetIdToRemove);
+      setMediaAssets(remaining);
+      if (remaining.length > 0) {
+        setMediaType(remaining[0].mediaType === 'video' ? 'video' : 'photo');
+        setMediaFileId(remaining[0].mediaFileId);
+        setMediaAssetId(remaining[0].mediaAssetId);
+        return;
+      }
+    }
+    setMediaAssets([]);
     setMediaType(null);
     setMediaFileId(null);
     setMediaAssetId(null);
+  };
+
+  const handleReorderMedia = (newAssets: NodeMediaAsset[]) => {
+    setMediaAssets(newAssets);
+    if (newAssets.length > 0) {
+      setMediaType(newAssets[0].mediaType === 'video' ? 'video' : 'photo');
+      setMediaFileId(newAssets[0].mediaFileId);
+      setMediaAssetId(newAssets[0].mediaAssetId);
+    }
   };
 
   const handleSubmit = async () => {
@@ -366,9 +493,10 @@ function TariffEditorForm({
       isActiveInFunnel,
       managerUrl: managerUrl.trim() || null,
       buttonText: buttonText.trim() || null,
-      mediaType,
-      mediaFileId,
-      mediaAssetId,
+      mediaType: mediaAssets.length > 0 ? (mediaAssets[0].mediaType as 'photo' | 'video') : mediaType,
+      mediaFileId: mediaAssets.length > 0 ? mediaAssets[0].mediaFileId : mediaFileId,
+      mediaAssetId: mediaAssets.length > 0 ? mediaAssets[0].mediaAssetId : mediaAssetId,
+      mediaAssets,
       buyersCount: tariff?.buyersCount || 0,
       revenue: tariff?.revenue || 0,
       deliverables,
@@ -480,9 +608,11 @@ function TariffEditorForm({
               mediaFileId={mediaFileId}
               mediaAssetId={mediaAssetId}
               mediaType={mediaType}
+              mediaAssets={mediaAssets}
               onUploadMedia={handleUploadTariffMedia}
               onUploadLargeMedia={handleUploadLargeMedia}
               onRemoveMedia={handleRemoveMedia}
+              onReorderMedia={handleReorderMedia}
               placeholder="Опишите, что входит в тариф..."
               helperText="Клиент увидит этот текст и медиа в Telegram при выборе тарифа"
               mediaHint="Фото или видео над описанием тарифа в Telegram · до 20 МБ"

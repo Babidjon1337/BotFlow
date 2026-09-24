@@ -52,7 +52,14 @@ def user_tariff_keyboard(tariffs, *, include_back: bool = False):
         tariff_id = getattr(tariff, "id", None)
         if not tariff_id:
             continue
-        label = f"{title} · {price:,.0f} ₽".replace(",", " ")
+        try:
+            num_price = float(price or 0)
+        except (ValueError, TypeError):
+            num_price = 0
+        if num_price > 0:
+            label = f"{title} · {num_price:,.0f} ₽".replace(",", " ")
+        else:
+            label = f"{title} · Бесплатно"
         rows.append([InlineKeyboardButton(text=label[:64], callback_data=f"payment_tariff:{tariff_id}")])
     if include_back:
         rows.append([InlineKeyboardButton(text="← Назад", callback_data="payment_tariffs_back")])
