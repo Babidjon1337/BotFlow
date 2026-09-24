@@ -73,21 +73,21 @@ const SALES_MODES: {
     label: 'Автопродажа',
     icon: Zap,
     description:
-      'Клиент оплачивает онлайн через подключённую кассу и бот автоматически выдаёт доступ к материалам.',
+      'Онлайн-касса · Автоматический приём онлайн-платежей через ЮKassa, Robokassa или Prodamus. Если цена 0 ₽ — мгновенная бесплатная автовыдача без кассы.',
   },
   {
     id: 'application',
     label: 'Через менеджера',
     icon: UserCheck,
     description:
-      'Вместо онлайн-оплаты бот выводит кнопку связи с менеджером для консультации или выставления счёта вручную.',
+      'Без кассы · Идеально для оплаты переводом на карту или консультаций. Бот показывает цену и кнопку связи в Telegram (или заявку владельцу). Подключение кассы не требуется.',
   },
   {
     id: 'hybrid',
     label: 'Гибрид',
     icon: Layers,
     description:
-      'Клиент получает две кнопки: моментальная онлайн-оплата картой и связь с менеджером для консультации.',
+      'Две кнопки: моментальная онлайн-оплата картой через кассу + связь с менеджером.',
   },
 ];
 
@@ -191,6 +191,11 @@ function TariffEditorForm({
 
   // Validation
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{
+    name?: string;
+    price?: string;
+    oldPrice?: string;
+  }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Close on Escape key
@@ -460,26 +465,33 @@ function TariffEditorForm({
 
   const handleSubmit = async () => {
     setFormError(null);
+    const newErrors: { name?: string; price?: string; oldPrice?: string } = {};
+
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setFormError('Укажите название тарифа');
-      return;
+      newErrors.name = 'Укажите название тарифа';
     }
 
-    const parsedPrice = parseFloat(price.replace(/\s+/g, ''));
-    if (isNaN(parsedPrice) || parsedPrice < 0) {
-      setFormError('Укажите корректную стоимость');
-      return;
+    const trimmedPrice = price.trim();
+    const parsedPrice = parseFloat(trimmedPrice.replace(/\s+/g, ''));
+    if (!trimmedPrice || isNaN(parsedPrice) || parsedPrice < 0) {
+      newErrors.price = 'Укажите стоимость (0 — для бесплатной автовыдачи)';
     }
 
     const parsedOldPrice = oldPrice.trim()
       ? parseFloat(oldPrice.replace(/\s+/g, ''))
       : null;
 
-    if (parsedOldPrice !== null && parsedOldPrice <= parsedPrice) {
-      setFormError('Старая цена должна быть больше текущей стоимости');
+    if (parsedOldPrice !== null && !isNaN(parsedPrice) && parsedOldPrice <= parsedPrice) {
+      newErrors.oldPrice = 'Старая цена должна быть больше текущей стоимости';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setFieldErrors(newErrors);
+      setFormError('Пожалуйста, заполните обязательные поля, выделенные красным');
       return;
     }
+    setFieldErrors({});
 
     const payload: TariffItem = {
       id: tariff?.id || `t_${Date.now()}`,
@@ -561,10 +573,25 @@ function TariffEditorForm({
               <input
                 type="text"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (fieldErrors.name && e.target.value.trim()) {
+                    setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                  }
+                }}
                 placeholder="например, VIP-клуб с наставничеством"
-                className="h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className={`h-10 w-full rounded-xl border px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:outline-none transition-all ${
+                  fieldErrors.name
+                    ? 'border-danger bg-danger/5 ring-1 ring-danger'
+                    : 'border-border bg-card focus:border-primary focus:ring-1 focus:ring-primary'
+                }`}
               />
+              {fieldErrors.name && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-danger font-medium">
+                  <AlertCircle className="size-3.5 shrink-0" />
+                  {fieldErrors.name}
+                </p>
+              )}
             </div>
             <div className="sm:col-span-3">
               <label className="mb-2 flex h-5 items-center text-sm font-semibold text-foreground">
@@ -573,10 +600,28 @@ function TariffEditorForm({
               <input
                 type="text"
                 value={price}
-                onChange={(e) => setPrice(e.target.value.replace(/[^\d\s]/g, ''))}
-                placeholder="1 990"
-                className="font-accent tabular-nums h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^\d\s]/g, '');
+                  setPrice(val);
+                  if (fieldErrors.price && val.trim() !== '') {
+                    setFieldErrors((prev) => ({ ...prev, price: undefined }));
+                  }
+                }}
+                placeholder="0"
+                className={`font-accent tabular-nums h-10 w-full rounded-xl border px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:outline-none transition-all ${
+                  fieldErrors.price
+                    ? 'border-danger bg-danger/5 ring-1 ring-danger'
+                    : 'border-border bg-card focus:border-primary focus:ring-1 focus:ring-primary'
+                }`}
               />
+              {fieldErrors.price ? (
+                <p className="mt-1 flex items-center gap-1 text-xs text-danger font-medium">
+                  <AlertCircle className="size-3.5 shrink-0" />
+                  {fieldErrors.price}
+                </p>
+              ) : (
+                <p className="mt-1 text-[11px] text-fg-tertiary">0 — бесплатно</p>
+              )}
             </div>
             <div className="sm:col-span-3">
               <label className="mb-2 flex h-5 items-center text-sm font-semibold text-fg-secondary whitespace-nowrap">
@@ -586,10 +631,26 @@ function TariffEditorForm({
               <input
                 type="text"
                 value={oldPrice}
-                onChange={(e) => setOldPrice(e.target.value.replace(/[^\d\s]/g, ''))}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^\d\s]/g, '');
+                  setOldPrice(val);
+                  if (fieldErrors.oldPrice) {
+                    setFieldErrors((prev) => ({ ...prev, oldPrice: undefined }));
+                  }
+                }}
                 placeholder="2 990"
-                className="font-accent tabular-nums h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                className={`font-accent tabular-nums h-10 w-full rounded-xl border px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:outline-none transition-all ${
+                  fieldErrors.oldPrice
+                    ? 'border-danger bg-danger/5 ring-1 ring-danger'
+                    : 'border-border bg-card focus:border-primary focus:ring-1 focus:ring-primary'
+                }`}
               />
+              {fieldErrors.oldPrice && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-danger font-medium">
+                  <AlertCircle className="size-3.5 shrink-0" />
+                  {fieldErrors.oldPrice}
+                </p>
+              )}
             </div>
           </div>
 
@@ -712,21 +773,37 @@ function TariffEditorForm({
             <div className="rounded-xl border border-border/60 bg-muted/40 p-3 text-xs leading-relaxed text-fg-secondary">
               {SALES_MODES.find((m) => m.id === salesMode)?.description}
             </div>
+
+            {salesMode === 'application' && (
+              <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 text-xs leading-relaxed text-fg-secondary">
+                <span className="font-semibold text-primary">💡 Касса не требуется:</span> вы можете указать любую стоимость (например, 1 500 ₽). Клиент в Telegram увидит тариф и кнопку связи для перевода на карту или консультации. Бот запускается в работу сразу!
+              </div>
+            )}
+
+            {salesMode === 'auto' && (price.trim() === '0' || price.trim() === '') && (
+              <div className="rounded-xl border border-success/25 bg-success/5 p-3 text-xs leading-relaxed text-fg-secondary">
+                <span className="font-semibold text-success">🎁 Бесплатная автовыдача:</span> при цене 0 ₽ бот мгновенно выдаст клиенту доступ (каналы, чаты, файлы или ссылки) без онлайн-кассы по кнопке «Получить доступ».
+              </div>
+            )}
           </div>
 
           {/* 4b. Manager URL (shown when sales mode requires manager contact) */}
           {(salesMode === 'application' || salesMode === 'hybrid') && (
             <div className="space-y-1.5">
               <label className="block text-sm font-semibold text-foreground">
-                Ссылка на менеджера
+                Ссылка на менеджера / Telegram-аккаунт{' '}
+                <span className="text-xs font-normal text-fg-tertiary">(необязательно)</span>
               </label>
               <input
                 type="text"
                 value={managerUrl}
                 onChange={(e) => setManagerUrl(e.target.value)}
-                placeholder="@manager или https://t.me/manager"
+                placeholder="@username или https://t.me/username"
                 className="h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
               />
+              <p className="text-xs text-fg-secondary">
+                Укажите контакт для связи. Если оставить поле пустым, бот будет автоматически присылать вам заявки с контактами клиента и выбранным тарифом в личные сообщения Telegram.
+              </p>
             </div>
           )}
 
@@ -799,6 +876,11 @@ function TariffEditorForm({
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+            {deliverables.length === 0 && (
+              <div className="rounded-xl border border-dashed border-border/80 bg-muted/20 p-3 text-center text-xs text-fg-tertiary">
+                Материалы ещё не добавлены. Добавьте закрытый канал, чат, файл или ссылку, которые получит клиент.
               </div>
             )}
 

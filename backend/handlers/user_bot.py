@@ -675,7 +675,16 @@ async def _send_tariff_invoice(
 ):
     """Display tariff offer with appropriate action buttons depending on sales_mode."""
     node_checkout = _get_payment_node(funnel)
-    mode = _payment_mode(funnel)
+    tariff_sales_mode = (
+        getattr(tariff, "sales_mode", None)
+        or getattr(tariff, "salesMode", None)
+    )
+    if tariff_sales_mode in ("manual", "application"):
+        mode = "application"
+    elif tariff_sales_mode in ("auto", "hybrid"):
+        mode = tariff_sales_mode
+    else:
+        mode = _payment_mode(funnel)
     tariff_name = str(getattr(tariff, "name", "Доступ") or "Доступ").strip()
     tariff_description = getattr(tariff, "description", "") or ""
     amount = float(getattr(tariff, "price", 0) or 0)

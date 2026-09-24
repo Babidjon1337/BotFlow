@@ -4,6 +4,7 @@ import {
   BadgeCheck,
   CreditCard,
   FileText,
+  Layers,
   Plug,
   Rocket,
 } from 'lucide-react';
@@ -63,7 +64,7 @@ export function BotOverviewScreen({
 
 function LaunchChecklist({
   bot,
-  subscriptionStatus,
+  subscriptionStatus: _subscriptionStatus,
   onNavigate,
   onPublish,
 }: {
@@ -88,10 +89,10 @@ function LaunchChecklist({
       },
       {
         id: 'platform',
-        label: 'Платформа',
+        label: 'Telegram',
         hint: platformDone
           ? (bot.username ? `@${bot.username.replace(/^@/, '')}` : undefined)
-          : 'Токен от @BotFather — покажем, где взять',
+          : 'Токен от @BotFather в разделе «Интеграции»',
         state: platformDone
           ? ('done' as const)
           : bot.funnelComplete
@@ -103,26 +104,12 @@ function LaunchChecklist({
         },
       },
       {
-        id: 'payment',
-        label: 'Касса',
-        hint: paymentDone
-          ? 'Приём платежей настроен'
-          : 'Можно пропустить — бот соберёт заявки и без оплаты',
-        state: paymentDone ? ('done' as const) : ('available' as const),
-        onClick: () => {
-          setIntegrationTarget('cashier');
-          onNavigate('integrations');
-        },
-      },
-      {
         id: 'publish',
-        label: 'Публикация',
+        label: 'Запуск бота',
         hint:
           bot.status === 'active'
             ? 'Бот запущен и отвечает клиентам'
-            : subscriptionStatus === 'active' || Boolean(bot.offerUrl)
-              ? 'Бот начнёт отвечать клиентам сразу'
-              : 'Перед публикацией проверьте подписку этого бота.',
+            : 'Публикация воронки и старт приёма клиентов',
         state:
           bot.status === 'active'
             ? ('done' as const)
@@ -142,19 +129,26 @@ function LaunchChecklist({
               },
       },
     ];
-  }, [bot, platformDone, paymentDone, subscriptionStatus, onNavigate, onPublish]);
+  }, [bot, platformDone, onNavigate, onPublish]);
 
   const completedStepsCount =
     (bot.funnelComplete ? 1 : 0) +
     (platformDone ? 1 : 0) +
-    (paymentDone ? 1 : 0) +
     (bot.status === 'active' ? 1 : 0);
-  const progressPercent = Math.round((completedStepsCount / 4) * 100);
+  const progressPercent = Math.round((completedStepsCount / 3) * 100);
 
-  const nextStepConfig = useMemo(() => {
+  const nextStepConfig: {
+    badge: string;
+    title: string;
+    description: string;
+    buttonLabel: string;
+    buttonIcon: typeof ArrowRight;
+    onAction: () => Promise<void> | void;
+    secondaryAction: { label: string; onClick: () => void } | null;
+  } = useMemo(() => {
     if (!bot.funnelComplete) {
       return {
-        badge: 'Шаг 1 из 4',
+        badge: 'Шаг 1 из 3',
         title: 'Настройте сценарий воронки',
         description: 'Заполните стартовое сообщение, дожимы и кнопки воронки. Без сценария бот не знает, как общаться с клиентом.',
         buttonLabel: 'Перейти к сценарию',
@@ -165,7 +159,7 @@ function LaunchChecklist({
     }
     if (!platformDone) {
       return {
-        badge: 'Шаг 2 из 4',
+        badge: 'Шаг 2 из 3',
         title: 'Подключите Telegram-бота',
         description: 'Вставьте токен от @BotFather в разделе «Интеграции». Мы сразу привяжем бота к настроенной воронке.',
         buttonLabel: 'Подключить Telegram',
@@ -180,11 +174,11 @@ function LaunchChecklist({
     if (publishReady) {
       return {
         badge: 'Готово к запуску',
-        title: 'Опубликовать бота',
+        title: 'Запустить бота',
         description: paymentDone
-          ? 'Сценарий, платформа и касса настроены. Бот готов принимать клиентов и проводить оплату.'
-          : 'Сценарий и Telegram готовы. Вы можете запустить бота сейчас (заявки будут сохраняться) или сначала подключить кассу.',
-        buttonLabel: publishing ? 'Публикуем…' : 'Опубликовать бота',
+          ? 'Сценарий, платформа и касса настроены. Бот готов принимать клиентов и проводить онлайн-оплату.'
+          : 'Сценарий и Telegram готовы. Вы можете запустить бота прямо сейчас — заявки будут сохраняться, а оплату можно принимать переводом через менеджера или настроить автовыдачу без кассы.',
+        buttonLabel: publishing ? 'Запускаем…' : 'Запустить бота',
         buttonIcon: Rocket,
         onAction: async () => {
           setPublishing(true);
@@ -194,21 +188,13 @@ function LaunchChecklist({
             setPublishing(false);
           }
         },
-        secondaryAction: !paymentDone
-          ? {
-              label: 'Подключить кассу перед публикацией',
-              onClick: () => {
-                setIntegrationTarget('cashier');
-                onNavigate('integrations');
-              },
-            }
-          : null,
+        secondaryAction: null,
       };
     }
     return {
       badge: 'Бот активен',
       title: 'Воронка работает',
-      description: 'Бот запущен и принимает сообщения. Вы можете редактировать сценарий или управлять интеграциями.',
+      description: 'Бот запущен и принимает сообщения. Вы можете редактировать сценарий или управлять тарифами.',
       buttonLabel: 'Открыть сценарий',
       buttonIcon: ArrowRight,
       onAction: () => onNavigate('scenario'),
@@ -222,7 +208,7 @@ function LaunchChecklist({
         kicker="Обзор"
         tone="blue"
         title="Запуск бота"
-        hint={`${bot.name} · Четыре шага от черновика до работающей воронки продаж`}
+        hint={`${bot.name} · Подготовьте сценарий, привяжите Telegram и запустите бота в работу`}
       />
 
       {/* Top Banner / Progress overview for desktop & mobile */}
@@ -234,13 +220,13 @@ function LaunchChecklist({
             </span>
             <span className="text-fg-tertiary">·</span>
             <span className="text-meta text-fg-secondary">
-              {completedStepsCount}/4 шагов пройдено
+              {completedStepsCount}/3 шагов пройдено
             </span>
           </div>
           <p className="mt-0.5 text-meta text-fg-secondary">
             {bot.funnelComplete
               ? 'Основные шаги почти завершены — осталось совсем немного до первого клиента'
-              : 'Четыре шага от черновика до работающей воронки продаж'}
+              : 'Три простых шага от черновика до работающей воронки продаж'}
           </p>
         </div>
 
@@ -252,7 +238,7 @@ function LaunchChecklist({
             />
           </div>
           <span className="text-body-sm font-semibold text-fg-secondary">
-            {completedStepsCount}/4
+            {completedStepsCount}/3
           </span>
         </div>
       </div>
@@ -270,11 +256,11 @@ function LaunchChecklist({
             <CheckStepList items={steps} />
           </section>
 
-          {/* Component Quick Status Grid (Fills desktop empty space productively) */}
+          {/* Разделы бота: Сценарий, Тарифы, Telegram + компактная плашка опциональной кассы */}
           <section className="flex flex-col gap-3">
-            <Overline>Компоненты бота</Overline>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {/* Сценарий */}
+            <Overline>Разделы бота</Overline>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {/* 1. Сценарий */}
               <button
                 type="button"
                 onClick={() => onNavigate('scenario')}
@@ -300,12 +286,43 @@ function LaunchChecklist({
                   />
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
-                  <span>Редактор сообщений и тарифов</span>
+                  <span>Старт, дожимы, кнопки</span>
                   <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                 </div>
               </button>
 
-              {/* Платформа (Telegram) */}
+              {/* 2. Тарифы */}
+              <button
+                type="button"
+                onClick={() => onNavigate('tariffs')}
+                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <Layers className="size-4" />
+                    </span>
+                    <div>
+                      <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
+                        Тарифы
+                      </p>
+                      <p className="text-micro text-fg-tertiary">
+                        {paymentDone ? 'Онлайн-оплата' : 'Заявки / автовыдача'}
+                      </p>
+                    </div>
+                  </div>
+                  <StatusBadge
+                    tone="neutral"
+                    label={paymentDone ? 'С кассой' : 'Без кассы'}
+                  />
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
+                  <span>Цены, выдача, менеджер</span>
+                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                </div>
+              </button>
+
+              {/* 3. Telegram */}
               <button
                 type="button"
                 onClick={() => {
@@ -323,7 +340,7 @@ function LaunchChecklist({
                       <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
                         Telegram
                       </p>
-                      <p className="text-micro text-fg-tertiary">
+                      <p className="text-micro text-fg-tertiary truncate max-w-[110px]">
                         {platformDone ? (bot.username ? `@${bot.username.replace(/^@/, '')}` : 'Токен сохранён') : 'Токен не задан'}
                       </p>
                     </div>
@@ -338,72 +355,28 @@ function LaunchChecklist({
                   <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
                 </div>
               </button>
+            </div>
 
-              {/* Касса */}
+            {/* Дополнительно: Касса и оферта — по желанию */}
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/20 px-4 py-3 text-xs text-fg-secondary">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <CreditCard className="size-4 shrink-0 text-fg-tertiary" />
+                <span>
+                  <strong className="text-fg-primary">Касса и оферта (по желанию):</strong>{' '}
+                  {paymentDone
+                    ? `Касса «${bot.paymentProvider}» подключена`
+                    : 'Не обязательны — вы можете принимать оплаты переводом через менеджера или настроить бесплатную автовыдачу.'}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setIntegrationTarget('cashier');
                   onNavigate('integrations');
                 }}
-                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring"
+                className="font-medium text-primary hover:underline shrink-0"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success">
-                      <CreditCard className="size-4" />
-                    </span>
-                    <div>
-                      <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
-                        Оплата
-                      </p>
-                      <p className="text-micro text-fg-tertiary">
-                        {paymentDone ? (bot.paymentProvider ? `Касса: ${bot.paymentProvider}` : 'Подключена') : 'Опционально'}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge
-                    tone={paymentDone ? 'success' : 'neutral'}
-                    label={paymentDone ? 'Активна' : 'Без оплаты'}
-                  />
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
-                  <span>ЮKassa, Robokassa, Prodamus</span>
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                </div>
-              </button>
-
-              {/* Оферта */}
-              <button
-                type="button"
-                onClick={() => {
-                  onNavigate('integrations');
-                }}
-                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-fg-secondary">
-                      <FileText className="size-4" />
-                    </span>
-                    <div>
-                      <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
-                        Оферта
-                      </p>
-                      <p className="text-micro text-fg-tertiary">
-                        {bot.offerUrl ? 'Ссылка указана' : 'Не требуется'}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge
-                    tone={bot.offerUrl ? 'success' : 'neutral'}
-                    label={bot.offerUrl ? 'Указана' : 'Не задана'}
-                  />
-                </div>
-                <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
-                  <span>Юридические условия для клиентов</span>
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
-                </div>
+                {paymentDone ? 'Управление кассой →' : 'Подключить кассу →'}
               </button>
             </div>
           </section>
@@ -453,25 +426,18 @@ function LaunchChecklist({
 
           {/* Helpful context card for desktop */}
           <article className="rounded-2xl border border-border bg-card p-5">
-            <Overline>Как работает запуск</Overline>
-            <ul className="mt-3 space-y-2.5 text-body-sm text-fg-secondary">
+            <Overline>Быстрый старт без кассы</Overline>
+            <p className="mt-2 text-body-sm leading-relaxed text-fg-secondary">
+              Платёжная система и оферта <b>не обязательны</b> для запуска бота:
+            </p>
+            <ul className="mt-3 space-y-2.5 text-xs text-fg-secondary">
               <li className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-micro font-bold text-primary">
-                  1
-                </span>
-                <span>Настройте тексты и кнопки приветствия в «Сценарии»</span>
+                <span className="mt-0.5 text-primary font-bold">•</span>
+                <span><b>Через менеджера:</b> бот покажет цену и кнопку связи в Telegram (удобно для приёма оплат переводом на карту).</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-micro font-bold text-primary">
-                  2
-                </span>
-                <span>Привяжите токен от @BotFather в «Интеграциях»</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full bg-primary/20 text-micro font-bold text-primary">
-                  3
-                </span>
-                <span>Опубликуйте — клиенты смогут переходить и покупать</span>
+                <span className="mt-0.5 text-primary font-bold">•</span>
+                <span><b>Автовыдача:</b> мгновенная выдача доступа (файлы, каналы, ссылки) по кнопке без подключения кассы.</span>
               </li>
             </ul>
           </article>
