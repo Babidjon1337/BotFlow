@@ -1317,27 +1317,34 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
         )
         return
     tariff = payment.tariff_snapshot
-    url = await generate_payment_link(
-        payment.bot,
-        float(payment.amount),
-        f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
-        callback.from_user.id,
-        client_payment=payment,
-    )
-    if not url:
-        await _remove_callback_message(callback)
-        await _send_payment_message(
-            callback,
-            "⚠️ Не удалось сформировать счёт. Попробуйте позже.",
-            InlineKeyboardMarkup(inline_keyboard=[]),
-        )
-        return
+    amount = float(payment.amount)
     details = f"<b>{escape(str(tariff.get('name', 'Тариф')))}</b>"
     description = to_telegram_html(tariff.get("description", ""))
     if description:
         details += f"\n\n{description}"
-    details += f"\n\n💳 <b>Стоимость: {payment.amount:,.0f} ₽</b>".replace(",", " ")
-    rows = [[InlineKeyboardButton(text="Оплатить", url=url, style="success")]]
+
+    if amount <= 0:
+        details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
+        btn_text = tariff.get("button_text") or "🎁 Получить доступ"
+        rows = [[InlineKeyboardButton(text=btn_text, callback_data=f"claim_free_tariff:{payment.tariff_id}")]]
+    else:
+        url = await generate_payment_link(
+            payment.bot,
+            amount,
+            f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
+            callback.from_user.id,
+            client_payment=payment,
+        )
+        if not url:
+            await _remove_callback_message(callback)
+            await _send_payment_message(
+                callback,
+                "⚠️ Не удалось сформировать счёт. Попробуйте позже.",
+                InlineKeyboardMarkup(inline_keyboard=[]),
+            )
+            return
+        details += f"\n\n💳 <b>Стоимость: {payment.amount:,.0f} ₽</b>".replace(",", " ")
+        rows = [[InlineKeyboardButton(text="Оплатить", url=url, style="success")]]
     if payment.invoice_batch_id:
         rows.append(
             [

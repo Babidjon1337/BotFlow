@@ -14,7 +14,6 @@ import {
   Users,
   FileText,
   Link2,
-  Clock,
   Calendar,
   Send,
   ShieldCheck,
@@ -128,9 +127,15 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   if (!isOpen || !lead) return null;
 
   const currentLead = detail?.lead || lead;
-  const payments = detail?.payments || [];
-  const succeededPayments = payments.filter((p) => p.status === 'succeeded');
+  const allPayments = detail?.payments || [];
+  // Show ONLY actual purchases/refunds — exclude all pending/abandoned checkouts
+  const succeededPayments = allPayments.filter((p) => p.status === 'succeeded');
+  const purchasedPayments = allPayments.filter((p) => p.status === 'succeeded' || p.status === 'refunded');
   const totalPaidSum = detail?.lead?.totalPaid ?? succeededPayments.reduce((sum, p) => sum + p.amount, 0);
+
+  const selectedTotal = availableTariffs
+    .filter((t) => selectedTariffIds.includes(t.id))
+    .reduce((sum, t) => sum + Number(t.price || 0), 0);
 
   // Handle Refund
   const handleRefund = (payment: LeadPaymentDetail) => {
@@ -313,11 +318,11 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-fg-secondary flex items-center gap-1.5">
                   <CreditCard size={15} className="text-primary" />
-                  Купленные тарифы и история оплат ({payments.length})
+                  Купленные тарифы ({purchasedPayments.length})
                 </h3>
               </div>
 
-              {payments.length === 0 ? (
+              {purchasedPayments.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-border bg-muted/20 p-5 text-center">
                   <p className="text-xs text-fg-secondary">
                     У этого клиента пока нет оплаченных тарифов в боте.
@@ -325,7 +330,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {payments.map((p) => {
+                  {purchasedPayments.map((p) => {
                     const isSucceeded = p.status === 'succeeded';
                     const isRefunded = p.status === 'refunded';
                     const isSub = p.paymentType === 'subscription';
@@ -337,9 +342,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                         className={`rounded-2xl border p-4 transition-all ${
                           isSucceeded
                             ? 'border-border bg-card shadow-2xs'
-                            : isRefunded
-                            ? 'border-danger/30 bg-danger-soft/20'
-                            : 'border-border bg-muted/30'
+                            : 'border-danger/30 bg-danger-soft/20'
                         }`}
                       >
                         {/* Top: Name & Price & Status */}
@@ -366,11 +369,6 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             {isRefunded && (
                               <span className="inline-flex items-center gap-1 rounded-full bg-danger-soft px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-danger">
                                 <XCircle size={11} /> Возврат
-                              </span>
-                            )}
-                            {!isSucceeded && !isRefunded && (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-secondary">
-                                <Clock size={11} /> {p.status}
                               </span>
                             )}
                           </div>
@@ -513,13 +511,24 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                             : 'border-border bg-card hover:border-border-strong hover:bg-muted/40'
                         }`}
                       >
-                        <div className="min-w-0 pr-2">
-                          <p className="text-xs font-semibold text-foreground truncate">
-                            {t.name}
-                          </p>
-                          <p className="text-[11px] text-fg-secondary">
-                            {t.paymentType === 'subscription' ? 'Подписка' : 'Разовый'}
-                          </p>
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <div
+                            className={`flex size-4.5 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                              isSelected
+                                ? 'border-primary bg-primary text-white'
+                                : 'border-border bg-background'
+                            }`}
+                          >
+                            {isSelected && <CheckCircle2 size={13} className="text-white" />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-foreground truncate">
+                              {t.name}
+                            </p>
+                            <p className="text-[11px] text-fg-secondary">
+                              {t.paymentType === 'subscription' ? 'Подписка' : 'Разовый'}
+                            </p>
+                          </div>
                         </div>
                         <div className="font-accent tabular-nums text-xs font-bold text-primary shrink-0">
                           {formatNumber(t.price)} ₽
@@ -530,9 +539,14 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between pt-1">
-                  <span className="text-xs text-fg-secondary">
-                    Выбрано тарифов: <strong>{selectedTariffIds.length}</strong>
-                  </span>
+                  <div className="text-xs text-fg-secondary">
+                    Выбрано: <strong>{selectedTariffIds.length}</strong>
+                    {selectedTariffIds.length > 0 && (
+                      <span className="ml-2 font-bold text-foreground">
+                        на сумму {formatNumber(selectedTotal)} ₽
+                      </span>
+                    )}
+                  </div>
                   <button
                     type="button"
                     disabled={selectedTariffIds.length === 0 || isSendingInvoice}

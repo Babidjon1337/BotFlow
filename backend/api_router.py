@@ -2467,18 +2467,20 @@ async def send_manual_invoice(
     from aiogram.client.default import DefaultBotProperties
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     from database.requests.client_payment_rq import create_client_payment
+    from services.funnel_message import to_telegram_html
     import uuid
 
-    if not bot.payment_provider or not bot.payment_creds_enc:
+    has_paid = any(float(t.get("price", 0) or 0) > 0 for t in tariffs)
+    if has_paid and (not bot.payment_provider or not bot.payment_creds_enc):
         raise HTTPException(
-            status_code=400, detail="Сначала подключите платёжную систему"
+            status_code=400, detail="Сначала подключите платёжную систему для платных тарифов"
         )
     batch_id = uuid.uuid4()
     payments = [
         await create_client_payment(
             bot_id=bot.id,
             lead_id=lead.id,
-            provider=bot.payment_provider,
+            provider="free" if float(tariff.get("price", 0) or 0) <= 0 else (bot.payment_provider or "free"),
             tariff=tariff,
             invoice_batch_id=batch_id,
         )
@@ -2491,10 +2493,34 @@ async def send_manual_invoice(
             session=request.app.state.session,
             default=DefaultBotProperties(parse_mode="HTML"),
         )
-        await telegram_bot.send_message(
-            lead.telegram_id,
-            "🧾 <b>Выберите товар для оплаты</b>\n\nНажмите нужный тариф — покажем описание, цену и ссылку.",
-            reply_markup=InlineKeyboardMarkup(
+        if len(payments) == 1:
+            p = payments[0]
+            t_name = p.tariff_snapshot.get("name", "Тариф")
+            t_desc = p.tariff_snapshot.get("description", "")
+            amt = float(p.amount)
+            if amt > 0:
+                price_str = f"{amt:,.0f} ₽".replace(",", " ")
+                btn_text = f"💳 Оплатить {price_str}"
+            else:
+                price_str = "Бесплатно"
+                btn_text = "🎁 Получить доступ"
+            msg = f"🧾 <b>Вам выставлен счёт: {escape(str(t_name))}</b>\n\nСумма: <b>{price_str}</b>"
+            if t_desc:
+                msg += f"\n\n{to_telegram_html(t_desc)}"
+            msg += "\n\nНажмите кнопку ниже для перехода:"
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text=btn_text,
+                            callback_data=f"manual_invoice:{p.id}",
+                        )
+                    ]
+                ]
+            )
+        else:
+            msg = "🧾 <b>Вам выставлен счёт</b>\n\nВыберите подходящий тариф для оформления:"
+            markup = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [
                         InlineKeyboardButton(
@@ -2506,7 +2532,11 @@ async def send_manual_invoice(
                     ]
                     for payment in payments
                 ]
-            ),
+            )
+        await telegram_bot.send_message(
+            lead.telegram_id,
+            msg,
+            reply_markup=markup,
         )
     except Exception as exc:
         logger.exception("Не удалось отправить ручной счёт")

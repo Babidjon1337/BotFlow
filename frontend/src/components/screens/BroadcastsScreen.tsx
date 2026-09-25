@@ -10,6 +10,7 @@ import {
   XCircle,
   ReceiptText,
   X,
+  Clock,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
 import { apiService } from '../../services/api';
@@ -172,7 +173,7 @@ export function BroadcastsScreen({ bot, initialTab = 'broadcasts' }: { bot: BotC
             onCompose={() => setComposerOpen(true)}
           />
         ) : (
-          <BroadcastsTabContent botId={bot.id} counts={summary} mediaReady={Boolean(bot.mediaSyncDone)} onCompose={() => setComposerOpen(true)} onCreated={notifyCreated} />
+          <BroadcastsTabContent botId={bot.id} counts={summary} mediaReady={Boolean(bot.mediaSyncDone)} onCreated={notifyCreated} />
         )}
       </div>
 
@@ -574,18 +575,16 @@ function BroadcastsTabContent({
   botId,
   counts,
   mediaReady,
-  onCompose,
   onCreated,
 }: {
   botId: string;
   counts: AudienceSummary | null;
   mediaReady: boolean;
-  /** Открыть шит-композер (нужно пустому состоянию на мобиле). */
-  onCompose: () => void;
   /** После создания: обновить ленту + тост/прокрутка наверх. */
   onCreated: (scheduledAt: string | null) => void;
 }) {
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
+  const [subTab, setSubTab] = useState<'composer' | 'history'>('composer');
   const [tariffs, setTariffs] = useState<BroadcastTariffOption[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -731,187 +730,247 @@ function BroadcastsTabContent({
   });
   const monthDelivered = monthBroadcasts.reduce((sum, item) => sum + item.sentCount, 0);
 
-  if (broadcasts.length === 0) {    return (
-      <div className="rounded-3xl border border-border bg-card">
-        <StoryEmptyState
-          icon={Megaphone}
-          title="Рассылок ещё нет"
-          description="Выберите сегмент аудитории и отправьте первое сообщение — история появится здесь."
-          action={
-            <Button onClick={onCompose}>
+  return (
+    <div className="space-y-6">
+      {/* 2 Раздельные части: Создание рассылки и История отправок */}
+      <div className="flex rounded-2xl bg-muted/70 p-1 border border-border max-w-md w-full">
+        <button
+          type="button"
+          onClick={() => setSubTab('composer')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            subTab === 'composer'
+              ? 'bg-card text-foreground shadow-2xs font-bold'
+              : 'text-fg-secondary hover:text-foreground'
+          }`}
+        >
+          <Send className="size-4 text-primary" />
+          <span>Новая рассылка</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('history')}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold transition-all ${
+            subTab === 'history'
+              ? 'bg-card text-foreground shadow-2xs font-bold'
+              : 'text-fg-secondary hover:text-foreground'
+          }`}
+        >
+          <Clock className="size-4 text-fg-tertiary" />
+          <span>История отправок</span>
+          {broadcasts.length > 0 && (
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary tabular-nums">
+              {broadcasts.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {subTab === 'composer' ? (
+        /* Часть 1: Настройки отправки новой рассылки */
+        <div className="mx-auto w-full max-w-2xl">
+          <div className="rounded-3xl border border-border bg-card p-4 sm:p-6 shadow-xs">
+            <div className="mb-4 flex items-center justify-between border-b border-border/60 pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                  <Send className="size-4.5" />
+                </span>
+                <div>
+                  <h2 className="text-sm sm:text-base font-bold text-foreground">Настройки новой рассылки</h2>
+                  <p className="text-xs text-fg-tertiary">Одно сообщение выбранному сегменту аудитории</p>
+                </div>
+              </div>
+              {broadcasts.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSubTab('history')}
+                  className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
+                >
+                  История ({broadcasts.length}) →
+                </button>
+              )}
+            </div>
+
+            {counts && counts.all > 0 ? (
+              <BroadcastComposerForm
+                botId={botId}
+                counts={counts}
+                onCreated={(scheduledAt) => {
+                  setReloadKey((k) => k + 1);
+                  onCreated(scheduledAt);
+                  setSubTab('history');
+                }}
+                mediaReady={mediaReady}
+                tariffs={tariffs}
+                idPrefix="broadcast-composer"
+              />
+            ) : (
+              <div className="py-8 text-center text-body-sm text-fg-tertiary">
+                <p className="font-semibold text-foreground">Аудитория пока пуста</p>
+                <p className="mt-1 text-xs text-fg-secondary">
+                  Чтобы запустить рассылку, дождитесь первых пользователей бота.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* Часть 2: История отправок сообщений */
+        <div className="space-y-4" aria-label="История рассылок">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3">
+            <p className="text-xs sm:text-sm font-medium text-fg-secondary tabular-nums">
+              В этом месяце: <strong className="text-foreground">{monthBroadcasts.length}</strong>{' '}
+              {pluralBroadcasts(monthBroadcasts.length)} ·{' '}
+              <strong className="text-foreground">{monthDelivered.toLocaleString('ru-RU')}</strong> доставлено
+            </p>
+            <Button size="sm" onClick={() => setSubTab('composer')}>
               <Plus data-icon="inline-start" aria-hidden />
               Новая рассылка
             </Button>
-          }
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      {/* Конструктор — закреплённая карточка (desktop), скроллится внутри себя */}
-      <aside className="lg:sticky lg:top-4 lg:max-h-[calc(100dvh-2rem)] lg:self-start lg:overflow-y-auto" aria-label="Создание рассылки">
-        <div className="rounded-3xl border border-border bg-card p-4 sm:p-5">
-          <div className="mb-3 flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-full bg-accent text-accent-foreground">
-              <Send className="size-4" aria-hidden />
-            </span>
-            <div>
-              <p className="text-body-sm font-bold text-fg-primary">Новая рассылка</p>
-              <p className="text-meta text-fg-tertiary">Одно сообщение выбранному сегменту</p>
-            </div>
           </div>
-          {counts && counts.all > 0 ? (
-            <BroadcastComposerForm
-              botId={botId}
-              counts={counts}
-              // После отправки обновляем ленту и показываем тост с прокруткой наверх.
-              onCreated={(scheduledAt) => {
-                setReloadKey((k) => k + 1);
-                onCreated(scheduledAt);
-              }}
-              mediaReady={mediaReady}
-              tariffs={tariffs}
-              idPrefix="broadcast-inline"
-            />
-          ) : (
-            <p className="py-4 text-center text-body-sm text-fg-tertiary">
-              Аудитория пока пуста — рассылать некому.
-            </p>
+
+          {error && (
+            <div className="rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
+              {error}
+            </div>
           )}
-        </div>
-      </aside>
 
-      {/* Лента кампаний */}
-      <div className="space-y-3" aria-label="История рассылок">
-        <p className="px-1 text-meta font-medium text-fg-secondary tabular-nums">
-          В этом месяце: {monthBroadcasts.length}{' '}
-          {pluralBroadcasts(monthBroadcasts.length)} ·{' '}
-          {monthDelivered.toLocaleString('ru-RU')} доставлено
-        </p>
-        {error && (
-          <div className="rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
-            {error}
-          </div>
-        )}
-      {broadcasts.map((broadcast) => {
-        const meta = statusMeta[broadcast.status];
-        const total = broadcast.totalRecipients;
-        const delivered = broadcast.sentCount;
-        const progress =
-          total > 0 ? Math.min(100, Math.round((delivered / total) * 100)) : 0;
-        const inFlight =
-          broadcast.status === 'queued' || broadcast.status === 'sending';
-
-        return (
-          <motion.article
-            key={broadcast.id}
-            layout
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-            className="rounded-3xl border border-border bg-card p-4"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <StatusBadge tone={meta.tone} label={meta.label} />
-              <time className="text-meta text-fg-tertiary">
-                {formatDate(broadcast.createdAt)}
-              </time>
-            </div>
-
-            <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-body text-fg-primary">
-              {broadcast.text}
-            </p>
-
-            {broadcast.status === 'scheduled' && broadcast.scheduledAt && (
-              <p className="mt-2 flex items-center gap-1.5 text-meta font-medium text-warning">
-                <CalendarClock className="size-3.5" aria-hidden />
-                Отправка: {formatDate(broadcast.scheduledAt)}
-              </p>
-            )}
-
-            <div className="mt-3 flex items-center gap-2">
-              <StatusBadge
-                tone={
-                  broadcast.audience === 'paid'
-                    ? 'success'
-                    : broadcast.audience === 'unpaid'
-                      ? 'warning'
-                      : 'neutral'
-                }
-                label={
-                  broadcast.audience === 'paid'
-                    ? 'Оплатившие'
-                    : broadcast.audience === 'unpaid'
-                      ? 'Без оплаты'
-                      : 'Все'
+          {broadcasts.length === 0 ? (
+            <div className="rounded-3xl border border-border bg-card">
+              <StoryEmptyState
+                icon={Megaphone}
+                title="История рассылок пуста"
+                description="Вы ещё не отправляли рассылок. Перейдите в настройки новой рассылки, чтобы отправить первое сообщение."
+                action={
+                  <Button onClick={() => setSubTab('composer')}>
+                    <Send data-icon="inline-start" aria-hidden />
+                    Создать рассылку
+                  </Button>
                 }
               />
             </div>
+          ) : (
+            <div className="space-y-3">
+              {broadcasts.map((broadcast) => {
+                const meta = statusMeta[broadcast.status];
+                const total = broadcast.totalRecipients;
+                const delivered = broadcast.sentCount;
+                const progress =
+                  total > 0 ? Math.min(100, Math.round((delivered / total) * 100)) : 0;
+                const inFlight =
+                  broadcast.status === 'queued' || broadcast.status === 'sending';
 
-            {inFlight && total > 0 && (
-              <div
-                className="mt-3"
-                role="progressbar"
-                aria-valuenow={progress}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Прогресс отправки"
-              >
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all duration-500"
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
-              </div>
-            )}
+                return (
+                  <motion.article
+                    key={broadcast.id}
+                    layout
+                    initial={{ opacity: 0, y: 14 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    className="rounded-3xl border border-border bg-card p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <StatusBadge tone={meta.tone} label={meta.label} />
+                      <time className="text-meta text-fg-tertiary">
+                        {formatDate(broadcast.createdAt)}
+                      </time>
+                    </div>
 
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <p className="text-meta text-fg-secondary tabular-nums">
-                {formatNumber(delivered)} / {formatNumber(total)} доставлено
-                {broadcast.failedCount > 0
-                  ? ` · ${formatNumber(broadcast.failedCount)} с ошибкой`
-                  : ''}
-              </p>
-              <div className="flex items-center gap-2">
-                {(broadcast.status === 'queued' ||
-                  broadcast.status === 'scheduled') && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={cancellingId === broadcast.id}
-                    onClick={() => handleCancel(broadcast)}
-                  >
-                    <XCircle data-icon="inline-start" aria-hidden />
-                    Отменить
-                  </Button>
-                )}
-                {broadcast.status === 'failed' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={retryingId === broadcast.id}
-                    onClick={() => void handleRetry(broadcast)}
-                  >
-                    <RefreshCw data-icon="inline-start" aria-hidden />
-                    Повторить
-                  </Button>
-                )}
-              </div>
+                    <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-body text-fg-primary">
+                      {broadcast.text}
+                    </p>
+
+                    {broadcast.status === 'scheduled' && broadcast.scheduledAt && (
+                      <p className="mt-2 flex items-center gap-1.5 text-meta font-medium text-warning">
+                        <CalendarClock className="size-3.5" aria-hidden />
+                        Отправка: {formatDate(broadcast.scheduledAt)}
+                      </p>
+                    )}
+
+                    <div className="mt-3 flex items-center gap-2">
+                      <StatusBadge
+                        tone={
+                          broadcast.audience === 'paid'
+                            ? 'success'
+                            : broadcast.audience === 'unpaid'
+                              ? 'warning'
+                              : 'neutral'
+                        }
+                        label={
+                          broadcast.audience === 'paid'
+                            ? 'Оплатившие'
+                            : broadcast.audience === 'unpaid'
+                              ? 'Без оплаты'
+                              : 'Все'
+                        }
+                      />
+                    </div>
+
+                    {inFlight && total > 0 && (
+                      <div
+                        className="mt-3"
+                        role="progressbar"
+                        aria-valuenow={progress}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label="Прогресс отправки"
+                      >
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-500"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <p className="text-meta text-fg-secondary tabular-nums">
+                        {formatNumber(delivered)} / {formatNumber(total)} доставлено
+                        {broadcast.failedCount > 0
+                          ? ` · ${formatNumber(broadcast.failedCount)} с ошибкой`
+                          : ''}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        {(broadcast.status === 'queued' ||
+                          broadcast.status === 'scheduled') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={cancellingId === broadcast.id}
+                            onClick={() => handleCancel(broadcast)}
+                          >
+                            <XCircle data-icon="inline-start" aria-hidden />
+                            Отменить
+                          </Button>
+                        )}
+                        {broadcast.status === 'failed' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={retryingId === broadcast.id}
+                            onClick={() => void handleRetry(broadcast)}
+                          >
+                            <RefreshCw data-icon="inline-start" aria-hidden />
+                            Повторить
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {broadcast.lastError && broadcast.status === 'failed' && (
+                      <p className="mt-2 text-meta text-danger">
+                        {broadcast.lastError}
+                      </p>
+                    )}
+                  </motion.article>
+                );
+              })}
             </div>
-
-            {broadcast.lastError && broadcast.status === 'failed' && (
-              <p className="mt-2 text-meta text-danger">
-                {broadcast.lastError}
-              </p>
-            )}
-          </motion.article>
-        );
-      })}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
