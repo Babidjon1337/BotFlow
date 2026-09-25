@@ -106,6 +106,32 @@ class TariffSchema(BaseModel):
         validation_alias=AliasChoices("mediaAssets", "media_assets"),
         serialization_alias="mediaAssets",
     )
+    deliverables: list[dict[str, Any]] = Field(default_factory=list)
+    payment_type: Optional[str] = Field(
+        default="one_time",
+        validation_alias=AliasChoices("payment_type", "paymentType"),
+        serialization_alias="paymentType",
+    )
+    recurring_period: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("recurring_period", "recurringPeriod"),
+        serialization_alias="recurringPeriod",
+    )
+    sales_mode: Optional[str] = Field(
+        default="auto",
+        validation_alias=AliasChoices("sales_mode", "salesMode"),
+        serialization_alias="salesMode",
+    )
+    manager_url: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("manager_url", "managerUrl"),
+        serialization_alias="managerUrl",
+    )
+    button_text: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("button_text", "buttonText"),
+        serialization_alias="buttonText",
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

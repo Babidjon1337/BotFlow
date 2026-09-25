@@ -476,6 +476,14 @@ async def send_success_message(
                     is_free = (client_payment and getattr(client_payment, "provider", "") == "free") or (float(tariff.get("price", 0) or 0) <= 0)
                     header_text = "✅ <b>Доступ успешно получен!</b>" if is_free else "✅ <b>Оплата успешно получена!</b>"
                     deliverables = tariff.get("deliverables")
+                    if not deliverables and client_payment and getattr(client_payment, "tariff_id", None):
+                        try:
+                            from database.requests.tariff_rq import get_tariff_by_id
+                            db_t = await get_tariff_by_id(client_payment.tariff_id)
+                            if db_t and getattr(db_t, "deliverables", None):
+                                deliverables = db_t.deliverables
+                        except Exception:
+                            pass
                     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
                     items: list[dict] = []

@@ -88,36 +88,46 @@ def _parse_chat_ids(action_data: str) -> List[str]:
     return [value]
 
 
-async def issue_paid_chat_invites(
+async def issue_paid_chat_invites_map(
     *, bot_config, payment, tariff: dict, http_session
-) -> List[str]:
-    """Create invite links (one per selected chat) after a verified payment.
+) -> dict[str, str]:
+    """Issue or retrieve unique invite links per chat ID for a payment.
 
-    Idempotent: if grants already exist for this payment, returns the cached links.
-    Supports both legacy single-chat and new multi-chat (JSON array) actionData.
+    Returns a dict mapping str(chat_id) -> invite_link.
     """
     existing = await get_chat_access_grants_for_payment(payment.id)
-    if existing:
-        return [g.invite_link for g in existing]
+    chat_links: dict[str, str] = {str(g.chat_id): g.invite_link for g in existing}
 
     deliverables = tariff.get("deliverables")
+    if not deliverables and payment and getattr(payment, "tariff_id", None):
+        try:
+            from database.requests.tariff_rq import get_tariff_by_id
+            db_t = await get_tariff_by_id(payment.tariff_id)
+            if db_t and getattr(db_t, "deliverables", None):
+                deliverables = db_t.deliverables
+        except Exception:
+            pass
     chat_ids: List[str] = []
     if deliverables and isinstance(deliverables, list):
         for d in deliverables:
             if isinstance(d, dict) and d.get("type") in ("channel", "group"):
                 cid = d.get("chatId") or d.get("chat_id")
-                if cid:
+                if cid and str(cid).strip() not in chat_ids:
                     chat_ids.append(str(cid).strip())
     if not chat_ids:
         raw_data = str(tariff.get("actionData") or tariff.get("action_data") or "")
         chat_ids = _parse_chat_ids(raw_data)
 
+    pending_chat_ids = [cid for cid in chat_ids if cid not in chat_links]
+    if not pending_chat_ids:
+        return chat_links
+
     raw_access_mode = tariff.get("chatAccessMode") or tariff.get("chat_access_mode") or "member"
     token = crypto.decrypt(bot_config.bot_token_enc)
     bot = Bot(token=token, session=http_session, default=DefaultBotProperties(parse_mode="HTML"))
 
-    invite_links: List[str] = []
-    for chat_id in chat_ids:
+    errors: List[str] = []
+    for chat_id in pending_chat_ids:
         chat_access_mode = "member"
         if isinstance(raw_access_mode, str) and raw_access_mode.startswith("{"):
             try:
@@ -129,79 +139,114 @@ async def issue_paid_chat_invites(
             chat_access_mode = raw_access_mode.get(chat_id, "member")
         else:
             chat_access_mode = str(raw_access_mode)
-            
-        chat = await verify_chat_delivery(bot_config, chat_id, chat_access_mode, http_session)
-        link_title = f"Доступ {str(payment.id)[:8]}" if getattr(payment, "provider", "") == "free" else f"Оплата {str(payment.id)[:8]}"
+
         try:
+            chat = await verify_chat_delivery(bot_config, chat_id, chat_access_mode, http_session)
+            link_title = f"Доступ {str(payment.id)[:8]}" if getattr(payment, "provider", "") == "free" else f"Оплата {str(payment.id)[:8]}"
             invite = await bot.create_chat_invite_link(
                 chat_id=chat.id,
                 name=link_title,
                 member_limit=1,
             )
+
+            is_recurring = (
+                tariff.get("payment_type") == "recurring"
+                or tariff.get("paymentType") == "recurring"
+                or (
+                    bool(payment.tariff_snapshot)
+                    and (
+                        payment.tariff_snapshot.get("payment_type") == "recurring"
+                        or payment.tariff_snapshot.get("paymentType") == "recurring"
+                    )
+                )
+            )
+            expires_at = None
+            if is_recurring:
+                from database.requests.chat_access_rq import compute_recurring_period_delta
+                period = (
+                    tariff.get("recurring_period")
+                    or tariff.get("recurringPeriod")
+                    or tariff.get("billing_period")
+                    or tariff.get("billingPeriod")
+                    or (
+                        payment.tariff_snapshot.get("recurring_period")
+                        if payment.tariff_snapshot
+                        else None
+                    )
+                    or (
+                        payment.tariff_snapshot.get("recurringPeriod")
+                        if payment.tariff_snapshot
+                        else None
+                    )
+                    or (
+                        payment.tariff_snapshot.get("billing_period")
+                        if payment.tariff_snapshot
+                        else None
+                    )
+                    or (
+                        payment.tariff_snapshot.get("billingPeriod")
+                        if payment.tariff_snapshot
+                        else None
+                    )
+                )
+                base_time = payment.paid_at or datetime.now(timezone.utc)
+                expires_at = base_time + compute_recurring_period_delta(period)
+
+            await create_chat_access_grant(
+                bot_id=bot_config.id,
+                lead_id=payment.lead_id,
+                payment_id=payment.id,
+                chat_id=str(chat.id),
+                invite_link=invite.invite_link,
+                access_mode=chat_access_mode,
+                expires_at=expires_at,
+            )
+            chat_links[str(chat.id)] = invite.invite_link
+            chat_links[str(chat_id)] = invite.invite_link
+            logger.info(
+                "Создан персональный инвайт: bot_id=%s, payment_id=%s, chat_id=%s",
+                bot_config.id, payment.id, chat.id,
+            )
         except Exception as exc:
-            raise ChatAccessError(
-                f"Не удалось создать персональную ссылку для чата {chat.title or chat_id}."
-            ) from exc
+            logger.error("Ошибка при создании инвайта в чат %s: %s", chat_id, exc)
+            errors.append(f"Чат {chat_id}: {exc}")
 
-        is_recurring = (
-            tariff.get("payment_type") == "recurring"
-            or tariff.get("paymentType") == "recurring"
-            or (
-                bool(payment.tariff_snapshot)
-                and (
-                    payment.tariff_snapshot.get("payment_type") == "recurring"
-                    or payment.tariff_snapshot.get("paymentType") == "recurring"
-                )
-            )
-        )
-        expires_at = None
-        if is_recurring:
-            from database.requests.chat_access_rq import compute_recurring_period_delta
-            period = (
-                tariff.get("recurring_period")
-                or tariff.get("recurringPeriod")
-                or tariff.get("billing_period")
-                or tariff.get("billingPeriod")
-                or (
-                    payment.tariff_snapshot.get("recurring_period")
-                    if payment.tariff_snapshot
-                    else None
-                )
-                or (
-                    payment.tariff_snapshot.get("recurringPeriod")
-                    if payment.tariff_snapshot
-                    else None
-                )
-                or (
-                    payment.tariff_snapshot.get("billing_period")
-                    if payment.tariff_snapshot
-                    else None
-                )
-                or (
-                    payment.tariff_snapshot.get("billingPeriod")
-                    if payment.tariff_snapshot
-                    else None
-                )
-            )
-            base_time = payment.paid_at or datetime.now(timezone.utc)
-            expires_at = base_time + compute_recurring_period_delta(period)
+    if not chat_links and errors:
+        raise ChatAccessError("; ".join(errors))
 
-        await create_chat_access_grant(
-            bot_id=bot_config.id,
-            lead_id=payment.lead_id,
-            payment_id=payment.id,
-            chat_id=str(chat.id),
-            invite_link=invite.invite_link,
-            access_mode=chat_access_mode,
-            expires_at=expires_at,
-        )
-        invite_links.append(invite.invite_link)
-        logger.info(
-            "Создан персональный инвайт: bot_id=%s, payment_id=%s, chat_id=%s",
-            bot_config.id, payment.id, chat.id,
-        )
+    return chat_links
 
-    return invite_links
+
+async def issue_paid_chat_invites(
+    *, bot_config, payment, tariff: dict, http_session
+) -> List[str]:
+    """Create invite links (one per selected chat) after a verified payment.
+
+    Idempotent: if grants already exist for this payment, returns the cached links.
+    Supports both legacy single-chat and new multi-chat (JSON array) actionData.
+    """
+    links_map = await issue_paid_chat_invites_map(
+        bot_config=bot_config, payment=payment, tariff=tariff, http_session=http_session
+    )
+    deliverables = tariff.get("deliverables")
+    chat_ids: List[str] = []
+    if deliverables and isinstance(deliverables, list):
+        for d in deliverables:
+            if isinstance(d, dict) and d.get("type") in ("channel", "group"):
+                cid = d.get("chatId") or d.get("chat_id")
+                if cid and str(cid).strip() not in chat_ids:
+                    chat_ids.append(str(cid).strip())
+    if not chat_ids:
+        raw_data = str(tariff.get("actionData") or tariff.get("action_data") or "")
+        chat_ids = _parse_chat_ids(raw_data)
+
+    result = []
+    for cid in chat_ids:
+        if cid in links_map:
+            result.append(links_map[cid])
+    if not result and links_map:
+        result = list(dict.fromkeys(links_map.values()))
+    return result
 
 
 async def issue_paid_chat_invite(

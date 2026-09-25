@@ -840,6 +840,12 @@ async def _send_tariff_invoice(
         if hasattr(tariff, "__dict__")
         else dict(tariff)
     )
+    from database.requests.tariff_rq import get_tariff_by_id
+    db_t = await get_tariff_by_id(tariff_id)
+    if db_t and db_t.bot_id == bot_config.id:
+        if not tariff_snapshot.get("deliverables") and getattr(db_t, "deliverables", None):
+            tariff_snapshot["deliverables"] = db_t.deliverables
+
     client_payment = await create_client_payment(
         bot_id=bot_config.id,
         lead_id=lead.id,
@@ -1114,12 +1120,11 @@ async def process_free_tariff_claim(callback: CallbackQuery):
         (t for t in tariffs if str(getattr(t, "id", "")) == tariff_id),
         None,
     )
-    if not tariff:
-        from database.requests.tariff_rq import get_tariff_by_id
+    from database.requests.tariff_rq import get_tariff_by_id
 
-        db_t = await get_tariff_by_id(tariff_id)
-        if db_t and db_t.bot_id == bot_config.id:
-            tariff = db_t
+    db_t = await get_tariff_by_id(tariff_id)
+    if not tariff and db_t and db_t.bot_id == bot_config.id:
+        tariff = db_t
 
     if not tariff:
         await callback.answer("Тариф не найден.", show_alert=True)
@@ -1149,12 +1154,15 @@ async def process_free_tariff_claim(callback: CallbackQuery):
         if hasattr(tariff, "__dict__")
         else dict(tariff)
     )
+    if db_t and db_t.bot_id == bot_config.id:
+        if not tariff_snapshot.get("deliverables") and getattr(db_t, "deliverables", None):
+            tariff_snapshot["deliverables"] = db_t.deliverables
 
     from database.requests.client_payment_rq import (
         create_client_payment,
         mark_client_payment_succeeded,
     )
-    from services.payment_link import send_success_message
+    from services.payment_fulfillment import process_client_payment_fulfillment
     from decimal import Decimal
 
     payment = await create_client_payment(
@@ -1176,13 +1184,7 @@ async def process_free_tariff_claim(callback: CallbackQuery):
     await _remove_callback_message(callback)
 
     try:
-        await send_success_message(
-            tg_bot_id=bot_config.tg_bot_id,
-            telegram_id=callback.from_user.id,
-            http_session=callback.bot.session,
-            tariff_snapshot=tariff_snapshot,
-            client_payment=payment,
-        )
+        await process_client_payment_fulfillment(payment.id, callback.bot.session)
     except Exception as exc:
         logger.error("Ошибка при выдаче бесплатного доступа: %s", exc)
         await callback.message.answer(

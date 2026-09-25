@@ -181,25 +181,52 @@ def evaluate_funnel_readiness(
                     f"Сократите текст счёта или описание: {label} не помещается в сообщение Telegram."
                 )
             has_delivery = tariff.get("hasDelivery", tariff.get("has_delivery", True))
+            deliverables = tariff.get("deliverables")
+            has_valid_deliverables = bool(
+                deliverables
+                and isinstance(deliverables, list)
+                and any(
+                    isinstance(d, dict)
+                    and (
+                        d.get("chatId")
+                        or d.get("chat_id")
+                        or d.get("url")
+                        or d.get("filePath")
+                        or d.get("file_path")
+                        or d.get("content")
+                    )
+                    for d in deliverables
+                )
+            )
             action_data = _text(tariff.get("actionData", tariff.get("action_data", "")))
-            if mode in {"auto", "hybrid"} and has_delivery is not False and not action_data:
+            if mode in {"auto", "hybrid"} and has_delivery is not False and not action_data and not has_valid_deliverables:
                 reasons.append(f"Настройте выдачу после оплаты: {label}.")
+
+            chat_ids: list[str] = []
+            if deliverables and isinstance(deliverables, list):
+                for d in deliverables:
+                    if isinstance(d, dict) and d.get("type") in ("channel", "group"):
+                        cid = d.get("chatId") or d.get("chat_id")
+                        if cid:
+                            chat_ids.append(str(cid).strip())
+
             action_type = tariff.get("actionType", tariff.get("action_type", "link"))
-            if action_type == "group":
-                if action_data and connected_chat_ids is not None:
-                    # action_data can be a JSON array of strings or a single string
-                    try:
-                        import json
-                        chat_ids = json.loads(action_data) if action_data.startswith("[") else [action_data]
-                        if not isinstance(chat_ids, list):
-                            chat_ids = [str(chat_ids)]
-                    except Exception:
-                        chat_ids = [action_data]
-                        
-                    if any(str(cid) not in connected_chat_ids for cid in chat_ids):
-                        reasons.append(
-                            f"Выберите подключённый канал или группу для выдачи: {label}."
-                        )
+            if not chat_ids and action_type == "group" and action_data:
+                try:
+                    import json
+                    parsed = json.loads(action_data) if action_data.startswith("[") else [action_data]
+                    if not isinstance(parsed, list):
+                        parsed = [str(parsed)]
+                    chat_ids = [str(c).strip() for c in parsed if str(c).strip()]
+                except Exception:
+                    chat_ids = [action_data]
+
+            if chat_ids and connected_chat_ids is not None:
+                if any(str(cid) not in connected_chat_ids for cid in chat_ids):
+                    reasons.append(
+                        f"Выберите подключённый канал или группу для выдачи: {label}."
+                    )
+            if (action_type == "group" or chat_ids) and not deliverables:
                 access_mode = tariff.get("chatAccessMode", tariff.get("chat_access_mode", "member"))
                 if isinstance(access_mode, str) and access_mode.startswith("{"):
                     pass # It's a per-chat dict, valid
