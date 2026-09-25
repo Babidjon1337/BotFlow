@@ -905,6 +905,13 @@ export const apiService = {
     });
   },
 
+  async setBillingAutoRenew(botId?: string | number, enabled: boolean = true) {
+    return fetchApi<BillingState>("/api/billing/auto-renew", {
+      method: "POST",
+      body: JSON.stringify(botId ? { botId, enabled } : { enabled }),
+    });
+  },
+
   async getTariffs(botId: string | number) {
     return fetchApi<{ tariffs: TariffItem[]; metrics?: TariffMetrics } | TariffItem[]>(
       `/api/bots/${botId}/tariffs`
