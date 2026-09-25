@@ -16,7 +16,7 @@ export function isFunnelComplete(nodes: FunnelNode[]): boolean {
     && hasMessageContent(getNode("push2"))
     && tariffs.length > 0
     && tariffs.every(tariff => Boolean(
-      tariff.name?.trim() && Number(tariff.price) > 0 && tariff.description?.trim(),
+      tariff.name?.trim() && !isNaN(Number(tariff.price)) && Number(tariff.price) >= 0 && tariff.description?.trim(),
     ))
   );
 }

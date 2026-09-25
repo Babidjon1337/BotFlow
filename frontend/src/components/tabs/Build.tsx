@@ -661,11 +661,12 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     paymentBlock?.tariffs?.length &&
     paymentBlock.tariffs.every((t) =>
       !!(t.name?.trim()) &&
-      Number(t.price) > 0 &&
+      !isNaN(Number(t.price)) &&
+      Number(t.price) >= 0 &&
       !!(t.description?.trim()) &&
       (t.hasDelivery === false || paymentMode === "application"
         ? true
-        : !!t.actionData?.trim()),
+        : !!t.actionData?.trim() || (Array.isArray(t.deliverables) && t.deliverables.length > 0)),
     ) &&
     (paymentMode === "application" || paymentMode === "hybrid"
       ? !!paymentBlock?.managerText?.trim() && !!paymentBlock?.managerUrl?.trim()
