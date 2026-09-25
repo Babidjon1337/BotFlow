@@ -108,6 +108,7 @@ from schemas.api_schemas import (
     BotApiResponse,
     BillingCheckoutRequest,
     BillingCancelRequest,
+    BillingAutoRenewRequest,
     BillingCheckoutResponse,
     NotificationSettingsRequest,
     AdminLifetimeLicenseRequest,
@@ -1155,6 +1156,19 @@ async def cancel_billing(request: Request, body: BillingCancelRequest | None = N
         await set_bot_subscription_auto_renew(int(body.bot_id), False)
     else:
         user = await cancel_subscription_auto_renew(user.id) or user
+    return _user_payload(user, current_user.telegram_id)
+
+
+@api_router.post("/api/billing/auto-renew")
+async def toggle_billing_auto_renew(request: Request, body: BillingAutoRenewRequest):
+    current_user = await get_current_user(request)
+    user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
+    if body and body.bot_id:
+        await get_owned_bot(int(body.bot_id), request)
+        await set_bot_subscription_auto_renew(int(body.bot_id), body.enabled)
+    else:
+        if not body.enabled:
+            user = await cancel_subscription_auto_renew(user.id) or user
     return _user_payload(user, current_user.telegram_id)
 
 

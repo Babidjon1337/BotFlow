@@ -54,6 +54,14 @@ class BillingCancelRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class BillingAutoRenewRequest(BaseModel):
+    # Включение/отключение автопродления для бота или аккаунта
+    bot_id: Optional[int] = Field(None, alias="botId")
+    enabled: bool = Field(default=True)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class NotificationSettingsRequest(BaseModel):
     email: Optional[str] = None
     email_receipts_enabled: bool = Field(default=True, alias="emailReceiptsEnabled")
