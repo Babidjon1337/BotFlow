@@ -642,6 +642,7 @@ async def send_success_message(
                 )
 
         if node_success:
+            node_success = dict(node_success) if isinstance(node_success, dict) else node_success
             tariff_data = (
                 tariff_snapshot
                 or (client_payment.tariff_snapshot if client_payment else None)
@@ -652,14 +653,9 @@ async def send_success_message(
                 or tariff_data.get("paymentType") == "recurring"
             )
             if is_recurring and isinstance(node_success, dict):
-                content = node_success.get("content") or ""
-                recurring_note = "\n\nℹ️ Управление вашей подпиской и отключение автопродления доступно в любой момент по команде /sub"
-                if recurring_note.strip() not in content:
-                    node_success["content"] = content + recurring_note
-
                 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                 sub_btn = InlineKeyboardButton(
-                    text="⚙️ Управление подпиской (/sub)", callback_data="my_subscriptions"
+                    text="⚙️ Управление подпиской", callback_data="my_subscriptions"
                 )
                 existing_markup = node_success.get("reply_markup")
                 if existing_markup is None:

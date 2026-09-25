@@ -521,3 +521,37 @@ async def cancel_client_payment_subscription(
         await session.commit()
         await session.refresh(payment)
         return payment
+
+
+async def resume_client_payment_subscription(
+    payment_id: uuid.UUID | str, lead_id: int, bot_id: int
+) -> ClientPayment | None:
+    """Re-enable auto_renew for a client's subscription payment."""
+    try:
+        normalized_id = uuid.UUID(str(payment_id))
+    except (ValueError, TypeError):
+        return None
+    from sqlalchemy.orm.attributes import flag_modified
+
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(
+                ClientPayment.id == normalized_id,
+                ClientPayment.lead_id == lead_id,
+                ClientPayment.bot_id == bot_id,
+            )
+            .with_for_update(of=ClientPayment)
+        )
+        if not payment:
+            return None
+        snapshot = dict(payment.tariff_snapshot or {})
+        snapshot["auto_renew"] = True
+        snapshot.pop("auto_renew_cancelled_at", None)
+        snapshot["auto_renew_resumed_at"] = datetime.now(timezone.utc).isoformat()
+        payment.tariff_snapshot = snapshot
+        flag_modified(payment, "tariff_snapshot")
+        await session.commit()
+        await session.refresh(payment)
+        return payment
+
