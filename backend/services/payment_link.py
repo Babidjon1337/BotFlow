@@ -16,7 +16,22 @@ from config import WEBHOOK_URL
 # Глобальный клиент для всех запросов
 http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=True)
 
+
+async def _safe_http_request(method: str, *args, **kwargs) -> httpx.Response:
+    global http_client
+    try:
+        req_fn = getattr(http_client, method)
+        return await req_fn(*args, **kwargs)
+    except RuntimeError as e:
+        if "Event loop is closed" in str(e) or "attached to a different loop" in str(e):
+            http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=True)
+            req_fn = getattr(http_client, method)
+            return await req_fn(*args, **kwargs)
+        raise
+
+
 _YOOKASSA_DESCRIPTION_MAX_LENGTH = 128
+
 
 
 class PaymentDeliveryError(RuntimeError):
@@ -62,7 +77,8 @@ async def validate_payment_credentials(
         if not shop_id or not secret_key:
             return False, "Укажите Shop ID и секретный ключ ЮKassa."
         try:
-            response = await http_client.get(
+            response = await _safe_http_request(
+                "get",
                 "https://api.yookassa.ru/v3/me",
                 auth=(str(shop_id), str(secret_key)),
             )
@@ -242,8 +258,8 @@ async def _create_yookassa_link(
     # We don't force 'sber_bnpl' anymore. Users can choose it on the YooKassa checkout page natively.
 
     try:
-        response = await http_client.post(
-            url, json=payload, headers=headers, auth=(str(shop_id), str(api_key))
+        response = await _safe_http_request(
+            "post", url, json=payload, headers=headers, auth=(str(shop_id), str(api_key))
         )
         if response.status_code == 200:
             data = response.json()
@@ -405,7 +421,7 @@ async def _create_prodamus_link(
             flat_params.append((k, v))
 
     try:
-        response = await http_client.get(payment_page, params=flat_params)
+        response = await _safe_http_request("get", payment_page, params=flat_params)
         if response.status_code == 200:
             content = response.text.strip()
             found = re.findall(r"https?://payform\.ru/[a-zA-Z0-9]+/?", content)
