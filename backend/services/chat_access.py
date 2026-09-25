@@ -14,6 +14,7 @@ from aiogram.types import ChatPermissions
 from database.requests.chat_access_rq import (
     create_chat_access_grant,
     get_chat_access_grant_for_payment,
+    get_chat_access_grants_for_payment,
 )
 from loggers import logger
 from services.security import crypto
@@ -95,10 +96,9 @@ async def issue_paid_chat_invites(
     Idempotent: if grants already exist for this payment, returns the cached links.
     Supports both legacy single-chat and new multi-chat (JSON array) actionData.
     """
-    existing = await get_chat_access_grant_for_payment(payment.id)
+    existing = await get_chat_access_grants_for_payment(payment.id)
     if existing:
-        # Return all grants for this payment (may be multiple rows)
-        return [existing.invite_link]
+        return [g.invite_link for g in existing]
 
     deliverables = tariff.get("deliverables")
     chat_ids: List[str] = []

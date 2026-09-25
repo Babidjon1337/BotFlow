@@ -460,41 +460,36 @@ async def send_success_message(
                     is_free = (client_payment and getattr(client_payment, "provider", "") == "free") or (float(tariff.get("price", 0) or 0) <= 0)
                     header_text = "✅ <b>Доступ успешно получен!</b>" if is_free else "✅ <b>Оплата успешно получена!</b>"
                     deliverables = tariff.get("deliverables")
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+                    items: list[dict] = []
                     if deliverables and isinstance(deliverables, list) and len(deliverables) > 0:
-                        has_group = any(isinstance(d, dict) and d.get("type") in ("channel", "group") for d in deliverables)
-                        first_del = deliverables[0]
-                        del_type = first_del.get("type")
-                        if has_group:
-                            action_type = "group"
-                            action_data = [d.get("chatId") or d.get("chat_id") for d in deliverables if isinstance(d, dict) and d.get("type") in ("channel", "group")]
-                        elif del_type == "file":
-                            action_type = "file"
-                            action_data = first_del.get("filePath") or first_del.get("file_path") or first_del.get("url") or first_del.get("fileUrl") or first_del.get("fileId") or ""
-                        else:
-                            action_type = "link"
-                            action_data = first_del.get("url") or first_del.get("linkUrl") or ""
-                        has_delivery = True
+                        items = [d for d in deliverables if isinstance(d, dict)]
                     else:
-                        has_delivery = tariff.get(
-                            "has_delivery", tariff.get("hasDelivery", True)
-                        )
-                        action_type = tariff.get("action_type") or tariff.get(
-                            "actionType", "text"
-                        )
-                        action_data = tariff.get("action_data") or tariff.get(
-                            "actionData", ""
-                        )
-                    if has_delivery and not str(action_data).strip() and not isinstance(action_data, list):
+                        legacy_type = tariff.get("action_type") or tariff.get("actionType", "text")
+                        legacy_data = tariff.get("action_data") or tariff.get("actionData", "")
+                        has_del = tariff.get("has_delivery", tariff.get("hasDelivery", True))
+                        if has_del and legacy_data:
+                            if legacy_type == "group":
+                                from services.chat_access import _parse_chat_ids
+                                for cid in _parse_chat_ids(str(legacy_data)):
+                                    items.append({"type": "group", "chatId": cid, "title": "Вступить в закрытый чат"})
+                            elif legacy_type in ("link", "text") and str(legacy_data).startswith(("http://", "https://")):
+                                items.append({"type": "link", "url": str(legacy_data), "title": "Открыть доступ"})
+                            elif legacy_type == "file":
+                                items.append({"type": "file", "filePath": str(legacy_data), "title": "Скачать файл"})
+                            elif legacy_type == "text":
+                                items.append({"type": "text", "content": str(legacy_data)})
+
+                    has_delivery = tariff.get("has_delivery", tariff.get("hasDelivery", True))
+                    if has_delivery and not items:
                         logger.error(
                             "The tariff delivery is empty for bot %s, payment %s",
                             bot_config.id,
                             client_payment.id if client_payment else "none",
                         )
                         try:
-                            from services.billing_notifications import (
-                                notify_billing_user,
-                            )
-
+                            from services.billing_notifications import notify_billing_user
                             await notify_billing_user(
                                 bot_config.owner.telegram_id,
                                 "⚠️ Пользователь оформил доступ, но в настройках тарифа не указано, что именно нужно выдать (пустое поле). Свяжитесь с клиентом вручную.",
@@ -504,110 +499,101 @@ async def send_success_message(
                         node_success = {
                             "content": f"{header_text}\n\nК сожалению, произошла заминка: в системе не настроена автоматическая выдача для этого тарифа. Администратор уже уведомлен об этом и свяжется с вами в ближайшее время."
                         }
-                    if (
-                        has_delivery
-                        and not node_success
-                        and action_type == "group"
-                        and client_payment
-                    ):
-                        from services.chat_access import (
-                            ChatAccessError,
-                            chat_delivery_success_text_multi,
-                            issue_paid_chat_invites,
-                        )
+                    elif items:
+                        chat_items = [d for d in items if d.get("type") in ("channel", "group")]
+                        link_items = [d for d in items if d.get("type") == "link"]
+                        file_items = [d for d in items if d.get("type") == "file"]
+                        text_items = [d for d in items if d.get("type") == "text"]
 
-                        try:
-                            from aiogram.types import (
-                                InlineKeyboardMarkup,
-                                InlineKeyboardButton,
-                            )
+                        buttons: list[list[InlineKeyboardButton]] = []
+                        media_file_id = None
+                        media_type = None
+                        chat_error = None
 
-                            invite_links = await issue_paid_chat_invites(
-                                bot_config=bot_config,
-                                payment=client_payment,
-                                tariff=tariff,
-                                http_session=http_session,
-                            )
-                            # Create buttons instead of just text links
-                            buttons = [
-                                [
-                                    InlineKeyboardButton(
-                                        text=(
-                                            f"Вступить в чат {i + 1}"
-                                            if len(invite_links) > 1
-                                            else "Вступить в закрытый чат"
-                                        ),
-                                        url=lnk,
-                                    )
-                                ]
-                                for i, lnk in enumerate(invite_links)
-                            ]
-                            # If there are also link deliverables, append them
-                            if deliverables and isinstance(deliverables, list):
-                                for d in deliverables:
-                                    if isinstance(d, dict) and d.get("type") == "link":
-                                        l_url = d.get("url") or d.get("linkUrl")
-                                        if l_url:
-                                            buttons.append([InlineKeyboardButton(text=d.get("title") or "Открыть ссылку", url=l_url)])
-
-                            title = str(tariff.get("name", "Тариф"))
-                            node_success = {
-                                "content": f"{header_text}\n\nДоступ к «{title}» активирован.\n"
-                                + (
-                                    "Ссылки персональные и каждая сработает только один раз."
-                                    if len(invite_links) > 1
-                                    else "Ссылка персональная и сработает только для одного вступления."
-                                ),
-                                "reply_markup": InlineKeyboardMarkup(
-                                    inline_keyboard=buttons
-                                ),
-                            }
-                        except ChatAccessError as exc:
-                            logger.error(
-                                "Не удалось выдать доступ в чат: bot_id=%s, payment_id=%s, error=%s",
-                                bot_config.id,
-                                client_payment.id,
-                                exc,
-                            )
+                        # 1. Process Telegram Channels and Groups
+                        if chat_items and client_payment:
+                            from services.chat_access import issue_paid_chat_invites, ChatAccessError
                             try:
-                                from services.billing_notifications import (
-                                    notify_billing_user,
+                                invite_links = await issue_paid_chat_invites(
+                                    bot_config=bot_config,
+                                    payment=client_payment,
+                                    tariff=tariff,
+                                    http_session=http_session,
                                 )
+                                for i, d in enumerate(chat_items):
+                                    lnk = invite_links[i] if i < len(invite_links) else (invite_links[0] if invite_links else None)
+                                    if not lnk:
+                                        continue
+                                    d_title = (d.get("title") or "").strip()
+                                    d_type = d.get("type")
+                                    icon = "📢" if d_type == "channel" else "💬"
+                                    if d_title:
+                                        btn_text = d_title if d_title.startswith(("📢", "💬", "👥", "👉", "🔗", "✨")) else f"{icon} {d_title}"
+                                    else:
+                                        if d_type == "channel":
+                                            btn_text = f"📢 Вступить в канал {i + 1}" if len(chat_items) > 1 else "📢 Вступить в канал"
+                                        else:
+                                            btn_text = f"💬 Вступить в чат {i + 1}" if len(chat_items) > 1 else "💬 Вступить в закрытый чат"
+                                    buttons.append([InlineKeyboardButton(text=btn_text, url=lnk)])
+                            except ChatAccessError as exc:
+                                logger.error(
+                                    "Не удалось выдать доступ в чат: bot_id=%s, payment_id=%s, error=%s",
+                                    bot_config.id,
+                                    client_payment.id,
+                                    exc,
+                                )
+                                chat_error = exc
+                                try:
+                                    from services.billing_notifications import notify_billing_user
+                                    await notify_billing_user(
+                                        bot_config.owner.telegram_id,
+                                        f"⚠️ Клиент оформил доступ, но не удалось создать инвайт в закрытый чат.\nОшибка: {exc}\nСвяжитесь с клиентом вручную, чтобы выдать доступ.",
+                                    )
+                                except Exception:
+                                    pass
 
-                                await notify_billing_user(
-                                    bot_config.owner.telegram_id,
-                                    f"⚠️ Клиент оформил доступ, но не удалось создать инвайт в закрытый чат.\nОшибка: {exc}\nСвяжитесь с клиентом вручную, чтобы выдать доступ.",
-                                )
-                            except Exception as notification_error:
-                                logger.warning(
-                                    "Не удалось уведомить владельца о выдаче чата: %s",
-                                    notification_error,
-                                )
+                        # 2. Process Links (external links, websites, Notion, etc.) - ALWAYS in buttons!
+                        for d in link_items:
+                            l_url = (d.get("url") or d.get("linkUrl") or "").strip()
+                            if l_url:
+                                l_title = (d.get("title") or "").strip()
+                                if l_title:
+                                    btn_text = l_title if l_title.startswith(("🔗", "👉", "🌐", "💻", "📚", "✨")) else f"🔗 {l_title}"
+                                else:
+                                    btn_text = "🔗 Открыть доступ"
+                                buttons.append([InlineKeyboardButton(text=btn_text, url=l_url)])
 
-                            # Fallback message for the user so they are not left in the dark
-                            node_success = {
-                                "content": f"{header_text}\n\nК сожалению, произошла небольшая заминка при генерации вашей персональной ссылки на чат. Администратор уже уведомлен об этом и пришлёт вам доступ в ближайшее время. Пожалуйста, подождите немного!"
-                            }
-                    if has_delivery and not node_success:
-                        reply_markup = None
-                        if action_type in ["link", "text"]:
-                            # If action_data looks like a link, offer an inline button
-                            if str(action_data).startswith(("http://", "https://")):
-                                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                                reply_markup = InlineKeyboardMarkup(
-                                    inline_keyboard=[[InlineKeyboardButton(text="Открыть доступ", url=str(action_data))]]
-                                )
+                        # 3. Process Files
+                        for d in file_items:
+                            f_path = (d.get("filePath") or d.get("file_path") or d.get("url") or d.get("fileId") or "").strip()
+                            if f_path:
+                                if f_path.startswith(("http://", "https://")):
+                                    f_title = (d.get("title") or "Скачать файл").strip()
+                                    buttons.append([InlineKeyboardButton(text=f"📥 {f_title}", url=f_path)])
+                                elif not media_file_id:
+                                    media_file_id = f_path
+                                    media_type = "document"
+
+                        title = str(tariff.get("name", "Тариф"))
+                        content_lines = [f"{header_text}\n\nДоступ к «{title}» активирован."]
+                        if buttons or file_items:
+                            content_lines.append("Все доступы и материалы открыты по кнопкам ниже 👇")
+                        if chat_items and not chat_error:
+                            if len(chat_items) > 1:
+                                content_lines.append("\n<i>Ссылки на каналы и чаты персональные и сработают только один раз.</i>")
+                            else:
+                                content_lines.append("\n<i>Ссылка на вступление персональная и сработает только для одного входа.</i>")
+                        elif chat_error and not buttons:
+                            content_lines.append("\nК сожалению, произошла небольшая заминка при генерации ссылки на чат. Администратор уже уведомлен и свяжется с вами!")
+
+                        if text_items:
+                            content_lines.append("\n" + "\n".join(str(t.get("content", "")) for t in text_items if t.get("content")))
+
                         node_success = {
-                            "content": (
-                                f"{header_text}\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
-                                if action_type in ["link", "text"]
-                                else header_text
-                            ),
-                            "media_file_id": (
-                                action_data if action_type == "file" else None
-                            ),
-                            "media_type": "document" if action_type == "file" else None,
-                            "reply_markup": reply_markup,
+                            "content": "\n".join(content_lines),
+                            "media_file_id": media_file_id,
+                            "media_type": media_type,
+                            "reply_markup": InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None,
                         }
                 if not node_success:
                     node_success = configured_success
@@ -626,18 +612,27 @@ async def send_success_message(
                             action_data = tariff.get("action_data") or tariff.get(
                                 "actionData", ""
                             )
+                            reply_markup = None
+                            if action_type in ["link", "text"] and str(action_data).startswith(("http://", "https://")):
+                                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                                reply_markup = InlineKeyboardMarkup(
+                                    inline_keyboard=[[InlineKeyboardButton(text="🔗 Открыть доступ", url=str(action_data))]]
+                                )
+                                content_text = f"✅ <b>Оплата успешно получена!</b>\n\nДоступ к «{tariff.get('name', 'Тариф')}» активирован.\nНажмите кнопку ниже, чтобы открыть доступ:"
+                            elif action_type in ["link", "text"] and action_data:
+                                content_text = f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
+                            else:
+                                content_text = "✅ <b>Оплата успешно получена!</b>"
+
                             node_success = {
-                                "content": (
-                                    f"✅ <b>Оплата успешно получена!</b>\n\nВаш доступ ({tariff.get('name', 'Тариф')}):\n{action_data}"
-                                    if action_type in ["link", "text"]
-                                    else "✅ <b>Оплата успешно получена!</b>"
-                                ),
+                                "content": content_text,
                                 "media_file_id": (
                                     action_data if action_type == "file" else None
                                 ),
                                 "media_type": (
                                     "document" if action_type == "file" else None
                                 ),
+                                "reply_markup": reply_markup,
                             }
             elif isinstance(nodes, dict):
                 node_success = (
