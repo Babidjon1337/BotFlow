@@ -564,22 +564,36 @@ def _verify_prodamus(
     if not is_valid:
         raise PaymentWebhookError("Prodamus signature is invalid")
 
-    # Look for client payment UUID in order_num (where we pass client_payment.id) or order_id
+    # Look for client payment UUID in order_num (where we pass client_payment.id), order_id, or subscription fields
     client_payment_uuid: uuid.UUID | None = None
     for candidate in (
         _value(parsed_payload, "order_num"),
         _value(parsed_payload, "order_id"),
         _value(parsed_payload, "shp_client_payment_id"),
         _value(parsed_payload, "client_payment_id"),
+        _value(parsed_payload, "subscription"),
+        _value(parsed_payload, "subscription_id"),
+        _value(parsed_payload, "parent_order_id"),
         _value(payload if isinstance(payload, Mapping) else {}, "order_num"),
         _value(payload if isinstance(payload, Mapping) else {}, "order_id"),
         _value(payload if isinstance(payload, Mapping) else {}, "shp_client_payment_id"),
         _value(payload if isinstance(payload, Mapping) else {}, "client_payment_id"),
-        (_value(raw_data, "order_num", "order_id", "shp_client_payment_id") if raw_data else None),
+        _value(payload if isinstance(payload, Mapping) else {}, "subscription"),
+        _value(payload if isinstance(payload, Mapping) else {}, "subscription_id"),
+        _value(payload if isinstance(payload, Mapping) else {}, "parent_order_id"),
+        (_value(raw_data, "order_num", "order_id", "shp_client_payment_id", "subscription_id") if raw_data else None),
     ):
-        if candidate and _is_valid_uuid(candidate):
-            client_payment_uuid = uuid.UUID(str(candidate))
-            break
+        if candidate:
+            if _is_valid_uuid(candidate):
+                client_payment_uuid = uuid.UUID(str(candidate))
+                break
+            if "_" in str(candidate):
+                for part in str(candidate).split("_"):
+                    if _is_valid_uuid(part):
+                        client_payment_uuid = uuid.UUID(part)
+                        break
+                if client_payment_uuid:
+                    break
 
     order_id = (
         _value(parsed_payload, "order_id", "order_num")
@@ -635,3 +649,9 @@ def _verify_prodamus(
             raise PaymentWebhookError("Prodamus payment metadata is invalid") from exc
 
     return VerifiedPayment("prodamus", order_id, telegram_id)
+
+
+async def extend_subscription_access(payment_id: uuid.UUID | str):
+    """Extend ChatAccessGrant.expires_at for recurring subscription payments upon webhook renewal."""
+    from database.requests.chat_access_rq import extend_chat_access_grants_for_payment
+    return await extend_chat_access_grants_for_payment(payment_id)

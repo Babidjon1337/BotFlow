@@ -1384,3 +1384,202 @@ async def return_to_manual_invoice_choices(callback: CallbackQuery):
         "🧾 <b>Выберите товар для оплаты</b>\n\nНажмите нужный тариф.",
         InlineKeyboardMarkup(inline_keyboard=rows),
     )
+
+
+async def _send_lead_subscription_cards(
+    *,
+    bot_config,
+    lead,
+    send_message_fn,
+):
+    now = datetime.now(timezone.utc)
+    from database.requests.client_payment_rq import get_lead_subscriptions
+    from database.requests.chat_access_rq import (
+        get_chat_access_grant_for_payment,
+        compute_recurring_period_delta,
+    )
+
+    all_subs = await get_lead_subscriptions(bot_config.id, lead.id)
+    if not all_subs:
+        await send_message_fn("У вас нет активных подписок в этом боте.")
+        return
+
+    active_cards = []
+    seen_tariffs = set()
+
+    for p in all_subs:
+        tariff_id = p.tariff_id or (p.tariff_snapshot.get("id") if p.tariff_snapshot else None)
+        if tariff_id and tariff_id in seen_tariffs:
+            continue
+
+        grant = await get_chat_access_grant_for_payment(p.id)
+        period = (
+            p.tariff_snapshot.get("recurring_period")
+            or p.tariff_snapshot.get("recurringPeriod")
+            or p.tariff_snapshot.get("billing_period")
+            or p.tariff_snapshot.get("billingPeriod")
+        ) if p.tariff_snapshot else None
+        delta = compute_recurring_period_delta(period)
+
+        expires_at = grant.expires_at if (grant and grant.expires_at) else None
+        if not expires_at:
+            base_time = p.paid_at or p.created_at or now
+            expires_at = base_time + delta
+
+        # If grant was revoked and expires_at is past now, skip
+        if grant and grant.status == "revoked" and expires_at <= now:
+            continue
+        if expires_at <= now and (not grant or grant.status != "active"):
+            continue
+
+        if tariff_id:
+            seen_tariffs.add(tariff_id)
+
+        active_cards.append((p, grant, expires_at))
+
+    if not active_cards:
+        await send_message_fn("У вас нет активных подписок в этом боте.")
+        return
+
+    for payment, grant, expires_at in active_cards:
+        tariff_name = (
+            payment.tariff_snapshot.get("name")
+            if payment.tariff_snapshot
+            else "Тариф"
+        ) or "Тариф"
+        amount = payment.amount
+        date_str = expires_at.strftime("%d.%m.%Y %H:%M") if expires_at else "Бессрочно"
+        auto_renew = (
+            payment.tariff_snapshot.get("auto_renew", True)
+            if payment.tariff_snapshot
+            else True
+        )
+        auto_renew_str = "✅ Включено" if auto_renew else "❌ Отключено"
+
+        card_text = (
+            f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
+            f"💳 Стоимость: {amount:,.0f} ₽\n"
+            f"📅 Действует до: {date_str}\n"
+            f"🔄 Автопродление: {auto_renew_str}"
+        )
+
+        reply_markup = None
+        if auto_renew:
+            reply_markup = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="❌ Отключить автосписание",
+                            callback_data=f"cancel_sub:{payment.id}",
+                        )
+                    ]
+                ]
+            )
+        await send_message_fn(card_text, reply_markup=reply_markup)
+
+
+@user_bot_router.message(Command("sub", "subscriptions"))
+async def cmd_subscriptions(message: Message):
+    """Показать активные подписки пользователя в текущем боте."""
+    bot_config = await get_bot_by_tg_id(message.bot.id)
+    if not bot_config:
+        return
+    lead = await get_lead(bot_config.id, message.from_user.id)
+    if not lead:
+        await message.answer("У вас нет активных подписок в этом боте.")
+        return
+
+    await _send_lead_subscription_cards(
+        bot_config=bot_config,
+        lead=lead,
+        send_message_fn=message.answer,
+    )
+
+
+@user_bot_router.callback_query(F.data == "my_subscriptions")
+async def cb_subscriptions(callback: CallbackQuery):
+    """Обработка кнопки Управление подпиской."""
+    await callback.answer()
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    if not bot_config:
+        return
+    lead = await get_lead(bot_config.id, callback.from_user.id)
+    if not lead:
+        await callback.message.answer("У вас нет активных подписок в этом боте.")
+        return
+
+    await _send_lead_subscription_cards(
+        bot_config=bot_config,
+        lead=lead,
+        send_message_fn=callback.message.answer,
+    )
+
+
+@user_bot_router.callback_query(F.data.startswith("cancel_sub:"))
+async def cb_cancel_subscription(callback: CallbackQuery):
+    """Отключение автопродления подписки лида."""
+    payment_id_str = callback.data.split(":", 1)[1]
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    if not bot_config:
+        await callback.answer("Бот не найден.", show_alert=True)
+        return
+
+    lead = await get_lead(bot_config.id, callback.from_user.id)
+    if not lead:
+        await callback.answer("Подписка не найдена.", show_alert=True)
+        return
+
+    from database.requests.client_payment_rq import cancel_client_payment_subscription
+    from database.requests.chat_access_rq import (
+        get_chat_access_grant_for_payment,
+        compute_recurring_period_delta,
+    )
+
+    updated_payment = await cancel_client_payment_subscription(
+        payment_id=payment_id_str,
+        lead_id=lead.id,
+        bot_id=bot_config.id,
+    )
+    if not updated_payment:
+        await callback.answer("Подписка не найдена.", show_alert=True)
+        return
+
+    tariff_name = (
+        updated_payment.tariff_snapshot.get("name")
+        if updated_payment.tariff_snapshot
+        else "Тариф"
+    ) or "Тариф"
+    amount = updated_payment.amount
+    grant = await get_chat_access_grant_for_payment(updated_payment.id)
+    period = (
+        updated_payment.tariff_snapshot.get("recurring_period")
+        or updated_payment.tariff_snapshot.get("recurringPeriod")
+        or updated_payment.tariff_snapshot.get("billing_period")
+        or updated_payment.tariff_snapshot.get("billingPeriod")
+    ) if updated_payment.tariff_snapshot else None
+    delta = compute_recurring_period_delta(period)
+
+    expires_at = grant.expires_at if (grant and grant.expires_at) else None
+    if not expires_at:
+        base_time = updated_payment.paid_at or updated_payment.created_at or datetime.now(timezone.utc)
+        expires_at = base_time + delta
+    date_str = expires_at.strftime("%d.%m.%Y %H:%M") if expires_at else "конца оплаченного периода"
+
+    # Edit the card message to show auto_renew disabled and remove button
+    card_text = (
+        f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
+        f"💳 Стоимость: {amount:,.0f} ₽\n"
+        f"📅 Действует до: {date_str}\n"
+        f"🔄 Автопродление: ❌ Отключено"
+    )
+    try:
+        await callback.message.edit_text(card_text, reply_markup=None)
+    except TelegramBadRequest:
+        pass
+
+    await callback.answer("Автосписание успешно отключено!")
+    await callback.message.answer(
+        f"✅ <b>Автосписание успешно отключено!</b>\n\n"
+        f"Ваш доступ к «{escape(str(tariff_name))}» останется активным до конца оплаченного периода "
+        f"(<b>{date_str}</b>). После этого списаний не будет."
+    )

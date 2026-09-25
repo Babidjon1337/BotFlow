@@ -12,6 +12,7 @@ from aiogram.exceptions import (
 )
 import asyncio
 from datetime import datetime, timezone
+from html import escape
 
 from schemas.funnel import FunnelSchemaV2, FunnelSchemaOld
 from database.requests import *
@@ -408,6 +409,104 @@ async def send_bot_reminders(bot_id: int, tasks: list[ScheduledTask]) -> list[di
     return results
 
 
+async def expire_chat_access_grants_job():
+    """Отзыв доступа в каналы при окончании срока подписки лида."""
+    from database.requests.chat_access_rq import (
+        get_expired_chat_access_grants,
+        mark_chat_access_grant_revoked,
+    )
+    from database.requests.client_payment_rq import get_client_payment
+    from database.requests.bot_rq import get_bot_by_id
+
+    grants = await get_expired_chat_access_grants(limit=50)
+    if not grants:
+        return
+
+    now = datetime.now(timezone.utc)
+    semaphore = asyncio.Semaphore(5)
+
+    async def _process_expired_grant(grant):
+        async with semaphore:
+            try:
+                # If grant expires_at was renewed and is now in the future, skip
+                if grant.expires_at and grant.expires_at > now:
+                    return
+
+                payment = await get_client_payment(grant.client_payment_id)
+                tariff_name = "Тариф"
+                if payment and payment.tariff_snapshot:
+                    tariff_name = payment.tariff_snapshot.get("name") or "Тариф"
+
+                bot_config = await get_bot_by_id(grant.bot_id)
+                if not bot_config:
+                    await mark_chat_access_grant_revoked(grant.id)
+                    return
+
+                token = crypto.decrypt(bot_config.bot_token_enc)
+                bot = Bot(
+                    token=token,
+                    session=shared_scheduler_session,
+                    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+                )
+
+                lead = payment.lead if payment else None
+                if not lead:
+                    async with async_session() as session:
+                        lead = await session.get(Lead, grant.lead_id)
+
+                if lead:
+                    try:
+                        target_chat_id = int(grant.chat_id)
+                    except (ValueError, TypeError):
+                        target_chat_id = grant.chat_id
+
+                    try:
+                        await bot.ban_chat_member(
+                            chat_id=target_chat_id,
+                            user_id=lead.telegram_id,
+                            until_date=60,
+                        )
+                        await bot.unban_chat_member(
+                            chat_id=target_chat_id,
+                            user_id=lead.telegram_id,
+                            only_if_banned=True,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Не удалось исключить пользователя %s из чата %s: %s",
+                            lead.telegram_id,
+                            grant.chat_id,
+                            exc,
+                        )
+
+                    try:
+                        await bot.send_message(
+                            chat_id=lead.telegram_id,
+                            text=(
+                                f"⌛️ <b>Срок действия вашей подписки на «{escape(str(tariff_name))}» истёк.</b>\n"
+                                "Доступ к закрытому каналу приостановлен. Чтобы возобновить доступ, вы можете оформить подписку заново в меню бота."
+                            ),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Не удалось отправить уведомление об окончании подписки %s: %s",
+                            lead.telegram_id,
+                            exc,
+                        )
+
+                await mark_chat_access_grant_revoked(grant.id)
+                logger.info(
+                    "Отозван доступ по истекшей подписке: grant_id=%s, bot_id=%s, lead=%s",
+                    grant.id,
+                    grant.bot_id,
+                    lead.telegram_id if lead else grant.lead_id,
+                )
+            except Exception as e:
+                logger.error("Ошибка при отзыве гранта %s: %s", grant.id, e)
+
+    await asyncio.gather(*[_process_expired_grant(g) for g in grants])
+
+
 def apscheduler_listener(event):
     scheduler_runtime[event.job_id] = {
         "last_finished_at": datetime.now(timezone.utc).isoformat(),
@@ -485,6 +584,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="client-payment-fulfillment",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        expire_chat_access_grants_job,
+        trigger="interval",
+        minutes=2,
+        max_instances=1,
+        coalesce=True,
+        id="chat-access-grant-expiry",
         replace_existing=True,
     )
     scheduler.add_job(

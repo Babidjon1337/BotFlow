@@ -410,6 +410,16 @@ async def universal_payment_webhook(
         fulfillment = await process_client_payment_fulfillment(
             payment.id, getattr(request.app.state, "session", None)
         )
+        if not newly_paid or (
+            isinstance(payment.tariff_snapshot, dict)
+            and (
+                payment.tariff_snapshot.get("payment_type") == "recurring"
+                or payment.tariff_snapshot.get("paymentType") == "recurring"
+            )
+        ):
+            from services.payment_webhook import extend_subscription_access
+            await extend_subscription_access(payment.id)
+
         logger.info(
             "Платёж обработан: payment_id=%s, new=%s, access=%s, owner_notice=%s",
             payment.id,

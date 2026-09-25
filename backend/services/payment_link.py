@@ -226,6 +226,12 @@ async def _create_yookassa_link(
             ),
         },
     }
+    tariff_snapshot = (client_payment.tariff_snapshot or {}) if client_payment else {}
+    if (
+        tariff_snapshot.get("payment_type") == "recurring"
+        or tariff_snapshot.get("paymentType") == "recurring"
+    ):
+        payload["save_payment_method"] = True
     # A YooKassa shop can be connected to several client bots. The callback
     # must identify the bot that created this payment rather than rely on one
     # shop-wide notification URL configured in the YooKassa dashboard.
@@ -355,6 +361,21 @@ async def _create_prodamus_link(
             }
         ],
     }
+    tariff_snapshot = (client_payment.tariff_snapshot or {}) if client_payment else {}
+    if (
+        tariff_snapshot.get("payment_type") == "recurring"
+        or tariff_snapshot.get("paymentType") == "recurring"
+    ):
+        data["subscription"] = "1"
+        period = (
+            tariff_snapshot.get("recurring_period")
+            or tariff_snapshot.get("recurringPeriod")
+            or tariff_snapshot.get("billing_period")
+            or tariff_snapshot.get("billingPeriod")
+        )
+        if period:
+            data["recurring_period"] = str(period)
+            data["subscription_period"] = str(period)
     demo_mode_val = creds.get("demo_mode")
     if demo_mode_val is None:
         demo_mode_val = creds.get("is_test")
@@ -626,6 +647,40 @@ async def send_success_message(
                 )
 
         if node_success:
+            tariff_data = (
+                tariff_snapshot
+                or (client_payment.tariff_snapshot if client_payment else None)
+                or {}
+            )
+            is_recurring = (
+                tariff_data.get("payment_type") == "recurring"
+                or tariff_data.get("paymentType") == "recurring"
+            )
+            if is_recurring and isinstance(node_success, dict):
+                content = node_success.get("content") or ""
+                recurring_note = "\n\nℹ️ Управление вашей подпиской и отключение автопродления доступно в любой момент по команде /sub"
+                if recurring_note.strip() not in content:
+                    node_success["content"] = content + recurring_note
+
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                sub_btn = InlineKeyboardButton(
+                    text="⚙️ Управление подпиской (/sub)", callback_data="my_subscriptions"
+                )
+                existing_markup = node_success.get("reply_markup")
+                if existing_markup is None:
+                    node_success["reply_markup"] = InlineKeyboardMarkup(
+                        inline_keyboard=[[sub_btn]]
+                    )
+                elif isinstance(existing_markup, InlineKeyboardMarkup):
+                    new_keyboard = [list(r) for r in existing_markup.inline_keyboard]
+                    has_sub = any(
+                        any(getattr(b, "callback_data", None) == "my_subscriptions" for b in r)
+                        for r in new_keyboard
+                    )
+                    if not has_sub:
+                        new_keyboard.append([sub_btn])
+                        node_success["reply_markup"] = InlineKeyboardMarkup(inline_keyboard=new_keyboard)
+
             bot = Bot(
                 token=token,
                 session=http_session,

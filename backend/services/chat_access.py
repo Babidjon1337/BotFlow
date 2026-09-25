@@ -143,6 +143,49 @@ async def issue_paid_chat_invites(
                 f"Не удалось создать персональную ссылку для чата {chat.title or chat_id}."
             ) from exc
 
+        is_recurring = (
+            tariff.get("payment_type") == "recurring"
+            or tariff.get("paymentType") == "recurring"
+            or (
+                bool(payment.tariff_snapshot)
+                and (
+                    payment.tariff_snapshot.get("payment_type") == "recurring"
+                    or payment.tariff_snapshot.get("paymentType") == "recurring"
+                )
+            )
+        )
+        expires_at = None
+        if is_recurring:
+            from database.requests.chat_access_rq import compute_recurring_period_delta
+            period = (
+                tariff.get("recurring_period")
+                or tariff.get("recurringPeriod")
+                or tariff.get("billing_period")
+                or tariff.get("billingPeriod")
+                or (
+                    payment.tariff_snapshot.get("recurring_period")
+                    if payment.tariff_snapshot
+                    else None
+                )
+                or (
+                    payment.tariff_snapshot.get("recurringPeriod")
+                    if payment.tariff_snapshot
+                    else None
+                )
+                or (
+                    payment.tariff_snapshot.get("billing_period")
+                    if payment.tariff_snapshot
+                    else None
+                )
+                or (
+                    payment.tariff_snapshot.get("billingPeriod")
+                    if payment.tariff_snapshot
+                    else None
+                )
+            )
+            base_time = payment.paid_at or datetime.now(timezone.utc)
+            expires_at = base_time + compute_recurring_period_delta(period)
+
         await create_chat_access_grant(
             bot_id=bot_config.id,
             lead_id=payment.lead_id,
@@ -150,7 +193,7 @@ async def issue_paid_chat_invites(
             chat_id=str(chat.id),
             invite_link=invite.invite_link,
             access_mode=chat_access_mode,
-            expires_at=None,
+            expires_at=expires_at,
         )
         invite_links.append(invite.invite_link)
         logger.info(

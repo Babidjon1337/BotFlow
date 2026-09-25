@@ -193,9 +193,17 @@ async def mark_client_payment_succeeded(
                 "Verified payment does not match the local order"
             )
         if payment.provider_payment_id and payment.provider_payment_id != provider_payment_id:
-            raise ClientPaymentInvariantError(
-                "Provider payment ID conflicts with the local order"
+            is_recurring = (
+                isinstance(payment.tariff_snapshot, dict)
+                and (
+                    payment.tariff_snapshot.get("payment_type") == "recurring"
+                    or payment.tariff_snapshot.get("paymentType") == "recurring"
+                )
             )
+            if not is_recurring and provider.casefold() != "prodamus":
+                raise ClientPaymentInvariantError(
+                    "Provider payment ID conflicts with the local order"
+                )
 
         lead = await session.scalar(
             select(Lead)
@@ -219,6 +227,14 @@ async def mark_client_payment_succeeded(
                 tariff_item = await session.get(Tariff, tariff_uuid)
                 if tariff_item:
                     tariff_item.total_buyers += 1
+                    tariff_item.total_revenue = (tariff_item.total_revenue or Decimal("0.00")) + payment.amount
+            except Exception:
+                pass
+        elif not newly_paid and payment.tariff_id:
+            try:
+                tariff_uuid = uuid.UUID(str(payment.tariff_id))
+                tariff_item = await session.get(Tariff, tariff_uuid)
+                if tariff_item:
                     tariff_item.total_revenue = (tariff_item.total_revenue or Decimal("0.00")) + payment.amount
             except Exception:
                 pass
@@ -446,3 +462,62 @@ async def get_due_client_payment_delivery_ids(limit: int = 50) -> list[uuid.UUID
             .limit(limit)
         )
         return list(rows)
+
+
+async def get_lead_subscriptions(bot_id: int, lead_id: int) -> list[ClientPayment]:
+    """Return all succeeded recurring payments for a lead in a bot, newest first."""
+    async with async_session() as session:
+        rows = list(
+            (
+                await session.scalars(
+                    select(ClientPayment)
+                    .where(
+                        ClientPayment.bot_id == bot_id,
+                        ClientPayment.lead_id == lead_id,
+                        ClientPayment.status == "succeeded",
+                    )
+                    .order_by(ClientPayment.created_at.desc())
+                )
+            ).all()
+        )
+        return [
+            p
+            for p in rows
+            if isinstance(p.tariff_snapshot, dict)
+            and (
+                p.tariff_snapshot.get("payment_type") == "recurring"
+                or p.tariff_snapshot.get("paymentType") == "recurring"
+            )
+        ]
+
+
+async def cancel_client_payment_subscription(
+    payment_id: uuid.UUID | str, lead_id: int, bot_id: int
+) -> ClientPayment | None:
+    """Disable auto_renew for a client's subscription payment."""
+    try:
+        normalized_id = uuid.UUID(str(payment_id))
+    except (ValueError, TypeError):
+        return None
+    from sqlalchemy.orm.attributes import flag_modified
+
+    async with async_session() as session:
+        payment = await session.scalar(
+            select(ClientPayment)
+            .where(
+                ClientPayment.id == normalized_id,
+                ClientPayment.lead_id == lead_id,
+                ClientPayment.bot_id == bot_id,
+            )
+            .with_for_update(of=ClientPayment)
+        )
+        if not payment:
+            return None
+        snapshot = dict(payment.tariff_snapshot or {})
+        snapshot["auto_renew"] = False
+        snapshot["auto_renew_cancelled_at"] = datetime.now(timezone.utc).isoformat()
+        payment.tariff_snapshot = snapshot
+        flag_modified(payment, "tariff_snapshot")
+        await session.commit()
+        await session.refresh(payment)
+        return payment
