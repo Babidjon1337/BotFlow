@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import uuid
 from uuid import UUID
+from html import escape
 
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
