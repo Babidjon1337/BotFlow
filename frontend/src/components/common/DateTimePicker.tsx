@@ -332,18 +332,20 @@ export function DateTimePicker({
       <AnimatePresence>
         {open && (
           <div
-            className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm cursor-pointer"
             role="presentation"
+            onClick={() => setOpen(false)}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
               transition={{ duration: 0.2, ease: 'easeOut' }}
-              className="relative flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-2xl max-h-[92dvh]"
+              className="relative flex w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-2xl max-h-[92dvh] cursor-default"
               role="dialog"
               aria-modal="true"
               aria-label="Выбор даты и времени отправки"
+              onClick={(e) => e.stopPropagation()}
             >
               {/* Шапка модалки */}
               <div className="flex items-start justify-between border-b border-border p-4 sm:p-5">

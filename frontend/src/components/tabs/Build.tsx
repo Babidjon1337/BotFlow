@@ -1056,7 +1056,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                 <button
                   type="button"
                   onClick={handleAddDozhim}
-                  className="group relative z-10 inline-flex items-center gap-2 rounded-xl border border-dashed border-[var(--color-primary)] bg-[var(--color-primary-soft)]/20 px-4 py-2 text-xs font-bold text-[var(--color-primary)] transition-all hover:bg-[var(--color-primary-soft)]/40 hover:scale-[1.01] active:scale-[0.98] shadow-2xs"
+                  className="group relative z-10 inline-flex h-9 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-white shadow-xs transition-all hover:bg-primary-hover hover:scale-[1.01] active:scale-[0.98]"
                 >
                   <Plus size={14} className="transition-transform group-hover:rotate-90" />
                   <span>Добавить дожим</span>

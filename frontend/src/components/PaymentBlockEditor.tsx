@@ -13,6 +13,7 @@ import {
   Layers,
   GripVertical,
   Minus,
+  Check,
 } from 'lucide-react';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
@@ -464,7 +465,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                         </div>
                       )}
 
-                      {/* Кнопка «-» слева: убрать из воронки */}
+                      {/* Кнопка в левом верхнем углу: галочка (включён) / минус при наведении (убрать) */}
                       <button
                         type="button"
                         onPointerDown={(e) => e.stopPropagation()}
@@ -472,17 +473,12 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                           e.stopPropagation();
                           handleToggleTariff(catalogItem);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/25 bg-rose-500/10 hover:bg-rose-500/20 active:scale-95 px-2.5 py-1 text-[11px] font-semibold text-rose-500 dark:text-rose-400 transition-all cursor-pointer shrink-0 shadow-2xs"
-                        title="Убрать тариф из шага воронки"
-                        aria-label="Убрать тариф из шага воронки"
+                        className="group/btn relative flex size-7 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-500 hover:border-rose-500/40 hover:bg-rose-500/15 hover:text-rose-500 active:scale-90 transition-all cursor-pointer shrink-0 shadow-2xs"
+                        title="Убрать тариф из воронки"
+                        aria-label="Убрать тариф из воронки"
                       >
-                        <span className="flex size-3.5 items-center justify-center rounded-full bg-rose-500/20">
-                          <Minus size={10} className="stroke-[3]" />
-                        </span>
-                        <span>
-                          <span className="hidden sm:inline">Убрать из воронки</span>
-                          <span className="sm:hidden">Убрать</span>
-                        </span>
+                        <Check size={14} className="stroke-[2.5] transition-transform group-hover/btn:hidden" />
+                        <Minus size={14} className="stroke-[2.5] hidden group-hover/btn:block" />
                       </button>
 
                       {catalogItem.salesMode === 'auto' && (
@@ -603,7 +599,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                 Тарифы вне воронки ({unselectedTariffs.length})
               </span>
               <span className="text-[11px] text-fg-tertiary">
-                Нажмите «+ В воронку», чтобы предложить на этом шаге
+                Нажмите «+», чтобы предложить на этом шаге
               </span>
             </div>
 
@@ -619,21 +615,15 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                     {/* Top Row: Status (Left) & Price + Actions (Right) */}
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2 flex-wrap min-w-0">
-                        {/* Кнопка «+» слева: добавить в воронку */}
+                        {/* Кнопка в левом верхнем углу: «+» добавить в воронку */}
                         <button
                           type="button"
                           onClick={() => handleToggleTariff(item)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary hover:text-white active:scale-95 px-2.5 py-1 text-[11px] font-semibold text-primary transition-all cursor-pointer shrink-0 shadow-2xs group/add"
-                          title="Добавить тариф в этот шаг воронки"
-                          aria-label="Добавить тариф в этот шаг воронки"
+                          className="flex size-7 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-white active:scale-90 transition-all cursor-pointer shrink-0 shadow-2xs"
+                          title="Добавить тариф в воронку"
+                          aria-label="Добавить тариф в воронку"
                         >
-                          <span className="flex size-3.5 items-center justify-center rounded-full bg-primary/20 group-hover/add:bg-white/20 transition-colors">
-                            <Plus size={10} className="stroke-[3]" />
-                          </span>
-                          <span>
-                            <span className="hidden sm:inline">Добавить в воронку</span>
-                            <span className="sm:hidden">В воронку</span>
-                          </span>
+                          <Plus size={14} className="stroke-[2.5]" />
                         </button>
 
                         {item.salesMode === 'auto' && (
