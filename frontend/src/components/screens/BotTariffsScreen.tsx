@@ -91,39 +91,55 @@ export function BotTariffsScreen({
 
     const fetchTariffs = async () => {
       try {
-        // 1. Try dedicated API
-        try {
-          const res = await apiService.getTariffs(bot.id);
-          if (cancelled) return;
-          const rawList = Array.isArray(res) ? res : res.tariffs;
-          if (Array.isArray(rawList)) {
-            const mapped = rawList.map((t, i) =>
-              mapBackendTariff(t as unknown as Record<string, unknown>, i)
-            );
-            setTariffs(mapped);
-            setIsLoading(false);
-            return;
+        const [res, funnel] = await Promise.all([
+          apiService.getTariffs(bot.id).catch(() => null),
+          apiService.getFunnel(bot.id).catch(() => null),
+        ]);
+        if (cancelled) return;
+
+        let activeFunnelIds: Set<string> | null = null;
+        if (funnel) {
+          const nodes = Array.isArray(funnel) ? funnel : (funnel?.nodes as unknown as unknown[]);
+          if (Array.isArray(nodes)) {
+            const paymentNode = nodes.find(
+              (n) => typeof n === 'object' && n !== null && (n as { id?: string }).id === 'payment'
+            ) as { tariffs?: Array<{ id: string }> } | undefined;
+            if (paymentNode?.tariffs && Array.isArray(paymentNode.tariffs)) {
+              activeFunnelIds = new Set(paymentNode.tariffs.map((t) => String(t.id)));
+            }
           }
-        } catch {
-          // Dedicated endpoint not yet available, fallback to funnel schema
         }
 
-        // 2. Fallback to reading funnel schema
-        const funnel = await apiService.getFunnel(bot.id);
-        if (cancelled) return;
-        const nodes = Array.isArray(funnel) ? funnel : (funnel?.nodes as unknown as unknown[]);
-        if (Array.isArray(nodes)) {
-          const paymentNode = nodes.find(
-            (n) => typeof n === 'object' && n !== null && (n as { id?: string }).id === 'payment'
-          ) as { tariffs?: Array<Record<string, unknown>> } | undefined;
+        const rawList = res ? (Array.isArray(res) ? res : res.tariffs) : null;
+        if (Array.isArray(rawList)) {
+          const mapped = rawList.map((t, i) => {
+            const item = mapBackendTariff(t as unknown as Record<string, unknown>, i);
+            if (activeFunnelIds !== null) {
+              item.isActiveInFunnel = activeFunnelIds.has(item.id);
+            }
+            return item;
+          });
+          setTariffs(mapped);
+          setIsLoading(false);
+          return;
+        }
 
-          if (paymentNode?.tariffs && Array.isArray(paymentNode.tariffs)) {
-            const mappedTariffs: TariffItem[] = paymentNode.tariffs.map((t, idx) =>
-              mapBackendTariff(t, idx)
-            );
-            setTariffs(mappedTariffs);
-          } else {
-            setTariffs([]);
+        // Fallback to reading funnel schema if dedicated tariffs endpoint failed
+        if (activeFunnelIds !== null && funnel) {
+          const nodes = Array.isArray(funnel) ? funnel : (funnel?.nodes as unknown as unknown[]);
+          if (Array.isArray(nodes)) {
+            const paymentNode = nodes.find(
+              (n) => typeof n === 'object' && n !== null && (n as { id?: string }).id === 'payment'
+            ) as { tariffs?: Array<Record<string, unknown>> } | undefined;
+
+            if (paymentNode?.tariffs && Array.isArray(paymentNode.tariffs)) {
+              const mappedTariffs: TariffItem[] = paymentNode.tariffs.map((t, idx) =>
+                mapBackendTariff(t, idx)
+              );
+              setTariffs(mappedTariffs);
+            } else {
+              setTariffs([]);
+            }
           }
         }
       } catch (err) {
@@ -317,7 +333,9 @@ export function BotTariffsScreen({
             return (
               <div
                 key={tariff.id}
-                className="group relative flex flex-col rounded-2xl border border-border bg-card p-6 shadow-xs transition-all hover:border-primary hover:shadow-lg"
+                className={`group relative flex flex-col rounded-2xl border border-border bg-card p-6 shadow-xs transition-all hover:border-primary hover:shadow-lg ${
+                  !tariff.isActiveInFunnel ? 'opacity-85 hover:opacity-100' : ''
+                }`}
               >
                 <div className="flex flex-1 flex-col space-y-4">
                   {/* Top Row: Status pill & Sales mode badge */}
@@ -328,9 +346,9 @@ export function BotTariffsScreen({
                           <span className="size-1.5 rounded-full bg-success" />В воронке
                         </span>
                       ) : (
-                        <span className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fg-secondary">
-                          <span className="size-1.5 rounded-full bg-fg-tertiary" />
-                          Не используется
+                        <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 border border-amber-500/25 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-500 dark:text-amber-400">
+                          <span className="size-1.5 rounded-full bg-amber-500" />
+                          Не продаётся
                         </span>
                       )}
 

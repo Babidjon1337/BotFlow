@@ -1669,20 +1669,44 @@ MAX_TARIFF_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 @api_router.get("/api/bots/{bot_id}/tariffs", response_model=TariffListResponse)
 async def list_bot_tariffs_endpoint(bot_id: int, request: Request):
     """List all tariffs configured for a bot, along with summary statistics."""
-    await get_owned_bot(bot_id, request)
+    bot = await get_owned_bot(bot_id, request)
     tariffs = await list_tariffs_by_bot_id(bot_id)
     stats = await get_tariff_summary_stats(bot_id)
+
+    # Determine which tariffs are actually present in the bot's payment funnel step
+    funnel_data = getattr(bot, "funnel_schema", None) or {}
+    nodes = funnel_data.get("nodes") or []
+    funnel_tariff_ids: set[str] = set()
+    has_payment_node = False
+    for node in nodes:
+        if isinstance(node, dict) and node.get("id") == "payment":
+            has_payment_node = True
+            node_tariffs = node.get("tariffs") or []
+            for t_item in node_tariffs:
+                if isinstance(t_item, dict) and t_item.get("id"):
+                    funnel_tariff_ids.add(str(t_item["id"]))
+
+    tariff_responses = []
+    active_in_funnel_count = 0
+    for t in tariffs:
+        resp = TariffApiResponse.from_orm_tariff(t)
+        # If the bot has a payment node configured, presence in payment node determines active in funnel
+        if has_payment_node:
+            resp.is_active_in_funnel = (str(t.id) in funnel_tariff_ids) and resp.is_active
+        else:
+            resp.is_active_in_funnel = resp.is_active
+        if resp.is_active_in_funnel:
+            active_in_funnel_count += 1
+        tariff_responses.append(resp.model_dump(by_alias=True))
+
     return {
-        "tariffs": [
-            TariffApiResponse.from_orm_tariff(t).model_dump(by_alias=True)
-            for t in tariffs
-        ],
+        "tariffs": tariff_responses,
         "total": len(tariffs),
         "stats": {
             "totalTariffs": stats["total_tariffs"],
             "totalCount": stats["total_tariffs"],
             "activeCount": stats["active_count"],
-            "activeInFunnelCount": stats["active_count"],
+            "activeInFunnelCount": active_in_funnel_count,
             "totalBuyers": stats["total_buyers"],
             "buyersCount": stats["total_buyers"],
             "totalRevenue": float(stats["total_revenue"]),

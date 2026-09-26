@@ -691,6 +691,28 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
   const incompleteSteps = funnelSteps.filter((step) => !step.complete);
   const completedStepsCount = funnelSteps.length - incompleteSteps.length;
 
+  const [isKeyboardOrFocusActive, setIsKeyboardOrFocusActive] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      if (typeof window === 'undefined') return;
+      const isMobile = window.innerWidth < 1024;
+      const isText = Boolean(document.activeElement?.closest('input, textarea, [contenteditable="true"]'));
+      const isKbd = Boolean(window.visualViewport && (window.innerHeight - window.visualViewport.height > 100));
+      setIsKeyboardOrFocusActive(isMobile && (isText || isKbd));
+    };
+    document.addEventListener('focusin', check);
+    document.addEventListener('focusout', () => setTimeout(check, 50));
+    window.visualViewport?.addEventListener('resize', check);
+    window.addEventListener('resize', check);
+    return () => {
+      document.removeEventListener('focusin', check);
+      document.removeEventListener('focusout', check);
+      window.visualViewport?.removeEventListener('resize', check);
+      window.removeEventListener('resize', check);
+    };
+  }, []);
+
   const handleAddDozhim = () => {
     if (reminderBlocks.length >= 5) {
       showAlert({
@@ -1539,9 +1561,9 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
 
       </motion.div>
 
-      {/* Floating Save Action Bar (appears only when dirty) */}
+      {/* Floating Save Action Bar (appears only when dirty and keyboard is not open) */}
       <AnimatePresence>
-        {appState.isDirty && (
+        {appState.isDirty && !isKeyboardOrFocusActive && (
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}

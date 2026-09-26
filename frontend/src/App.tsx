@@ -250,6 +250,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const isAnyKeyboardActive = isKeyboardOpen || hasFocusedTextField;
+    document.documentElement.classList.toggle('app-keyboard-open', isAnyKeyboardActive);
+    document.body.classList.toggle('app-keyboard-open', isAnyKeyboardActive);
+  }, [isKeyboardOpen, hasFocusedTextField]);
+
+  useEffect(() => {
     const root = document.documentElement;
     // Плавный перекрас всего UI на время переключения темы.
     root.classList.add('theme-anim');
@@ -405,7 +411,9 @@ export default function App() {
         @media (max-width: 1023px) {
           .action-bar-mobile { bottom: calc(56px + max(env(safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px)) + 12px) !important; }
           .flow-padding { padding-bottom: 0; }
-          .app-keyboard-open .action-bar-fixed {
+          .app-keyboard-open .action-bar-fixed,
+          body.app-keyboard-open .action-bar-fixed {
+            display: none !important;
             opacity: 0 !important;
             pointer-events: none !important;
             transform: translateY(140%) !important;

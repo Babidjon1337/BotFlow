@@ -12,6 +12,7 @@ import {
   Loader2,
   Layers,
   GripVertical,
+  X,
 } from 'lucide-react';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
@@ -146,9 +147,21 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
     };
   }, [botId]);
 
-  const selectedTariffs: Tariff[] = node?.tariffs || [];
-  const selectedIds = new Set(selectedTariffs.map((t) => t.id));
+  const nodeTariffs = useMemo(() => node?.tariffs || [], [node?.tariffs]);
+  const [localTariffs, setLocalTariffs] = useState<Tariff[]>(nodeTariffs);
+
+  useEffect(() => {
+    setLocalTariffs(nodeTariffs);
+  }, [nodeTariffs]);
+
+  const selectedTariffs = localTariffs;
+  const selectedIds = useMemo(() => new Set(selectedTariffs.map((t) => t.id)), [selectedTariffs]);
   const selectedCount = selectedTariffs.length;
+
+  const handleReorder = (newOrder: Tariff[]) => {
+    setLocalTariffs(newOrder);
+    onChange('tariffs', newOrder);
+  };
 
   const handleToggleTariff = (item: TariffItem) => {
     const isChecked = selectedIds.has(item.id);
@@ -163,6 +176,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
       }
     }
 
+    setLocalTariffs(nextTariffs);
     onChange('tariffs', nextTariffs);
   };
 
@@ -412,9 +426,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
           <Reorder.Group
             axis="y"
             values={selectedTariffs}
-            onReorder={(newOrder) => {
-              onChange('tariffs', newOrder);
-            }}
+            onReorder={handleReorder}
             className="flex flex-col gap-2.5"
           >
             {selectedTariffs.map((tariff, index) => {
@@ -426,6 +438,8 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                 <Reorder.Item
                   key={tariff.id}
                   value={tariff}
+                  layout
+                  transition={{ type: "spring", damping: 30, stiffness: 400 }}
                   drag="y"
                   dragListener={selectedCount > 1}
                   whileDrag={{
@@ -434,7 +448,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                     boxShadow: '0 12px 28px -6px rgba(0, 0, 0, 0.35)',
                     cursor: 'grabbing',
                   }}
-                  className={`group relative flex flex-col gap-2 p-3 sm:p-3.5 rounded-2xl border border-border bg-card hover:border-border-strong shadow-2xs transition-all select-none ${
+                  className={`group relative flex flex-col gap-2 p-3 sm:p-3.5 rounded-2xl border border-border bg-card hover:border-border-strong shadow-2xs select-none ${
                     selectedCount > 1 ? 'cursor-grab active:cursor-grabbing' : ''
                   }`}
                 >
@@ -444,16 +458,19 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                       {selectedCount > 1 && (
                         <div
                           className="flex items-center text-fg-tertiary group-hover:text-primary transition-colors cursor-grab active:cursor-grabbing shrink-0"
-                          title="Потяните для смены порядка кнопок в боте"
+                          title="Потяните для смены порядка в боте"
                         >
                           <GripVertical size={16} />
                         </div>
                       )}
 
-                      <span className="inline-flex items-center rounded-md bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary tabular-nums shrink-0">
-                        Кнопка #{index + 1}
+                      {/* Status indicator */}
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 shrink-0">
+                        <span className="size-1.5 rounded-full bg-emerald-500" />
+                        В воронке
                       </span>
 
+                      {/* Explicit button to remove from funnel */}
                       <button
                         type="button"
                         onPointerDown={(e) => e.stopPropagation()}
@@ -461,11 +478,11 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                           e.stopPropagation();
                           handleToggleTariff(catalogItem);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors shrink-0"
-                        title="Нажмите, чтобы исключить из шага продажи"
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-rose-500 dark:text-rose-400 transition-colors cursor-pointer shrink-0"
+                        title="Убрать тариф из шага воронки"
                       >
-                        <span className="size-1.5 rounded-full bg-emerald-500" />
-                        В воронке
+                        <X size={12} />
+                        <span>Убрать из воронки</span>
                       </button>
 
                       {catalogItem.salesMode === 'auto' && (
@@ -610,10 +627,11 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleTariff(item)}
-                          className="inline-flex items-center gap-1 rounded-md bg-primary/10 border border-primary/20 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition-colors shrink-0"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary hover:bg-primary-hover px-2.5 py-0.5 text-[11px] font-semibold text-white shadow-2xs transition-colors cursor-pointer shrink-0"
+                          title="Добавить тариф в этот шаг воронки"
                         >
                           <Plus size={12} />
-                          В воронку
+                          <span>Добавить в воронку</span>
                         </button>
 
                         {item.salesMode === 'auto' && (

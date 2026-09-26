@@ -183,13 +183,24 @@ export const SyncedMediaPreview = ({
 
 const keepMobileFieldVisible = (element: HTMLElement) => {
   if (typeof window === "undefined" || window.innerWidth >= 1024) return;
-  const reveal = () => element.scrollIntoView({ behavior: "smooth", block: "center" });
-  requestAnimationFrame(reveal);
-  window.setTimeout(reveal, 360);
+  const scrollElement = () => {
+    const rect = element.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const visibleHeight = viewport ? viewport.height : window.innerHeight;
+    // Target top of element at ~22% of visible viewport (well above virtual keyboard, below top header)
+    const targetTop = Math.max(70, Math.min(130, visibleHeight * 0.22));
+    const offset = rect.top - targetTop;
+    if (Math.abs(offset) > 15) {
+      window.scrollBy({ top: offset, behavior: "smooth" });
+    }
+  };
+  requestAnimationFrame(scrollElement);
+  window.setTimeout(scrollElement, 150);
+  window.setTimeout(scrollElement, 350);
   const viewport = window.visualViewport;
   if (!viewport) return;
   const onResize = () => {
-    reveal();
+    scrollElement();
     viewport.removeEventListener("resize", onResize);
   };
   viewport.addEventListener("resize", onResize, { once: true });
@@ -245,6 +256,36 @@ export const TelegramTextEditor = ({
   const editorId = useId();
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
+
+  useEffect(() => {
+    const updateViewport = () => {
+      if (typeof window === "undefined") return;
+      const isMobile = window.innerWidth < 1024;
+      const vv = window.visualViewport;
+      if (vv && isMobile) {
+        const isKbd = window.innerHeight - vv.height > 100;
+        setIsKeyboardOpen(isKbd);
+        const bottomOffset = window.innerHeight - (vv.offsetTop + vv.height);
+        setKeyboardBottomOffset(Math.max(0, bottomOffset));
+      } else {
+        setIsKeyboardOpen(false);
+        setKeyboardBottomOffset(0);
+      }
+    };
+
+    updateViewport();
+    window.visualViewport?.addEventListener("resize", updateViewport);
+    window.visualViewport?.addEventListener("scroll", updateViewport);
+    window.addEventListener("resize", updateViewport);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", updateViewport);
+      window.visualViewport?.removeEventListener("scroll", updateViewport);
+      window.removeEventListener("resize", updateViewport);
+    };
+  }, []);
 
   // Active formatting state for toolbar highlights
   const [activeFormats, setActiveFormats] = useState<{
@@ -928,10 +969,21 @@ export const TelegramTextEditor = ({
         onMouseUp={updateActiveFormats}
         onSelect={updateActiveFormats}
         onFocus={(event) => {
+          setIsEditorFocused(true);
           keepMobileFieldVisible(event.currentTarget);
           updateActiveFormats();
         }}
-        onBlur={handleInput}
+        onBlur={(e) => {
+          if (
+            e.relatedTarget &&
+            (e.currentTarget.contains(e.relatedTarget as Node) ||
+              (e.relatedTarget as HTMLElement).closest?.('[role="dialog"]'))
+          ) {
+            return;
+          }
+          setIsEditorFocused(false);
+          handleInput();
+        }}
         onPaste={handlePaste}
         onKeyDown={handleKeyDown}
         className={`p-3 ${minHeight} ${maxHeight} overflow-y-auto outline-none text-[14px] rich-text-editor scroll-my-24`}
@@ -947,8 +999,8 @@ export const TelegramTextEditor = ({
         data-empty={isEmpty ? "true" : undefined}
       />
 
-      {/* ── Снизу: Панель форматирования Telegram HTML ── */}
-      <div className="flex items-center justify-between gap-1 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 overflow-x-auto shrink-0">
+      {/* ── Снизу: Панель форматирования Telegram HTML (на десктопе) ── */}
+      <div className="hidden lg:flex items-center justify-between gap-1 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 overflow-x-auto shrink-0">
         <div
           className="flex items-center gap-0.5 shrink-0"
           role="toolbar"
@@ -1223,6 +1275,133 @@ export const TelegramTextEditor = ({
         </div>,
         document.body
       )}
+
+      {/* ── На мобильном: Панель форматирования, прикреплённая к виртуальной клавиатуре ── */}
+      {typeof document !== "undefined" &&
+        isEditorFocused &&
+        isKeyboardOpen &&
+        createPortal(
+          <div
+            style={{
+              bottom: `${keyboardBottomOffset}px`,
+            }}
+            className="fixed inset-x-0 z-[9999] flex items-center justify-between gap-1 border-t border-b border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 shadow-2xl backdrop-blur-md select-none lg:hidden"
+            onMouseDown={(e) => e.preventDefault()}
+            onPointerDown={(e) => e.preventDefault()}
+          >
+            {/* Кнопки форматирования */}
+            <div
+              className="flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 shrink-0"
+              role="toolbar"
+              aria-label="Форматирование текста Telegram"
+            >
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("bold")}
+                className={getFormatBtnClass(activeFormats.bold)}
+                title="Жирный"
+              >
+                <Bold size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("italic")}
+                className={getFormatBtnClass(activeFormats.italic)}
+                title="Курсив"
+              >
+                <Italic size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("strikeThrough")}
+                className={getFormatBtnClass(activeFormats.strikeThrough)}
+                title="Зачёркнутый"
+              >
+                <Strikethrough size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("underline")}
+                className={getFormatBtnClass(activeFormats.underline)}
+                title="Подчёркнутый"
+              >
+                <Underline size={14} />
+              </button>
+
+              <div className="w-px h-3.5 bg-[var(--color-border)] mx-0.5 shrink-0" />
+
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("spoiler")}
+                className={getFormatBtnClass(activeFormats.spoiler)}
+                title="Спойлер"
+              >
+                <EyeOff size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("code")}
+                className={getFormatBtnClass(activeFormats.code)}
+                title="Моноширинный"
+              >
+                <Code size={14} />
+              </button>
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={() => execFormat("blockquote")}
+                className={getFormatBtnClass(activeFormats.blockquote)}
+                title="Цитата"
+              >
+                <Quote size={14} />
+              </button>
+
+              <div className="w-px h-3.5 bg-[var(--color-border)] mx-0.5 shrink-0" />
+
+              <button
+                type="button"
+                onMouseDown={keepEditorSelection}
+                onClick={handleOpenLinkModal}
+                className={getFormatBtnClass(activeFormats.link)}
+                title="Ссылка"
+              >
+                <Link2 size={14} />
+              </button>
+            </div>
+
+            {/* Правая часть: Счётчик + Кнопка Готово */}
+            <div className="flex items-center gap-1.5 shrink-0 ml-auto pl-1">
+              <div
+                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold tabular-nums select-none ${
+                  isOverLimit
+                    ? "bg-red-500/15 text-red-500 font-bold"
+                    : "text-[var(--color-foreground-tertiary)]"
+                }`}
+              >
+                {charCount} / {effectiveLimit}
+              </div>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  editorRef.current?.blur();
+                  setIsEditorFocused(false);
+                }}
+                className="px-2 py-0.5 text-xs font-semibold text-primary hover:text-primary-hover active:scale-95 transition-all cursor-pointer"
+                title="Закрыть клавиатуру"
+              >
+                Готово
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 };
