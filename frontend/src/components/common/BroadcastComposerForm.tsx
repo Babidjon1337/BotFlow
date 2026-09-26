@@ -287,8 +287,9 @@ export function BroadcastComposerForm({
   };
 
   return (
-    <div className="space-y-4">
-      {/* ── Медиа: компактные чипы 64px + плитка «+» ── */}
+    <div className="flex flex-col min-h-full flex-1">
+      <div className="space-y-4 flex-1">
+        {/* ── Медиа: компактные чипы 64px + плитка «+» ── */}
       <div>
         <div className="flex items-center justify-between">
           <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
@@ -646,14 +647,15 @@ export function BroadcastComposerForm({
           </div>
         )}
       </div>
+      </div>
 
-      {/* Кнопка отправки закреплена внизу формы — видна без прокрутки истории */}
-      <div className="sticky bottom-0 -mx-4 border-t border-border bg-card px-4 pb-1 pt-3 sm:-mx-5 sm:px-5">
+      {/* Кнопка отправки закреплена внизу блока */}
+      <div className="mt-auto shrink-0 pt-4">
         <button
           type="button"
           onClick={handleSendClick}
           disabled={!isValid || isSubmitting}
-          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-body font-semibold text-primary-foreground transition-all hover:bg-primary/85 active:translate-y-px disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-body font-semibold text-primary-foreground transition-all hover:bg-primary/85 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 shadow-xs"
         >
           {isSubmitting ? (
             <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />

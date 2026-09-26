@@ -69,7 +69,7 @@ export const BroadcastComposerSheet = ({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-5">
+        <div className="flex-1 overflow-y-auto px-5 py-5 flex flex-col">
           <BroadcastComposerForm botId={botId} counts={counts} onCreated={onCreated} mediaReady={mediaReady} tariffs={tariffs} />
         </div>
       </motion.div>
