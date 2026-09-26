@@ -96,16 +96,31 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    await stop_scheduler()
+    try:
+        await asyncio.wait_for(stop_scheduler(), timeout=2.0)
+    except Exception as e:
+        logger.warning(f"stop_scheduler timeout/error: {e}")
+
     from services.broadcast import close_broadcast_session
     from services.billing_notifications import close_billing_notification_session
     from services.media_upload_session import cancel_all_upload_sessions
 
     cancel_all_upload_sessions()
-    await close_broadcast_session()
-    await close_billing_notification_session()
+    try:
+        await asyncio.wait_for(close_broadcast_session(), timeout=1.0)
+    except Exception as e:
+        logger.warning(f"close_broadcast_session timeout/error: {e}")
+
+    try:
+        await asyncio.wait_for(close_billing_notification_session(), timeout=1.0)
+    except Exception as e:
+        logger.warning(f"close_billing_notification_session timeout/error: {e}")
+
     if app.state.session:
-        await app.state.session.close()
+        try:
+            await asyncio.wait_for(app.state.session.close(), timeout=1.0)
+        except Exception as e:
+            logger.warning(f"main session close timeout/error: {e}")
     logger.info("Все соединения успешно закрыты.")
 
 

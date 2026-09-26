@@ -635,6 +635,9 @@ def get_scheduler_health() -> dict:
 
 async def stop_scheduler():
     if scheduler.running:
-        scheduler.shutdown()
-    await shared_scheduler_session.close()
+        scheduler.shutdown(wait=False)
+    try:
+        await asyncio.wait_for(shared_scheduler_session.close(), timeout=1.5)
+    except Exception as e:
+        logger.warning(f"Ошибка при закрытии shared_scheduler_session: {e}")
     logger.info("🛑 APScheduler и его сессия успешно остановлены.")
