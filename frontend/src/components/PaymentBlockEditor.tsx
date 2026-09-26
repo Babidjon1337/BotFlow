@@ -14,6 +14,8 @@ import {
   ArrowDown,
   Layers,
   GripVertical,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
@@ -21,7 +23,7 @@ import { TariffDescriptionEditor } from './TariffDescriptionEditor';
 import { TariffEditorModal } from './sheets/TariffEditorModal';
 import { apiService } from '../services/api';
 import type { FunnelNode, Tariff } from '../types';
-import type { TariffItem } from '../types/tariff';
+import type { TariffItem, TariffDeliverable } from '../types/tariff';
 import {
   mapBackendTariff,
   toBackendPayload,
@@ -55,15 +57,6 @@ function formatNumber(num: number | undefined | null): string {
   return num.toLocaleString('ru-RU');
 }
 
-function pluralizeBuyers(count: number): string {
-  const mod10 = count % 10;
-  const mod100 = count % 100;
-  if (mod100 >= 11 && mod100 <= 19) return 'покупателей';
-  if (mod10 === 1) return 'покупатель';
-  if (mod10 >= 2 && mod10 <= 4) return 'покупателя';
-  return 'покупателей';
-}
-
 function getPeriodSuffix(period?: string): string {
   switch (period) {
     case 'week':
@@ -76,6 +69,45 @@ function getPeriodSuffix(period?: string): string {
     default:
       return '/ мес';
   }
+}
+
+function renderDeliverableBadges(deliverables?: TariffDeliverable[]) {
+  if (!deliverables || deliverables.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {deliverables.map((del) => {
+        const formattedSize =
+          del.fileSizeFormatted ||
+          (del.fileSize ? formatNumber(Math.round(del.fileSize / 1024)) + ' КБ' : undefined);
+
+        return (
+          <span
+            key={del.id}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border truncate max-w-[150px] ${
+              del.type === 'channel'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                : del.type === 'group'
+                ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                : del.type === 'file'
+                ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+            }`}
+            title={`${del.title}${del.accessNote ? ' · 1 вход' : ''}`}
+          >
+            {del.type === 'channel' && <Megaphone size={10} className="shrink-0" />}
+            {del.type === 'group' && <Users size={10} className="shrink-0" />}
+            {del.type === 'file' && <FileText size={10} className="shrink-0" />}
+            {del.type === 'link' && <Link2 size={10} className="shrink-0" />}
+            <span className="truncate">{del.title || 'Доступ'}</span>
+            {del.type === 'file' && formattedSize && (
+              <span className="text-fg-tertiary">({formattedSize})</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
 }
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
@@ -463,7 +495,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             onReorder={(newOrder) => {
               onChange('tariffs', newOrder);
             }}
-            className="flex flex-col gap-3.5"
+            className="flex flex-col gap-2"
           >
             {selectedTariffs.map((tariff, index) => {
               const catalogItem =
@@ -479,194 +511,146 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                   dragConstraints={{ top: 0, bottom: 0 }}
                   dragElastic={0.05}
                   whileDrag={{
-                    scale: 1.02,
+                    scale: 1.01,
                     zIndex: 50,
-                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+                    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
                     cursor: 'grabbing',
                   }}
-                  className={`group relative flex flex-col rounded-2xl border p-5 shadow-xs transition-all select-none border-primary/50 bg-card ring-1 ring-primary/20 ${
+                  className={`group relative flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-primary/40 bg-card ring-1 ring-primary/20 shadow-2xs transition-all select-none ${
                     selectedCount > 1 ? 'cursor-grab active:cursor-grabbing' : ''
                   }`}
                 >
-                  <div className="flex flex-1 flex-col space-y-3.5 pointer-events-auto">
-                    {/* Top Row: Drag Handle + Order badge + Status pill & Sales mode badge */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          {selectedCount > 1 && (
-                            <div
-                              className="flex items-center gap-1 text-fg-tertiary group-hover:text-primary transition-colors"
-                              title="Потяните вверх или вниз для смены очередности в боте"
-                            >
-                              <GripVertical size={16} />
-                            </div>
-                          )}
-
-                          <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                            Кнопка #{index + 1}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleTariff(catalogItem);
-                            }}
-                            className="flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success hover:opacity-80 transition-opacity"
-                            title="Нажмите, чтобы исключить из шага продажи"
-                          >
-                            <span className="size-1.5 rounded-full bg-success" />
-                            В воронке
-                          </button>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          {catalogItem.salesMode === 'auto' && (
-                            <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                              Автопродажа
-                            </span>
-                          )}
-                          {catalogItem.salesMode === 'application' && (
-                            <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-secondary">
-                              По заявкам
-                            </span>
-                          )}
-                          {catalogItem.salesMode === 'hybrid' && (
-                            <span className="rounded-md border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                              Гибрид
-                            </span>
-                          )}
-                        </div>
+                  {/* Left Section: Drag Handle + Checkbox + # badge + Title & Deliverables */}
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    {/* Drag Handle */}
+                    {selectedCount > 1 && (
+                      <div
+                        className="flex items-center text-fg-tertiary group-hover:text-primary transition-colors shrink-0"
+                        title="Потяните вверх или вниз для смены очередности в боте"
+                      >
+                        <GripVertical size={16} />
                       </div>
+                    )}
 
-                      {/* Title */}
-                      <h3 className="text-lg font-bold leading-snug text-foreground">
-                        {catalogItem.name || 'Без названия'}
-                      </h3>
+                    {/* Checkbox toggle */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleTariff(catalogItem);
+                      }}
+                      className="shrink-0 text-primary hover:opacity-80 transition-opacity"
+                      title="Нажмите, чтобы исключить из шага продажи"
+                    >
+                      <CheckCircle2 size={18} className="fill-primary text-white dark:text-card" />
+                    </button>
 
-                      {/* Description preview */}
-                      <p className="text-xs text-fg-secondary line-clamp-2 leading-relaxed min-h-[32px]">
-                        {stripTelegramHtml(catalogItem.description) || (
-                          <span className="italic text-fg-tertiary">Без описания</span>
-                        )}
-                      </p>
-                    </div>
+                    {/* Order badge */}
+                    <span
+                      className="shrink-0 rounded bg-primary/15 text-primary border border-primary/25 px-1.5 py-0.5 text-[10px] font-bold tabular-nums"
+                      title={`Кнопка #${index + 1} в Telegram`}
+                    >
+                      #{index + 1}
+                    </span>
 
-                    {/* Price Section */}
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-baseline gap-2">
-                        <span className="font-accent tabular-nums text-2xl font-bold text-foreground">
-                          {catalogItem.price ? `${formatNumber(catalogItem.price)} ₽` : 'Бесплатно'}
+                    {/* Title, Badges & Deliverables */}
+                    <div className="flex flex-col min-w-0 flex-1 justify-center">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className="text-[13px] font-bold text-foreground truncate leading-snug"
+                          title={catalogItem.description ? stripTelegramHtml(catalogItem.description) : undefined}
+                        >
+                          {catalogItem.name || 'Без названия'}
                         </span>
+
                         {isSubscription && (
-                          <span className="text-sm text-fg-secondary">
-                            {getPeriodSuffix(catalogItem.billingPeriod)}
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/10 text-primary shrink-0 leading-none">
+                            {getPeriodSuffix(catalogItem.billingPeriod).replace('/', '').trim()}
                           </span>
                         )}
-                        {Boolean(catalogItem.oldPrice) && (
-                          <span className="font-accent tabular-nums text-sm text-fg-tertiary line-through">
-                            {formatNumber(catalogItem.oldPrice)} ₽
+
+                        {/* Status pill (from image copy 2.png) */}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/25 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400 shrink-0">
+                          <span className="size-1.5 rounded-full bg-emerald-400" />
+                          В воронке
+                        </span>
+
+                        {/* Sales mode badge (from image copy 2.png) */}
+                        {catalogItem.salesMode === 'auto' && (
+                          <span className="hidden sm:inline-flex rounded-full border border-sky-500/25 bg-sky-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-400 shrink-0">
+                            Автопродажа
+                          </span>
+                        )}
+                        {catalogItem.salesMode === 'application' && (
+                          <span className="hidden sm:inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg-secondary shrink-0">
+                            По заявкам
+                          </span>
+                        )}
+                        {catalogItem.salesMode === 'hybrid' && (
+                          <span className="hidden sm:inline-flex rounded-full border border-purple-500/25 bg-purple-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-400 shrink-0">
+                            Гибрид
                           </span>
                         )}
                       </div>
-                      <div className="inline-flex w-fit rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-fg-secondary">
-                        {isSubscription ? 'Подписка' : 'Разовый платёж'}
-                      </div>
-                    </div>
 
-                    {/* Divider */}
-                    <div className="my-1 h-px w-full bg-border" />
-
-                    {/* Deliverables Section */}
-                    <div className="space-y-2">
-                      <div className="text-[10px] font-bold uppercase tracking-widest text-fg-tertiary">
-                        Выдача доступа
-                      </div>
-
-                      {catalogItem.deliverables && catalogItem.deliverables.length > 0 ? (
-                        catalogItem.deliverables.map((del) => {
-                          const formattedSize =
-                            del.fileSizeFormatted ||
-                            (del.fileSize ? formatNumber(Math.round(del.fileSize / 1024)) + ' КБ' : undefined);
-
-                          return (
-                            <div
-                              key={del.id}
-                              className="flex items-center gap-2.5 text-xs text-fg-secondary"
-                            >
-                              {del.type === 'channel' && (
-                                <Megaphone className="size-3.5 shrink-0 text-fg-tertiary" />
-                              )}
-                              {del.type === 'group' && (
-                                <Users className="size-3.5 shrink-0 text-fg-tertiary" />
-                              )}
-                              {del.type === 'file' && (
-                                <FileText className="size-3.5 shrink-0 text-fg-tertiary" />
-                              )}
-                              {del.type === 'link' && (
-                                <Link2 className="size-3.5 shrink-0 text-fg-tertiary" />
-                              )}
-
-                              <span className="truncate">
-                                {del.title}
-                                {del.accessNote && (
-                                  <span className="text-fg-tertiary"> · 1 вход</span>
-                                )}
-                                {del.type === 'file' && formattedSize && (
-                                  <span className="text-fg-tertiary"> ({formattedSize})</span>
-                                )}
-                              </span>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-xs italic text-fg-tertiary">
-                          Доступ не настроен
+                      {/* Deliverable badges (Channel, Chat, File, Link) */}
+                      {catalogItem.deliverables && catalogItem.deliverables.length > 0 && (
+                        <div className="mt-0.5">
+                          {renderDeliverableBadges(catalogItem.deliverables)}
                         </div>
                       )}
                     </div>
                   </div>
 
-                  {/* Divider */}
-                  <div className="my-3 h-px w-full bg-border" />
-
-                  {/* Footer: Buyers count & actions */}
-                  <div className="flex shrink-0 items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                      <Users className="size-3.5 text-fg-tertiary" />
-                      <span>
-                        {formatNumber(catalogItem.buyersCount || 0)} {pluralizeBuyers(catalogItem.buyersCount || 0)}
+                  {/* Right Section: Price + Reorder arrows + Edit/Delete */}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-baseline gap-1.5 text-right">
+                      {Boolean(catalogItem.oldPrice) && (
+                        <span className="font-accent tabular-nums text-[11px] text-fg-tertiary line-through">
+                          {formatNumber(catalogItem.oldPrice)} ₽
+                        </span>
+                      )}
+                      <span className="font-accent tabular-nums text-[13px] font-bold text-foreground">
+                        {catalogItem.price ? `${formatNumber(catalogItem.price)} ₽` : 'Бесплатно'}
                       </span>
+                      {isSubscription && (
+                        <span className="text-[11px] text-fg-secondary">
+                          {getPeriodSuffix(catalogItem.billingPeriod)}
+                        </span>
+                      )}
                     </div>
 
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      {/* Up / Down buttons */}
-                      {selectedCount > 1 && (
-                        <div className="flex items-center gap-0.5 mr-1 bg-muted/60 p-0.5 rounded-lg border border-border">
-                          <button
-                            type="button"
-                            disabled={index === 0}
-                            onClick={() => handleMoveTariff(index, -1)}
-                            className="p-1 rounded text-fg-secondary hover:text-foreground hover:bg-card disabled:opacity-25 disabled:pointer-events-none transition-colors"
-                            title="Переместить выше в меню Telegram-бота"
-                            aria-label="Переместить выше"
-                          >
-                            <ArrowUp size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={index === selectedCount - 1}
-                            onClick={() => handleMoveTariff(index, 1)}
-                            className="p-1 rounded text-fg-secondary hover:text-foreground hover:bg-card disabled:opacity-25 disabled:pointer-events-none transition-colors"
-                            title="Переместить ниже в меню Telegram-бота"
-                            aria-label="Переместить ниже"
-                          >
-                            <ArrowDown size={13} />
-                          </button>
-                        </div>
-                      )}
+                    {/* Up / Down reorder arrows */}
+                    {selectedCount > 1 && (
+                      <div
+                        className="flex items-center gap-0.5 bg-muted/60 p-0.5 rounded-lg border border-border"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => handleMoveTariff(index, -1)}
+                          className="p-1 rounded text-fg-secondary hover:text-foreground hover:bg-card disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                          title="Переместить выше в меню Telegram-бота"
+                          aria-label="Переместить выше"
+                        >
+                          <ArrowUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === selectedCount - 1}
+                          onClick={() => handleMoveTariff(index, 1)}
+                          className="p-1 rounded text-fg-secondary hover:text-foreground hover:bg-card disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                          title="Переместить ниже в меню Telegram-бота"
+                          aria-label="Переместить ниже"
+                        >
+                          <ArrowDown size={13} />
+                        </button>
+                      </div>
+                    )}
 
-                      {/* Edit button */}
+                    {/* Action buttons (Edit & Delete) */}
+                    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         onClick={() => handleOpenEditModal(catalogItem)}
@@ -677,7 +661,6 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                         <Pencil size={13} />
                       </button>
 
-                      {/* Delete button */}
                       <button
                         type="button"
                         onClick={() => handleDeleteTariff(catalogItem)}
@@ -697,160 +680,94 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
 
         {/* Inactive tariffs outside the funnel */}
         {!isLoading && unselectedTariffs.length > 0 && (
-          <div className="flex flex-col gap-3 mt-4 pt-4 border-t border-border">
+          <div className="flex flex-col gap-2 mt-2 pt-3 border-t border-border">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-fg-tertiary">
                 Тарифы вне воронки ({unselectedTariffs.length})
               </span>
               <span className="text-[11px] text-fg-tertiary">
-                Нажмите «Добавить в воронку», чтобы включить в шаг продажи
+                Нажмите, чтобы добавить в этот шаг воронки
               </span>
             </div>
 
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-2">
               {unselectedTariffs.map((item) => {
                 const isSubscription = item.paymentType === 'subscription';
 
                 return (
                   <div
                     key={item.id}
-                    className="group relative flex flex-col rounded-2xl border border-border bg-card/60 p-5 shadow-xs transition-all opacity-85 hover:opacity-100 hover:border-border-strong hover:bg-card"
+                    onClick={() => handleToggleTariff(item)}
+                    className="group relative flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-border bg-card/60 hover:bg-card hover:border-border-strong transition-all cursor-pointer select-none opacity-85 hover:opacity-100"
                   >
-                    <div className="flex flex-1 flex-col space-y-3.5">
-                      {/* Top Row: Status button & Sales mode badge */}
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleTariff(item)}
-                            className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fg-secondary hover:bg-primary hover:text-white transition-all"
-                            title="Нажмите, чтобы добавить тариф в этот шаг воронки"
+                    {/* Left: Unchecked circle + Name & Deliverables */}
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div
+                        className="shrink-0 text-fg-tertiary group-hover:text-primary transition-colors"
+                        title="Нажмите, чтобы добавить в воронку"
+                      >
+                        <Circle size={18} />
+                      </div>
+
+                      <div className="flex flex-col min-w-0 flex-1 justify-center">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            className="text-[13px] font-semibold text-foreground truncate leading-snug"
+                            title={item.description ? stripTelegramHtml(item.description) : undefined}
                           >
-                            <Plus size={12} />
-                            Добавить в воронку
-                          </button>
-
-                          <div className="flex items-center gap-1.5">
-                            {item.salesMode === 'auto' && (
-                              <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
-                                Автопродажа
-                              </span>
-                            )}
-                            {item.salesMode === 'application' && (
-                              <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-secondary">
-                                По заявкам
-                              </span>
-                            )}
-                            {item.salesMode === 'hybrid' && (
-                              <span className="rounded-md border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
-                                Гибрид
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Title */}
-                        <h3 className="text-lg font-bold leading-snug text-foreground">
-                          {item.name || 'Без названия'}
-                        </h3>
-
-                        {/* Description preview */}
-                        <p className="text-xs text-fg-secondary line-clamp-2 leading-relaxed min-h-[32px]">
-                          {stripTelegramHtml(item.description) || (
-                            <span className="italic text-fg-tertiary">Без описания</span>
-                          )}
-                        </p>
-                      </div>
-
-                      {/* Price Section */}
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="font-accent tabular-nums text-2xl font-bold text-foreground">
-                            {item.price ? `${formatNumber(item.price)} ₽` : 'Бесплатно'}
+                            {item.name || 'Без названия'}
                           </span>
+
                           {isSubscription && (
-                            <span className="text-sm text-fg-secondary">
-                              {getPeriodSuffix(item.billingPeriod)}
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/10 text-primary shrink-0 leading-none">
+                              {getPeriodSuffix(item.billingPeriod).replace('/', '').trim()}
                             </span>
                           )}
-                          {Boolean(item.oldPrice) && (
-                            <span className="font-accent tabular-nums text-sm text-fg-tertiary line-through">
-                              {formatNumber(item.oldPrice)} ₽
+
+                          {item.salesMode === 'auto' && (
+                            <span className="hidden sm:inline-flex rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-sky-400 shrink-0">
+                              Автопродажа
+                            </span>
+                          )}
+                          {item.salesMode === 'application' && (
+                            <span className="hidden sm:inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-fg-secondary shrink-0">
+                              По заявкам
+                            </span>
+                          )}
+                          {item.salesMode === 'hybrid' && (
+                            <span className="hidden sm:inline-flex rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-purple-400 shrink-0">
+                              Гибрид
                             </span>
                           )}
                         </div>
-                        <div className="inline-flex w-fit rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-fg-secondary">
-                          {isSubscription ? 'Подписка' : 'Разовый платёж'}
-                        </div>
-                      </div>
 
-                      {/* Divider */}
-                      <div className="my-1 h-px w-full bg-border" />
-
-                      {/* Deliverables Section */}
-                      <div className="space-y-2">
-                        <div className="text-[10px] font-bold uppercase tracking-widest text-fg-tertiary">
-                          Выдача доступа
-                        </div>
-
-                        {item.deliverables && item.deliverables.length > 0 ? (
-                          item.deliverables.map((del) => {
-                            const formattedSize =
-                              del.fileSizeFormatted ||
-                              (del.fileSize ? formatNumber(Math.round(del.fileSize / 1024)) + ' КБ' : undefined);
-
-                            return (
-                              <div
-                                key={del.id}
-                                className="flex items-center gap-2.5 text-xs text-fg-secondary"
-                              >
-                                {del.type === 'channel' && (
-                                  <Megaphone className="size-3.5 shrink-0 text-fg-tertiary" />
-                                )}
-                                {del.type === 'group' && (
-                                  <Users className="size-3.5 shrink-0 text-fg-tertiary" />
-                                )}
-                                {del.type === 'file' && (
-                                  <FileText className="size-3.5 shrink-0 text-fg-tertiary" />
-                                )}
-                                {del.type === 'link' && (
-                                  <Link2 className="size-3.5 shrink-0 text-fg-tertiary" />
-                                )}
-
-                                <span className="truncate">
-                                  {del.title}
-                                  {del.accessNote && (
-                                    <span className="text-fg-tertiary"> · 1 вход</span>
-                                  )}
-                                  {del.type === 'file' && formattedSize && (
-                                    <span className="text-fg-tertiary"> ({formattedSize})</span>
-                                  )}
-                                </span>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="text-xs italic text-fg-tertiary">
-                            Доступ не настроен
+                        {item.deliverables && item.deliverables.length > 0 && (
+                          <div className="mt-0.5">
+                            {renderDeliverableBadges(item.deliverables)}
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Divider */}
-                    <div className="my-3 h-px w-full bg-border" />
-
-                    {/* Footer: Buyers count & actions */}
-                    <div className="flex shrink-0 items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 text-xs text-fg-secondary">
-                        <Users className="size-3.5 text-fg-tertiary" />
-                        <span>
-                          {formatNumber(item.buyersCount || 0)} {pluralizeBuyers(item.buyersCount || 0)}
+                    {/* Right: Price + Edit/Delete */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-baseline gap-1.5 text-right">
+                        {Boolean(item.oldPrice) && (
+                          <span className="font-accent tabular-nums text-[11px] text-fg-tertiary line-through">
+                            {formatNumber(item.oldPrice)} ₽
+                          </span>
+                        )}
+                        <span className="font-accent tabular-nums text-[13px] font-bold text-foreground">
+                          {item.price ? `${formatNumber(item.price)} ₽` : 'Бесплатно'}
                         </span>
+                        {isSubscription && (
+                          <span className="text-[11px] text-fg-secondary">
+                            {getPeriodSuffix(item.billingPeriod)}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        {/* Edit button */}
+                      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => handleOpenEditModal(item)}
@@ -860,8 +777,6 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                         >
                           <Pencil size={13} />
                         </button>
-
-                        {/* Delete button */}
                         <button
                           type="button"
                           onClick={() => handleDeleteTariff(item)}
@@ -894,6 +809,21 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             Выбран 1 тариф. Клиент сразу получит сообщение с кнопкой покупки без промежуточного меню.
           </p>
         )}
+
+        {/* "+ Создать новый тариф" dashed button at bottom */}
+        <button
+          type="button"
+          onClick={() => {
+            if (onNavigateToCreateTariff) {
+              onNavigateToCreateTariff();
+            } else {
+              handleOpenCreateModal();
+            }
+          }}
+          className="flex items-center justify-center gap-2 w-full h-10 border border-dashed border-primary/40 text-primary bg-primary/5 hover:bg-primary/10 rounded-xl text-xs font-semibold hover:border-primary active:scale-[0.99] transition-all shadow-2xs mt-1 cursor-pointer"
+        >
+          <Plus size={15} /> Создать новый тариф
+        </button>
       </div>
 
       {/* ─── Tariff Editor Modal ─── */}
