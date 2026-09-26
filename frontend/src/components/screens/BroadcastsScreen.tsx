@@ -128,8 +128,11 @@ export function BroadcastsScreen({ bot, initialTab = 'broadcasts' }: { bot: BotC
 
   const { setToastMessage } = useAppState();
 
-  /** После создания: тост + прокрутка наверх, чтобы scheduled был виден первым. */
+  /** После создания: тост + прокрутка наверх истории, чтобы scheduled был виден первым. */
   const notifyCreated = (scheduledAt: string | null) => {
+    document
+      .querySelector('#broadcasts-history-scroll')
+      ?.scrollTo({ top: 0, behavior: 'smooth' });
     document
       .querySelector('[data-app-scroll-container]')
       ?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -153,24 +156,28 @@ export function BroadcastsScreen({ bot, initialTab = 'broadcasts' }: { bot: BotC
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto flex flex-col gap-6 pb-20">
-      <PageHeader
-        kicker={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
-        tone={tab === 'audience' ? 'indigo' : 'orange'}
-        title={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
-        hint={tab === 'audience'
-          ? `${bot.name} · Кто пишет боту и кто оплатил`
-          : `${bot.name} · Сегменты аудитории и рассылки по ним`}
-      />
+    <div className="w-full max-w-6xl mx-auto flex flex-col gap-4 flex-1 min-h-0 lg:h-full">
+      <div className="shrink-0">
+        <PageHeader
+          kicker={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
+          tone={tab === 'audience' ? 'indigo' : 'orange'}
+          title={tab === 'audience' ? 'Аудитория' : 'Рассылки'}
+          hint={tab === 'audience'
+            ? `${bot.name} · Кто пишет боту и кто оплатил`
+            : `${bot.name} · Сегменты аудитории и рассылки по ним`}
+        />
+      </div>
 
-      <div>
+      <div className="flex-1 min-h-0 flex flex-col">
         {tab === 'audience' ? (
-          <AudienceTab
-            botId={bot.id}
-            summary={summary}
-            summaryLoading={summaryLoading}
-            onCompose={() => setComposerOpen(true)}
-          />
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <AudienceTab
+              botId={bot.id}
+              summary={summary}
+              summaryLoading={summaryLoading}
+              onCompose={() => setComposerOpen(true)}
+            />
+          </div>
         ) : (
           <BroadcastsTabContent botId={bot.id} counts={summary} mediaReady={Boolean(bot.mediaSyncDone)} onCreated={notifyCreated} />
         )}
@@ -732,10 +739,10 @@ function BroadcastsTabContent({
   const historyBroadcasts = (broadcasts || []).slice(0, 15);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-6 items-start">
-      {/* Левая колонка: Настройки новой рассылки (независимый скролл) */}
-      <div className="rounded-3xl border border-border bg-card p-4 sm:p-6 shadow-xs lg:sticky lg:top-4 lg:max-h-[calc(100dvh-5rem)] lg:overflow-y-auto">
-        <div className="mb-4 flex items-center gap-2.5 border-b border-border/60 pb-3">
+    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-5 flex-1 min-h-0 lg:h-full items-stretch">
+      {/* Левая колонка: Настройки новой рассылки (фиксированный размер, скролл внутри блока) */}
+      <div className="rounded-3xl border border-border bg-card shadow-xs flex flex-col h-[580px] lg:h-full min-h-0 overflow-hidden">
+        <div className="shrink-0 p-4 sm:p-5 pb-3 flex items-center gap-2.5 border-b border-border/60">
           <span className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <Send className="size-4.5" />
           </span>
@@ -745,31 +752,33 @@ function BroadcastsTabContent({
           </div>
         </div>
 
-        {counts && counts.all > 0 ? (
-          <BroadcastComposerForm
-            botId={botId}
-            counts={counts}
-            onCreated={(scheduledAt) => {
-              setReloadKey((k) => k + 1);
-              onCreated(scheduledAt);
-            }}
-            mediaReady={mediaReady}
-            tariffs={tariffs}
-            idPrefix="broadcast-composer"
-          />
-        ) : (
-          <div className="py-8 text-center text-body-sm text-fg-tertiary">
-            <p className="font-semibold text-foreground">Аудитория пока пуста</p>
-            <p className="mt-1 text-xs text-fg-secondary">
-              Чтобы запустить рассылку, дождитесь первых пользователей бота.
-            </p>
-          </div>
-        )}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5">
+          {counts && counts.all > 0 ? (
+            <BroadcastComposerForm
+              botId={botId}
+              counts={counts}
+              onCreated={(scheduledAt) => {
+                setReloadKey((k) => k + 1);
+                onCreated(scheduledAt);
+              }}
+              mediaReady={mediaReady}
+              tariffs={tariffs}
+              idPrefix="broadcast-composer"
+            />
+          ) : (
+            <div className="py-8 text-center text-body-sm text-fg-tertiary">
+              <p className="font-semibold text-foreground">Аудитория пока пуста</p>
+              <p className="mt-1 text-xs text-fg-secondary">
+                Чтобы запустить рассылку, дождитесь первых пользователей бота.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Правая колонка: История рассылок до 15 шт (независимый скролл) */}
-      <div className="rounded-3xl border border-border bg-card p-4 sm:p-5 shadow-xs lg:sticky lg:top-4 lg:max-h-[calc(100dvh-5rem)] lg:overflow-y-auto space-y-4" aria-label="История рассылок">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-3">
+      {/* Правая колонка: История рассылок до 15 шт (фиксированный размер, скролл внутри блока) */}
+      <div className="rounded-3xl border border-border bg-card shadow-xs flex flex-col h-[580px] lg:h-full min-h-0 overflow-hidden" aria-label="История рассылок">
+        <div className="shrink-0 p-4 sm:p-5 pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/60">
           <div className="flex items-center gap-2">
             <Clock className="size-4.5 text-primary" />
             <h2 className="text-sm sm:text-base font-bold text-foreground">История отправок</h2>
@@ -787,21 +796,22 @@ function BroadcastsTabContent({
         </div>
 
         {error && (
-          <div className="rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
+          <div className="shrink-0 mx-4 sm:mx-5 mt-3 rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
             {error}
           </div>
         )}
 
-        {historyBroadcasts.length === 0 ? (
-          <div className="py-10 text-center">
-            <Megaphone className="mx-auto size-8 text-fg-tertiary opacity-60 mb-2" />
-            <p className="font-semibold text-sm text-foreground">История рассылок пуста</p>
-            <p className="mt-1 text-xs text-fg-secondary">
-              Заполните форму слева и отправьте первое сообщение подписчикам.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
+        <div id="broadcasts-history-scroll" className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
+          {historyBroadcasts.length === 0 ? (
+            <div className="py-10 text-center">
+              <Megaphone className="mx-auto size-8 text-fg-tertiary opacity-60 mb-2" />
+              <p className="font-semibold text-sm text-foreground">История рассылок пуста</p>
+              <p className="mt-1 text-xs text-fg-secondary">
+                Заполните форму слева и отправьте первое сообщение подписчикам.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
             {historyBroadcasts.map((broadcast) => {
               const meta = statusMeta[broadcast.status];
               const total = broadcast.totalRecipients;
@@ -924,7 +934,8 @@ function BroadcastsTabContent({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 /** «1 рассылка / 2 рассылки / 5 рассылок». */

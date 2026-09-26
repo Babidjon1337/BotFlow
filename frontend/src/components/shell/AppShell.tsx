@@ -141,28 +141,38 @@ export function AppShell({
           </nav>
         )}
 
-        <main
-          data-app-scroll-container
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto"
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={route.level === 'account' ? `acc-${route.tab}` : `bot-${activeBot?.id ?? ''}-${route.view}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
+        {(() => {
+          const isBroadcasts = route.level === 'bot' && route.view === 'broadcasts';
+          return (
+            <main
+              data-app-scroll-container
               className={cn(
-                isFirstEntry
-                  ? 'min-h-full w-full'
-                  : 'mx-auto w-full px-4 pb-24 pt-3 lg:px-8 lg:pb-10 lg:pt-4',
-                !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-6xl'),
+                'min-h-0 min-w-0 flex-1',
+                isBroadcasts ? 'overflow-y-auto lg:overflow-hidden lg:flex lg:flex-col' : 'overflow-y-auto',
               )}
             >
-              {children}
-            </motion.div>
-          </AnimatePresence>
-        </main>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={route.level === 'account' ? `acc-${route.tab}` : `bot-${activeBot?.id ?? ''}-${route.view}`}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className={cn(
+                    isFirstEntry
+                      ? 'min-h-full w-full'
+                      : isBroadcasts
+                        ? 'mx-auto w-full px-4 pt-3 lg:px-8 lg:pt-4 max-w-6xl pb-24 lg:pb-3 lg:flex-1 lg:flex lg:flex-col lg:min-h-0'
+                        : 'mx-auto w-full px-4 pb-24 pt-3 lg:px-8 lg:pb-10 lg:pt-4',
+                    !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-6xl'),
+                  )}
+                >
+                  {children}
+                </motion.div>
+              </AnimatePresence>
+            </main>
+          );
+        })()}
       </div>
 
       {!isFirstEntry && (
