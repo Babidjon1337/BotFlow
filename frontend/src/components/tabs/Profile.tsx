@@ -177,7 +177,7 @@ export const Profile = () => {
                 <div className="flex items-center gap-2 mb-2.5">
                   <Zap size={15} className="text-[var(--color-foreground-tertiary)]" />
                   <span className="text-[13px] font-medium text-[var(--color-foreground-secondary)]">
-                    Работают сейчас
+                    Активны сейчас
                   </span>
                 </div>
                 <span className="text-[30px] md:text-[34px] font-black text-[var(--color-success)] tracking-tight leading-none tabular-nums">
@@ -311,7 +311,7 @@ export const Profile = () => {
                               {isFree
                                 ? "Бессрочно · 0 ₽"
                                 : isActive
-                                ? "Работает · 990 ₽/мес"
+                                ? "Активен · 990 ₽/мес"
                                 : "Черновик · 0 ₽"}
                             </span>
                           </div>

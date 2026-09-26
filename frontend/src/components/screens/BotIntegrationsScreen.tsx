@@ -333,7 +333,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
         aria-label="Платформы"
       >
         <article
-          className={`flex flex-col items-center rounded-[16px] border p-2.5 text-center transition-all duration-500 sm:p-4 ${
+          className={`flex flex-col items-center rounded-[16px] border p-2 text-center transition-all duration-500 sm:p-4 ${
             highlightedBlock === 'platform'
               ? 'border-primary ring-2 ring-primary/40 bg-accent/40 shadow-sm'
               : hasToken
@@ -343,29 +343,41 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                 : 'border-border bg-card'
           }`}
         >
-          <span className={`flex size-14 shrink-0 items-center justify-center rounded-[16px] [&_svg]:size-10 sm:size-[84px] sm:rounded-[18px] sm:[&_svg]:size-[56px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
+          <span className={`flex size-12 shrink-0 items-center justify-center rounded-[14px] [&_svg]:size-7 sm:size-[84px] sm:rounded-[18px] sm:[&_svg]:size-[56px] ${hasToken ? 'bg-[#229ED9] shadow-sm' : 'bg-muted'}`}>
             <TelegramGlyph active={hasToken} />
           </span>
-          <h3 className={`mt-2 text-body-sm font-bold sm:mt-2.5 sm:text-body ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
+          <h3 className={`mt-1.5 text-body-sm font-bold sm:mt-2.5 sm:text-body ${hasToken ? '' : 'text-fg-tertiary'}`}>Telegram</h3>
           {hasToken ? (
             <p className="mt-0.5 w-full truncate text-micro text-fg-secondary">{bot.username}</p>
           ) : (
             <p className="mt-0.5 text-micro text-fg-tertiary">Токен @BotFather</p>
           )}
-          <div className="mt-1.5 sm:mt-2">
+          <div className="mt-1 sm:mt-2">
             <StatusBadge
               tone={bot.mediaSyncDone ? 'success' : hasToken ? 'warning' : 'neutral'}
-              label={bot.mediaSyncDone ? 'Готов к работе' : hasToken ? 'Ожидает /start' : 'Не подключён'}
+              label={
+                bot.mediaSyncDone ? (
+                  'Активен'
+                ) : hasToken ? (
+                  <>
+                    <span className="sm:hidden">Ожидает</span>
+                    <span className="hidden sm:inline">Ожидает /start</span>
+                  </>
+                ) : (
+                  'Не подключён'
+                )
+              }
             />
           </div>
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => { setTokenFormOpen((open) => !open); setToken(''); setTokenError(null); }}
-              className="inline-flex items-center gap-1 text-micro font-medium text-fg-secondary hover:text-fg-primary transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] sm:text-micro font-medium text-fg-secondary hover:text-fg-primary transition-colors"
             >
-              <KeyRound className="size-3" aria-hidden="true" />
-              {hasToken ? 'Изменить токен' : 'Вставить токен'}
+              <KeyRound className="size-3 shrink-0" aria-hidden="true" />
+              <span className="sm:hidden">{hasToken ? 'Токен' : 'Токен'}</span>
+              <span className="hidden sm:inline">{hasToken ? 'Изменить токен' : 'Вставить токен'}</span>
             </button>
             {hasToken && (
               <button
@@ -373,10 +385,10 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                 onClick={() => void handleManualSync()}
                 disabled={isSyncing}
                 title="Синхронизировать медиа и сценарий"
-                className="inline-flex items-center gap-1 text-micro font-medium text-primary hover:underline disabled:opacity-50"
+                className="inline-flex items-center gap-1 text-[11px] sm:text-micro font-medium text-primary hover:underline disabled:opacity-50"
               >
-                <RefreshCw className={`size-3 ${isSyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
-                {isSyncing ? 'Синхронизация…' : 'Синхр.'}
+                <RefreshCw className={`size-3 shrink-0 ${isSyncing ? 'animate-spin' : ''}`} aria-hidden="true" />
+                <span>{isSyncing ? 'Синхр…' : 'Синхр.'}</span>
               </button>
             )}
           </div>
@@ -386,16 +398,16 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           <article
             key={platform}
             aria-disabled
-            className="flex flex-col items-center rounded-[16px] border border-dashed border-border-strong bg-card p-2.5 text-center sm:p-4"
+            className="flex flex-col items-center rounded-[16px] border border-dashed border-border-strong bg-card p-2 text-center sm:p-4"
           >
-            <span className="flex size-14 shrink-0 items-center justify-center rounded-[16px] bg-muted [&_img]:size-10 sm:size-[84px] sm:rounded-[18px] sm:[&_img]:size-16">
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-[14px] bg-muted [&_img]:size-7 sm:size-[84px] sm:rounded-[18px] sm:[&_img]:size-16">
               <PlatformGlyph platform={platform} size={64} className="opacity-60" />
             </span>
-            <h3 className="mt-2 text-body-sm font-bold text-fg-tertiary sm:mt-2.5 sm:text-body">
+            <h3 className="mt-1.5 text-body-sm font-bold text-fg-tertiary sm:mt-2.5 sm:text-body">
               {{ vk: 'VK', max: 'MAX' }[platform]}
             </h3>
             <p className="mt-0.5 text-micro text-fg-tertiary">Свои ключи</p>
-            <div className="mt-1.5 sm:mt-2">
+            <div className="mt-1 sm:mt-2">
               <span className="rounded-full bg-muted px-2 py-0.5 text-micro font-medium text-fg-tertiary">скоро</span>
             </div>
           </article>

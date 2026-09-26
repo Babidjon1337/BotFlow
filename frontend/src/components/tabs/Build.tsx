@@ -814,16 +814,16 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
       `}</style>
 
       {/* Compact Scenario Header */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+      <div className="mb-3 sm:mb-4 flex items-center justify-between gap-2 border-b border-border pb-2.5 sm:pb-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="kicker text-cyan">Сценарий</span>
-            <span className="text-fg-tertiary">·</span>
-            <h1 className="text-body-lg font-bold text-foreground sm:text-title">Воронка продаж</h1>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
+            <span className="kicker text-cyan hidden sm:inline">Сценарий</span>
+            <span className="text-fg-tertiary hidden sm:inline">·</span>
+            <h1 className="text-base sm:text-title font-bold text-foreground truncate">Воронка продаж</h1>
             {/* Progress indicator (2/4) - always visible */}
             <div
               aria-live="polite"
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold border transition-colors ${
+              className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-full px-2 sm:px-2.5 py-0.5 text-[10px] sm:text-[11px] font-semibold border transition-colors shrink-0 ${
                 isAllBlocksComplete
                   ? "border-[var(--color-success-soft)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
                   : "border-[var(--color-warning-soft)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
@@ -843,13 +843,16 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
         </div>
 
         {/* Header Actions: Save Status + Bot Controls */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {/* Always visible Save Indicator (Saved / Saving / Unsaved) */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--color-surface-2)] border border-border text-[12px] font-medium text-[var(--color-foreground)]">
+          <div className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-[var(--color-surface-2)] border border-border text-[11px] sm:text-[12px] font-medium text-[var(--color-foreground)]">
             {isSaving ? (
               <>
-                <RotateCcw size={13} className="animate-spin text-[var(--color-primary)]" aria-hidden="true" />
-                <span className="text-[var(--color-primary)] font-semibold">Сохранение…</span>
+                <RotateCcw size={12} className="animate-spin text-[var(--color-primary)] sm:size-[13px]" aria-hidden="true" />
+                <span className="text-[var(--color-primary)] font-semibold">
+                  <span className="sm:hidden">Сохранение</span>
+                  <span className="hidden sm:inline">Сохранение…</span>
+                </span>
               </>
             ) : appState.isDirty ? (
               <button
@@ -859,16 +862,16 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                   tg?.HapticFeedback?.impactOccurred("medium");
                   handleSave();
                 }}
-                className="flex items-center gap-1.5 text-[var(--color-warning)] font-semibold hover:underline"
+                className="flex items-center gap-1 sm:gap-1.5 text-[var(--color-warning)] font-semibold hover:underline"
                 title="Нажмите, чтобы сохранить изменения"
               >
-                <span className="size-2 rounded-full bg-[var(--color-warning)] animate-pulse" aria-hidden="true" />
-                <span>Не сохранено</span>
-                <span className="rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-warning)] ml-0.5">Сохранить</span>
+                <span className="size-1.5 sm:size-2 rounded-full bg-[var(--color-warning)] animate-pulse" aria-hidden="true" />
+                <span className="hidden sm:inline">Не сохранено</span>
+                <span className="rounded bg-[var(--color-warning-soft)] px-1 sm:px-1.5 py-0.5 text-[10px] text-[var(--color-warning)]">Сохранить</span>
               </button>
             ) : (
               <>
-                <CheckCircle2 size={13} className="text-[var(--color-success)]" aria-hidden="true" />
+                <CheckCircle2 size={12} className="text-[var(--color-success)] sm:size-[13px]" aria-hidden="true" />
                 <span className="text-[var(--color-foreground-secondary)]">Сохранено</span>
               </>
             )}
@@ -878,7 +881,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
             type="button"
             onClick={() => toggleBot(appState.activeBot!)}
             disabled={isToggling[appState.activeBot.id]}
-            className="size-9 rounded-lg flex items-center justify-center border transition-colors"
+            className="size-8 sm:size-9 rounded-lg flex items-center justify-center border transition-colors shrink-0"
             style={{
               borderColor:
                 appState.activeBot.status === "active"
@@ -901,7 +904,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
             {isToggling[appState.activeBot.id] ? (
               <div className="animate-spin size-3.5 border-2 border-current border-t-transparent rounded-full" />
             ) : (
-              <Power size={16} />
+              <Power size={15} className="sm:size-4" />
             )}
           </button>
         </div>

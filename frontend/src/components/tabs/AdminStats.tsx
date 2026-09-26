@@ -756,7 +756,7 @@ export function AdminStats() {
 function Overview({ overview, operations, loading, onNavigate, onRetryOperation, retryingOperationId }: { overview: AdminOverview | null; operations: AdminOperation[]; loading: boolean; onNavigate: (section: AdminSection) => void; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
   const metrics = [
     { label: "Владельцы ботов", value: overview?.users_total, icon: Users, note: "Зарегистрированы в BotFlow" },
-    { label: "Активные боты", value: overview ? `${overview.bots_active} / ${overview.bots_total}` : null, icon: Bot, note: "Работают сейчас" },
+    { label: "Активные боты", value: overview ? `${overview.bots_active} / ${overview.bots_total}` : null, icon: Bot, note: "Активны сейчас" },
     { label: "SaaS-выручка", value: overview ? formatAmount(overview.saas_revenue) : null, icon: CreditCard, note: "Подтверждённые платежи" },
     { label: "Требуют внимания", value: overview?.operations_requiring_attention, icon: AlertTriangle, note: "Выдача доступа или уведомление" },
   ];
@@ -1160,7 +1160,7 @@ function UserProfileScreen({
           {/* ── 4 compact metrics ── */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <ProfileMetric icon={<Bot size={16} />} label="Всего ботов" value={String(bots.length)} note={`В аккаунте: ${user.bots_count}`} />
-            <ProfileMetric icon={<Activity size={16} />} label="Работает" value={`${activeRunningCount} / ${bots.length}`} note="Активные боты" />
+            <ProfileMetric icon={<Activity size={16} />} label="Активны" value={`${activeRunningCount} / ${bots.length}`} note="Активные боты" />
             <ProfileMetric icon={<ShieldCheck size={16} />} label="С подпиской" value={`${activeSubCount} / ${bots.length}`} note="1 бот = 1 подписка" />
             <ProfileMetric icon={<Clock size={16} />} label="Регистрация" value={formatDate(user.created_at).split(",")[0]} note={formatDate(user.created_at).split(",")[1]?.trim()} />
           </div>
@@ -1789,7 +1789,7 @@ function AdminBotRow({
               {bot.display_name}
             </h4>
             <StatusBadge tone={isActive ? "success" : bot.status === "archived" ? "danger" : "neutral"}>
-              {isActive ? "Работает" : bot.status === "archived" ? "Архив" : "Черновик"}
+              {isActive ? "Активен" : bot.status === "archived" ? "Архив" : "Черновик"}
             </StatusBadge>
             {userIsVip ? (
               <StatusBadge tone="success">
@@ -2428,7 +2428,7 @@ function SystemRow({ label, value, tone }: { label: string; value: string; tone:
         <p className="text-sm font-semibold text-[var(--color-foreground)]">{label}</p>
         <p className="mt-1 break-words text-xs leading-5 text-[var(--color-foreground-secondary)]">{value}</p>
       </div>
-      <StatusBadge tone={tone}>{tone === "success" ? "Работает" : tone === "danger" ? "Ошибка" : "Ожидает"}</StatusBadge>
+      <StatusBadge tone={tone}>{tone === "success" ? "Активен" : tone === "danger" ? "Ошибка" : "Ожидает"}</StatusBadge>
     </div>
   );
 }

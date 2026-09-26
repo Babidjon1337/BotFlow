@@ -258,21 +258,24 @@ export const TelegramTextEditor = ({
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isEditorFocused, setIsEditorFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
-  const [keyboardBottomOffset, setKeyboardBottomOffset] = useState(0);
+  const [toolbarTop, setToolbarTop] = useState<number | null>(null);
 
   useEffect(() => {
     const updateViewport = () => {
       if (typeof window === "undefined") return;
       const isMobile = window.innerWidth < 1024;
-      const vv = window.visualViewport;
-      if (vv && isMobile) {
-        const isKbd = window.innerHeight - vv.height > 100;
-        setIsKeyboardOpen(isKbd);
-        const bottomOffset = window.innerHeight - (vv.offsetTop + vv.height);
-        setKeyboardBottomOffset(Math.max(0, bottomOffset));
-      } else {
+      if (!isMobile) {
         setIsKeyboardOpen(false);
-        setKeyboardBottomOffset(0);
+        setToolbarTop(null);
+        return;
+      }
+      const vv = window.visualViewport;
+      if (vv) {
+        setToolbarTop(Math.round(vv.offsetTop + vv.height - 44));
+        setIsKeyboardOpen(true);
+      } else {
+        setToolbarTop(null);
+        setIsKeyboardOpen(true);
       }
     };
 
@@ -280,10 +283,12 @@ export const TelegramTextEditor = ({
     window.visualViewport?.addEventListener("resize", updateViewport);
     window.visualViewport?.addEventListener("scroll", updateViewport);
     window.addEventListener("resize", updateViewport);
+    window.addEventListener("scroll", updateViewport);
     return () => {
       window.visualViewport?.removeEventListener("resize", updateViewport);
       window.visualViewport?.removeEventListener("scroll", updateViewport);
       window.removeEventListener("resize", updateViewport);
+      window.removeEventListener("scroll", updateViewport);
     };
   }, []);
 
@@ -1282,10 +1287,12 @@ export const TelegramTextEditor = ({
         isKeyboardOpen &&
         createPortal(
           <div
-            style={{
-              bottom: `${keyboardBottomOffset}px`,
-            }}
-            className="fixed inset-x-0 z-[9999] flex items-center justify-between gap-1 border-t border-b border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 shadow-2xl backdrop-blur-md select-none lg:hidden"
+            style={
+              toolbarTop !== null
+                ? { top: `${toolbarTop}px`, bottom: "auto" }
+                : { bottom: 0 }
+            }
+            className="fixed inset-x-0 z-[9999] flex h-11 items-center justify-between gap-1 border-t border-b border-[var(--color-border)] bg-[var(--color-surface)] px-2 shadow-2xl backdrop-blur-md select-none lg:hidden"
             onMouseDown={(e) => e.preventDefault()}
             onPointerDown={(e) => e.preventDefault()}
           >

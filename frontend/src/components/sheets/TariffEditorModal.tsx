@@ -529,7 +529,7 @@ function TariffEditorForm({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 backdrop-blur-xs sm:items-center sm:p-4"
+      className="fixed inset-0 z-[140] flex flex-col bg-background sm:bg-black/60 sm:items-center sm:justify-center sm:p-4 backdrop-blur-xs"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -539,24 +539,34 @@ function TariffEditorForm({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 30 }}
         transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[20px] border border-border bg-card shadow-2xl sm:max-w-3xl sm:w-full sm:rounded-[20px]"
+        className="flex h-full w-full flex-col overflow-hidden bg-card sm:h-auto sm:max-h-[92vh] sm:max-w-3xl sm:rounded-[20px] sm:border sm:border-border sm:shadow-2xl"
       >
         {/* Modal Header */}
-        <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-border bg-card px-6 py-4">
-          <h2 className="truncate text-lg font-bold text-foreground">
-            {isEditing ? `Редактирование: ${tariff?.name}` : 'Создание нового тарифа'}
-          </h2>
+        <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex items-center gap-1 text-sm font-medium text-fg-secondary hover:text-foreground sm:hidden -ml-1 pr-1.5"
+            >
+              <ArrowLeft className="size-5" />
+              <span>Назад</span>
+            </button>
+            <h2 className="truncate text-base sm:text-lg font-bold text-foreground">
+              {isEditing ? `Редактирование: ${tariff?.name}` : 'Создание нового тарифа'}
+            </h2>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
+            className="hidden sm:flex size-8 shrink-0 items-center justify-center rounded-full text-fg-secondary transition-colors hover:bg-muted hover:text-foreground"
           >
             <X className="size-5" />
           </button>
         </div>
 
         {/* Modal Content */}
-        <div className="flex-1 space-y-6 overflow-y-auto p-6 text-foreground">
+        <div className="flex-1 space-y-5 sm:space-y-6 overflow-y-auto p-4 sm:p-6 text-foreground">
           {formError && (
             <div className="flex items-center gap-2 rounded-xl border border-danger/30 bg-danger-soft p-3 text-xs font-medium text-danger">
               <AlertCircle className="size-4 shrink-0" />
@@ -931,12 +941,12 @@ function TariffEditorForm({
         </div>
 
         {/* Modal Footer */}
-        <div className="sticky bottom-0 z-10 flex shrink-0 justify-end gap-2.5 border-t border-border bg-muted/30 px-6 py-3.5">
+        <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-end gap-2.5 border-t border-border bg-card sm:bg-muted/30 px-4 py-3 sm:px-6 sm:py-3.5">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="h-10 rounded-xl px-4 text-xs font-semibold text-fg-secondary transition-colors hover:bg-muted"
+            className="hidden sm:inline-flex h-10 rounded-xl px-4 text-xs font-semibold text-fg-secondary transition-colors hover:bg-muted"
           >
             Отмена
           </button>
@@ -944,7 +954,7 @@ function TariffEditorForm({
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="inline-flex h-10 items-center gap-2 rounded-xl bg-primary px-4 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover disabled:opacity-50"
+            className="inline-flex h-10 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-primary px-5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover disabled:opacity-50"
           >
             {isSubmitting ? (
               <>
@@ -962,7 +972,7 @@ function TariffEditorForm({
       <AnimatePresence>
         {isDeliverableModalOpen && (
           <div
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+            className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setIsDeliverableModalOpen(false);

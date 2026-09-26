@@ -652,7 +652,7 @@ export const Home = () => {
                 {appState.activeBot?.status === "active" && (
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-success)] animate-pulse" />
                 )}
-                {appState.activeBot?.status === "active" ? "Бот работает" : "Черновик"}
+                {appState.activeBot?.status === "active" ? "Активен" : "Черновик"}
               </div>
             </div>
             <div>

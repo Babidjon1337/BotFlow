@@ -15,7 +15,7 @@ interface TopBarProps {
 
 function BotStatusBadge({ status }: { status: BotConfig['status'] }) {
   const map = {
-    active: { label: 'Работает', className: 'bg-success-soft text-success' },
+    active: { label: 'Активен', className: 'bg-success-soft text-success' },
     inactive: { label: 'Черновик', className: 'bg-muted text-fg-secondary' },
   } as const;
   const view = map[status] ?? map.inactive;

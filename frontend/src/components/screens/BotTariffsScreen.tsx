@@ -333,13 +333,13 @@ export function BotTariffsScreen({
             return (
               <div
                 key={tariff.id}
-                className={`group relative flex flex-col rounded-2xl border border-border bg-card p-6 shadow-xs transition-all hover:border-primary hover:shadow-lg ${
+                className={`group relative flex flex-col rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-xs transition-all hover:border-primary hover:shadow-lg ${
                   !tariff.isActiveInFunnel ? 'opacity-85 hover:opacity-100' : ''
                 }`}
               >
-                <div className="flex flex-1 flex-col space-y-4">
+                <div className="flex flex-1 flex-col space-y-3 sm:space-y-4">
                   {/* Top Row: Status pill & Sales mode badge */}
-                  <div className="space-y-2">
+                  <div className="space-y-1.5 sm:space-y-2">
                     <div className="flex items-center justify-between">
                       {tariff.isActiveInFunnel ? (
                         <span className="flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
@@ -370,7 +370,7 @@ export function BotTariffsScreen({
                     </div>
 
                     {/* Title */}
-                    <h3 className="text-lg font-bold leading-snug text-foreground">
+                    <h3 className="text-base sm:text-lg font-bold leading-snug text-foreground">
                       {tariff.name}
                     </h3>
 
@@ -383,32 +383,30 @@ export function BotTariffsScreen({
                   </div>
 
                   {/* Price Section */}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="font-accent tabular-nums text-2xl font-bold text-foreground">
-                        {formatNumber(tariff.price)} ₽
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-accent tabular-nums text-xl sm:text-2xl font-bold text-foreground">
+                      {formatNumber(tariff.price)} ₽
+                    </span>
+                    {isSubscription && (
+                      <span className="text-xs sm:text-sm text-fg-secondary">
+                        {getPeriodSuffix(tariff.billingPeriod)}
                       </span>
-                      {isSubscription && (
-                        <span className="text-sm text-fg-secondary">
-                          {getPeriodSuffix(tariff.billingPeriod)}
-                        </span>
-                      )}
-                      {Boolean(tariff.oldPrice) && (
-                        <span className="font-accent tabular-nums text-sm text-fg-tertiary line-through">
-                          {formatNumber(tariff.oldPrice)} ₽
-                        </span>
-                      )}
-                    </div>
-                    <div className="inline-flex w-fit rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-fg-secondary">
+                    )}
+                    {Boolean(tariff.oldPrice) && (
+                      <span className="font-accent tabular-nums text-xs sm:text-sm text-fg-tertiary line-through">
+                        {formatNumber(tariff.oldPrice)} ₽
+                      </span>
+                    )}
+                    <span className="inline-flex rounded-md bg-muted px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-fg-secondary">
                       {isSubscription ? 'Подписка' : 'Разовый платёж'}
-                    </div>
+                    </span>
                   </div>
 
                   {/* Divider */}
-                  <div className="my-1 h-px w-full bg-border" />
+                  <div className="my-0.5 h-px w-full bg-border" />
 
                   {/* Deliverables Section */}
-                  <div className="space-y-3">
+                  <div className="space-y-2 sm:space-y-3">
                     <div className="text-[10px] font-bold uppercase tracking-widest text-fg-tertiary">
                       Выдача доступа
                     </div>
@@ -422,19 +420,19 @@ export function BotTariffsScreen({
                         return (
                           <div
                             key={del.id}
-                            className="flex items-center gap-2.5 text-xs text-fg-secondary"
+                            className="flex items-center gap-2 text-xs text-fg-secondary"
                           >
                             {del.type === 'channel' && (
-                              <Megaphone className="size-4 shrink-0 text-fg-tertiary" />
+                              <Megaphone className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />
                             )}
                             {del.type === 'group' && (
-                              <Users className="size-4 shrink-0 text-fg-tertiary" />
+                              <Users className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />
                             )}
                             {del.type === 'file' && (
-                              <FileText className="size-4 shrink-0 text-fg-tertiary" />
+                              <FileText className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />
                             )}
                             {del.type === 'link' && (
-                              <Link2 className="size-4 shrink-0 text-fg-tertiary" />
+                              <Link2 className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />
                             )}
 
                             <span className="truncate">
@@ -461,7 +459,7 @@ export function BotTariffsScreen({
                 </div>
 
                 {/* Divider */}
-                <div className="my-4 h-px w-full bg-border" />
+                <div className="my-3 sm:my-4 h-px w-full bg-border" />
 
                 {/* Footer: Buyers count & actions */}
                 <div className="flex shrink-0 items-center justify-between">
@@ -476,18 +474,18 @@ export function BotTariffsScreen({
                     <button
                       type="button"
                       onClick={() => handleOpenEdit(tariff)}
-                      className="flex size-9 items-center justify-center rounded-xl border border-border text-fg-secondary transition-all hover:border-primary hover:bg-muted hover:text-primary"
+                      className="flex size-8 sm:size-9 items-center justify-center rounded-xl border border-border text-fg-secondary transition-all hover:border-primary hover:bg-muted hover:text-primary"
                       title="Редактировать"
                     >
-                      <Pencil className="size-[18px]" />
+                      <Pencil className="size-4 sm:size-[18px]" />
                     </button>
                     <button
                       type="button"
                       onClick={() => setTariffToDelete(tariff)}
-                      className="flex size-9 items-center justify-center rounded-xl border border-border text-danger transition-all hover:border-danger hover:bg-danger-soft"
+                      className="flex size-8 sm:size-9 items-center justify-center rounded-xl border border-border text-danger transition-all hover:border-danger hover:bg-danger-soft"
                       title="Удалить"
                     >
-                      <Trash2 className="size-[18px]" />
+                      <Trash2 className="size-4 sm:size-[18px]" />
                     </button>
                   </div>
                 </div>

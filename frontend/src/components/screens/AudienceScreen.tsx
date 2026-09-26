@@ -150,7 +150,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
       />
 
       {/* Segment Cards */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
         {SEGMENTS.map((item) => {
           const isSelected = segment === item.value;
           const count = summary ? summary[item.value] : 0;
@@ -163,32 +163,32 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                 setSegment(item.value);
                 setPage(1);
               }}
-              className={`relative flex flex-col items-start justify-between rounded-2xl border p-4 text-left transition-all ${
+              className={`relative flex flex-col items-start justify-between rounded-xl sm:rounded-2xl border p-2.5 sm:p-4 text-left transition-all ${
                 isSelected
                   ? 'border-primary/60 bg-card shadow-xs ring-2 ring-primary/20'
                   : 'border-border bg-card/60 hover:border-fg-tertiary/40 hover:bg-card'
               }`}
             >
               <div className="w-full flex items-center justify-between">
-                <span className="text-xs font-semibold text-fg-secondary">
+                <span className={`text-[11px] sm:text-xs font-semibold truncate ${isSelected ? 'text-primary' : 'text-fg-secondary'}`}>
                   {item.label}
                 </span>
                 {item.value === 'paid' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 size={10} />
                     Покупки
                   </span>
                 )}
               </div>
 
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="font-accent tabular-nums text-2xl font-bold text-foreground">
-                  {summaryLoading ? <Skeleton className="h-8 w-16" /> : formatNumber(count)}
+              <div className="mt-1 sm:mt-2 flex items-baseline gap-1 sm:gap-2">
+                <span className="font-accent tabular-nums text-lg sm:text-2xl font-bold text-foreground">
+                  {summaryLoading ? <Skeleton className="h-6 sm:h-8 w-12 sm:w-16" /> : formatNumber(count)}
                 </span>
-                <span className="text-xs text-fg-tertiary">чел.</span>
+                <span className="text-[10px] sm:text-xs text-fg-tertiary">чел.</span>
               </div>
 
-              <p className="mt-1 text-[11px] text-fg-secondary">
+              <p className="hidden sm:block mt-1 text-[11px] text-fg-secondary">
                 {item.description}
               </p>
             </button>
@@ -310,8 +310,11 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
           <ul className="divide-y divide-border">
             {leads?.map((lead, index) => {
               const hasPurchases = lead.hasPurchased || (lead.purchasedTariffs && lead.purchasedTariffs.length > 0);
-              const tariffs = lead.purchasedTariffs || [];
-              const totalPaid = lead.totalPaid || tariffs.reduce((sum, t) => sum + t.amount, 0);
+              const rawTariffs = lead.purchasedTariffs || [];
+              const tariffs = Array.from(
+                new Map(rawTariffs.map((t) => [t.name || t.tariffId, t])).values()
+              );
+              const totalPaid = lead.totalPaid || rawTariffs.reduce((sum, t) => sum + t.amount, 0);
 
               return (
                 <motion.li
@@ -320,17 +323,17 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.18, delay: Math.min(index, 10) * 0.025 }}
                   onClick={() => handleLeadClick(lead)}
-                  className="group flex flex-col gap-3 p-4 transition-colors hover:bg-muted/40 cursor-pointer sm:flex-row sm:items-center sm:justify-between"
+                  className="group flex flex-col gap-2.5 p-3 sm:gap-3 sm:p-4 transition-colors hover:bg-muted/40 cursor-pointer sm:flex-row sm:items-center sm:justify-between"
                 >
                   {/* Left: User Identity */}
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-sm select-none">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex size-9 sm:size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary font-bold text-xs sm:text-sm select-none">
                       {(lead.firstName || lead.username || '?').slice(0, 1).toUpperCase()}
                     </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="truncate text-sm font-bold text-foreground">
+                        <span className="truncate text-xs sm:text-sm font-bold text-foreground">
                           {lead.firstName || lead.username || `ID ${lead.telegramId}`}
                         </span>
 
@@ -340,7 +343,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                             target="_blank"
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-0.5 text-xs text-primary hover:underline font-normal"
+                            className="inline-flex items-center gap-0.5 text-[11px] sm:text-xs text-primary hover:underline font-normal"
                           >
                             @{lead.username}
                             <ExternalLink size={10} />
@@ -348,8 +351,8 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                         )}
                       </div>
 
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-secondary">
-                        <span className="font-mono text-[11px] text-fg-tertiary">ID: {lead.telegramId}</span>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] sm:text-xs text-fg-secondary">
+                        <span className="font-mono text-[10px] sm:text-[11px] text-fg-tertiary">ID: {lead.telegramId}</span>
                         <span>В боте с {formatDate(lead.createdAt)}</span>
                         {lead.currentStep && (
                           <span className="rounded bg-muted px-1.5 py-0.2 text-[10px] text-fg-tertiary">
@@ -363,16 +366,16 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                   {/* Middle: Purchased Tariffs Display */}
                   <div className="flex flex-1 flex-col justify-center sm:items-end sm:px-4">
                     {hasPurchases ? (
-                      <div className="flex flex-col items-start sm:items-end gap-1.5">
-                        {/* Tariff Badges (shows all purchased tariffs) */}
-                        <div className="flex flex-wrap items-center gap-1.5 sm:justify-end">
+                      <div className="flex flex-col items-start sm:items-end gap-1">
+                        {/* Tariff Badges (deduplicated by name) */}
+                        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 sm:justify-end">
                           {tariffs.length > 0 ? (
                             tariffs.map((t, tIdx) => (
                               <span
-                                key={t.paymentId || tIdx}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300 shadow-2xs"
+                                key={t.paymentId || t.name || tIdx}
+                                className="inline-flex items-center gap-1 sm:gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-semibold text-emerald-700 dark:text-emerald-300 shadow-2xs"
                               >
-                                <ShoppingBag size={11} className="text-emerald-500" />
+                                <ShoppingBag size={10} className="text-emerald-500 sm:size-[11px]" />
                                 <span>{t.name}</span>
                                 <span className="font-accent tabular-nums text-emerald-600 dark:text-emerald-400">
                                   {formatNumber(t.amount)} ₽
@@ -380,22 +383,22 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                               </span>
                             ))
                           ) : (
-                            <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                              <CheckCircle2 size={11} /> Оплачен
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] sm:text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle2 size={10} /> Оплачен
                             </span>
                           )}
                         </div>
 
                         {/* Total Paid */}
                         {totalPaid > 0 && (
-                          <span className="text-[11px] font-medium text-fg-secondary">
+                          <span className="text-[10px] sm:text-[11px] font-medium text-fg-secondary">
                             Всего оплат: <strong className="font-accent tabular-nums text-foreground">{formatNumber(totalPaid)} ₽</strong>
                           </span>
                         )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-fg-tertiary">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-[10px] sm:text-[11px] font-medium text-fg-tertiary">
                           Без покупок
                         </span>
                       </div>
@@ -403,7 +406,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                   </div>
 
                   {/* Right: Actions */}
-                  <div className="flex items-center justify-end gap-2 shrink-0 pt-2 border-t border-border sm:pt-0 sm:border-0">
+                  <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-2 border-t border-border/60 sm:pt-0 sm:border-0">
                     <Button
                       size="sm"
                       variant="secondary"
@@ -411,7 +414,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                         e.stopPropagation();
                         handleLeadClick(lead);
                       }}
-                      className="h-9 px-3 text-xs font-semibold"
+                      className="h-8 px-2.5 text-[11px] sm:h-9 sm:px-3 sm:text-xs font-semibold"
                     >
                       <ReceiptText data-icon="inline-start" className="size-3.5" />
                       Счёт / Возврат
@@ -420,7 +423,7 @@ export const AudienceScreen: React.FC<AudienceScreenProps> = ({
                     <button
                       type="button"
                       aria-label="Подробнее"
-                      className="flex size-8 items-center justify-center rounded-lg text-fg-secondary transition-colors group-hover:text-foreground group-hover:bg-muted"
+                      className="flex size-7 sm:size-8 items-center justify-center rounded-lg text-fg-secondary transition-colors group-hover:text-foreground group-hover:bg-muted"
                     >
                       <ChevronRight size={16} />
                     </button>

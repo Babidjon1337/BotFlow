@@ -162,8 +162,8 @@ export function AppShell({
                     isFirstEntry
                       ? 'min-h-full w-full'
                       : isBroadcasts
-                        ? 'mx-auto w-full px-4 pt-3 lg:px-8 lg:pt-4 max-w-6xl pb-24 lg:pb-3 lg:flex-1 lg:flex lg:flex-col lg:min-h-0'
-                        : 'mx-auto w-full px-4 pb-24 pt-3 lg:px-8 lg:pb-10 lg:pt-4',
+                        ? 'mx-auto w-full px-3 sm:px-4 pt-3 lg:px-8 lg:pt-4 max-w-6xl pb-24 lg:pb-3 lg:flex-1 lg:flex lg:flex-col lg:min-h-0'
+                        : 'mx-auto w-full px-3 sm:px-4 pb-24 pt-3 lg:px-8 lg:pb-10 lg:pt-4',
                     !isFirstEntry && (route.level === 'account' && route.tab === 'admin' ? 'max-w-[1440px]' : 'max-w-6xl'),
                   )}
                 >

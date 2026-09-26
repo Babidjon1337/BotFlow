@@ -10,6 +10,7 @@ import {
   ReceiptText,
   X,
   Clock,
+  Plus,
 } from 'lucide-react';
 import type { BotConfig } from '../../types';
 import { apiService } from '../../services/api';
@@ -592,6 +593,7 @@ function BroadcastsTabContent({
   const [broadcasts, setBroadcasts] = useState<Broadcast[] | null>(null);
   const [tariffs, setTariffs] = useState<BroadcastTariffOption[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
+  const [isMobileComposerOpen, setIsMobileComposerOpen] = useState(false);
 
   // Тарифы воронки — для кнопок рассылки (только actionType link).
   useEffect(() => {
@@ -739,69 +741,82 @@ function BroadcastsTabContent({
   const historyBroadcasts = (broadcasts || []).slice(0, 15);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-5 flex-1 min-h-0 lg:h-full items-stretch">
-      {/* Левая колонка: Настройки новой рассылки (фиксированный размер, скролл внутри блока) */}
-      <div className="rounded-3xl border border-border bg-card shadow-xs flex flex-col h-[580px] lg:h-full min-h-0 overflow-hidden">
-        <div className="shrink-0 p-4 sm:p-5 pb-3 flex items-center gap-2.5 border-b border-border/60">
-          <span className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <Send className="size-4.5" />
-          </span>
-          <div>
-            <h2 className="text-sm sm:text-base font-bold text-foreground">Новая рассылка</h2>
-            <p className="text-xs text-fg-tertiary">Одно сообщение выбранному сегменту аудитории</p>
-          </div>
-        </div>
-
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 flex flex-col">
-          {counts && counts.all > 0 ? (
-            <BroadcastComposerForm
-              botId={botId}
-              counts={counts}
-              onCreated={(scheduledAt) => {
-                setReloadKey((k) => k + 1);
-                onCreated(scheduledAt);
-              }}
-              mediaReady={mediaReady}
-              tariffs={tariffs}
-              idPrefix="broadcast-composer"
-            />
-          ) : (
-            <div className="py-8 text-center text-body-sm text-fg-tertiary">
-              <p className="font-semibold text-foreground">Аудитория пока пуста</p>
-              <p className="mt-1 text-xs text-fg-secondary">
-                Чтобы запустить рассылку, дождитесь первых пользователей бота.
-              </p>
-            </div>
-          )}
-        </div>
+    <div className="flex flex-col gap-4 flex-1 min-h-0 lg:h-full">
+      {/* Кнопка на телефоне: Новая рассылка (открывает форму на весь экран) */}
+      <div className="lg:hidden">
+        <button
+          type="button"
+          onClick={() => setIsMobileComposerOpen(true)}
+          className="w-full flex items-center justify-center gap-2 h-11 rounded-2xl bg-primary text-white text-sm font-semibold shadow-xs hover:bg-primary-hover active:scale-[0.99] transition-all"
+        >
+          <Plus className="size-4.5" />
+          <span>Новая рассылка</span>
+        </button>
       </div>
 
-      {/* Правая колонка: История рассылок до 15 шт (фиксированный размер, скролл внутри блока) */}
-      <div className="rounded-3xl border border-border bg-card shadow-xs flex flex-col h-[580px] lg:h-full min-h-0 overflow-hidden" aria-label="История рассылок">
-        <div className="shrink-0 p-4 sm:p-5 pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/60">
-          <div className="flex items-center gap-2">
-            <Clock className="size-4.5 text-primary" />
-            <h2 className="text-sm sm:text-base font-bold text-foreground">История отправок</h2>
-            {historyBroadcasts.length > 0 && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary tabular-nums">
-                {historyBroadcasts.length}
-              </span>
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] gap-5 flex-1 min-h-0 lg:h-full items-stretch">
+        {/* Левая колонка: Настройки новой рассылки (только на десктопе) */}
+        <div className="hidden lg:flex rounded-3xl border border-border bg-card shadow-xs flex-col h-[580px] lg:h-full min-h-0 overflow-hidden">
+          <div className="shrink-0 p-4 sm:p-5 pb-3 flex items-center gap-2.5 border-b border-border/60">
+            <span className="flex size-9 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Send className="size-4.5" />
+            </span>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-foreground">Новая рассылка</h2>
+              <p className="text-xs text-fg-tertiary">Одно сообщение выбранному сегменту аудитории</p>
+            </div>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 sm:p-5 flex flex-col">
+            {counts && counts.all > 0 ? (
+              <BroadcastComposerForm
+                botId={botId}
+                counts={counts}
+                onCreated={(scheduledAt) => {
+                  setReloadKey((k) => k + 1);
+                  onCreated(scheduledAt);
+                }}
+                mediaReady={mediaReady}
+                tariffs={tariffs}
+                idPrefix="broadcast-composer"
+              />
+            ) : (
+              <div className="py-8 text-center text-body-sm text-fg-tertiary">
+                <p className="font-semibold text-foreground">Аудитория пока пуста</p>
+                <p className="mt-1 text-xs text-fg-secondary">
+                  Чтобы запустить рассылку, дождитесь первых пользователей бота.
+                </p>
+              </div>
             )}
           </div>
-          <p className="text-xs text-fg-secondary tabular-nums">
-            В этом месяце: <strong className="text-foreground">{monthBroadcasts.length}</strong>{' '}
-            {pluralBroadcasts(monthBroadcasts.length)} ·{' '}
-            <strong className="text-foreground">{monthDelivered.toLocaleString('ru-RU')}</strong> доставлено
-          </p>
         </div>
 
-        {error && (
-          <div className="shrink-0 mx-4 sm:mx-5 mt-3 rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
-            {error}
+        {/* Правая колонка: История рассылок (на телефоне естественный скролл страницы) */}
+        <div className="rounded-2xl sm:rounded-3xl border border-border bg-card shadow-xs flex flex-col h-auto lg:h-full min-h-0 overflow-visible lg:overflow-hidden" aria-label="История рассылок">
+          <div className="shrink-0 p-4 sm:p-5 pb-3 flex flex-wrap items-center justify-between gap-2 border-b border-border/60">
+            <div className="flex items-center gap-2">
+              <Clock className="size-4.5 text-primary" />
+              <h2 className="text-sm sm:text-base font-bold text-foreground">История отправок</h2>
+              {historyBroadcasts.length > 0 && (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary tabular-nums">
+                  {historyBroadcasts.length}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-fg-secondary tabular-nums">
+              В этом месяце: <strong className="text-foreground">{monthBroadcasts.length}</strong>{' '}
+              {pluralBroadcasts(monthBroadcasts.length)} ·{' '}
+              <strong className="text-foreground">{monthDelivered.toLocaleString('ru-RU')}</strong> доставлено
+            </p>
           </div>
-        )}
 
-        <div id="broadcasts-history-scroll" className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
+          {error && (
+            <div className="shrink-0 mx-4 sm:mx-5 mt-3 rounded-2xl border border-danger/30 bg-danger-soft px-4 py-3 text-body text-danger">
+              {error}
+            </div>
+          )}
+
+          <div id="broadcasts-history-scroll" className="h-auto lg:flex-1 min-h-0 overflow-visible lg:overflow-y-auto p-4 sm:p-5">
           {historyBroadcasts.length === 0 ? (
             <div className="py-10 text-center">
               <Megaphone className="mx-auto size-8 text-fg-tertiary opacity-60 mb-2" />
@@ -934,6 +949,25 @@ function BroadcastsTabContent({
         )}
       </div>
     </div>
+  </div>
+
+    {/* Полноэкранный композер на телефоне */}
+    <AnimatePresence>
+      {isMobileComposerOpen && (
+        <BroadcastComposerSheet
+          botId={botId}
+          counts={counts}
+          mediaReady={mediaReady}
+          tariffs={tariffs}
+          onClose={() => setIsMobileComposerOpen(false)}
+          onCreated={(scheduledAt) => {
+            setIsMobileComposerOpen(false);
+            setReloadKey((k) => k + 1);
+            onCreated(scheduledAt);
+          }}
+        />
+      )}
+    </AnimatePresence>
   </div>
 );
 }

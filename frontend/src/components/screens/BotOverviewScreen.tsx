@@ -193,7 +193,7 @@ function LaunchChecklist({
     }
     return {
       badge: 'Бот активен',
-      title: 'Воронка работает',
+      title: 'Воронка активна',
       description: 'Бот запущен и принимает сообщения. Вы можете редактировать сценарий или управлять тарифами.',
       buttonLabel: 'Открыть сценарий',
       buttonIcon: ArrowRight,
@@ -208,7 +208,7 @@ function LaunchChecklist({
         kicker="Обзор"
         tone="blue"
         title="Запуск бота"
-        hint={`${bot.name} · Подготовьте сценарий, привяжите Telegram и запустите бота в работу`}
+        hint={`${bot.name} · Подготовьте сценарий, привяжите Telegram и запустите бота`}
       />
 
       {/* Top Banner / Progress overview for desktop & mobile */}
@@ -226,7 +226,7 @@ function LaunchChecklist({
           <p className="mt-0.5 text-meta text-fg-secondary">
             {bot.funnelComplete
               ? 'Основные шаги почти завершены — осталось совсем немного до первого клиента'
-              : 'Три простых шага от черновика до работающей воронки продаж'}
+              : 'Три простых шага от черновика до активной воронки продаж'}
           </p>
         </div>
 
@@ -282,7 +282,7 @@ function LaunchChecklist({
                   </div>
                   <StatusBadge
                     tone={bot.funnelComplete ? 'success' : 'warning'}
-                    label={bot.funnelComplete ? 'Готов' : 'В работе'}
+                    label={bot.funnelComplete ? 'Готов' : 'В процессе'}
                   />
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
@@ -541,7 +541,7 @@ function QuickLinks({
     },
     {
       icon: hasPayment ? BadgeCheck : CreditCard,
-      label: hasPayment ? 'Оплата работает' : 'Подключить оплату',
+      label: hasPayment ? 'Оплата активна' : 'Подключить оплату',
       hint: hasPayment ? 'Ключи проверены' : 'Принимайте платежи в диалоге',
       onClick: () => {
         setIntegrationTarget('cashier');
@@ -591,7 +591,7 @@ function IdentityCard({ bot }: { bot: BotConfig }) {
       </div>
       <StatusBadge
         tone={bot.status === 'active' ? 'success' : 'warning'}
-        label={bot.status === 'active' ? 'Работает' : 'Черновик'}
+        label={bot.status === 'active' ? 'Активен' : 'Черновик'}
         className="ml-auto"
       />
     </article>

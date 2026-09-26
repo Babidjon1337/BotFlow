@@ -33,7 +33,7 @@ export function StatusBadge({
   className,
 }: {
   tone: StatusTone
-  label: string
+  label: React.ReactNode
   className?: string
 }) {
   return (
