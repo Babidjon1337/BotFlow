@@ -912,7 +912,6 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
               stepId="start"
               title="Старт"
               isComplete={isStartComplete}
-              defaultExpanded
             >
               <div
                 style={{

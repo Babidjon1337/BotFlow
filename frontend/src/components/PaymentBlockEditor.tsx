@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
   Pencil,
   Trash2,
-  Check,
   Megaphone,
   Users,
   FileText,
   Link2,
   AlertCircle,
   Loader2,
+  ArrowLeft,
+  ArrowRight,
+  Layers,
 } from 'lucide-react';
 import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
@@ -18,12 +20,13 @@ import { TariffDescriptionEditor } from './TariffDescriptionEditor';
 import { TariffEditorModal } from './sheets/TariffEditorModal';
 import { apiService } from '../services/api';
 import type { FunnelNode, Tariff } from '../types';
-import type { TariffItem, TariffDeliverable } from '../types/tariff';
+import type { TariffItem } from '../types/tariff';
 import {
   mapBackendTariff,
   toBackendPayload,
   tariffItemToTariff,
   tariffToTariffItem,
+  stripTelegramHtml,
 } from '../utils/tariffMappers';
 
 interface PaymentBlockEditorProps {
@@ -46,6 +49,20 @@ interface PaymentBlockEditorProps {
 
 const MAX_TARIFF_SELECTION_CHARACTERS = 4096;
 
+function formatNumber(num: number | undefined | null): string {
+  if (num === null || num === undefined || isNaN(num)) return '0';
+  return num.toLocaleString('ru-RU');
+}
+
+function pluralizeBuyers(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 19) return 'покупателей';
+  if (mod10 === 1) return 'покупатель';
+  if (mod10 >= 2 && mod10 <= 4) return 'покупателя';
+  return 'покупателей';
+}
+
 function getPeriodSuffix(period?: string): string {
   switch (period) {
     case 'week':
@@ -58,65 +75,6 @@ function getPeriodSuffix(period?: string): string {
     default:
       return '/ мес';
   }
-}
-
-function renderDeliverableBadges(deliverables: TariffDeliverable[]) {
-  if (!deliverables || deliverables.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="flex flex-wrap items-center gap-1 mt-0.5">
-      {deliverables.map((d) => {
-        if (d.type === 'channel') {
-          return (
-            <span
-              key={d.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-              title={d.title}
-            >
-              <Megaphone size={10} className="shrink-0" />
-              <span className="truncate max-w-[110px]">{d.title || 'Канал'}</span>
-            </span>
-          );
-        }
-        if (d.type === 'group') {
-          return (
-            <span
-              key={d.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20"
-              title={d.title}
-            >
-              <Users size={10} className="shrink-0" />
-              <span className="truncate max-w-[110px]">{d.title || 'Чат'}</span>
-            </span>
-          );
-        }
-        if (d.type === 'file') {
-          return (
-            <span
-              key={d.id}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
-              title={d.title}
-            >
-              <FileText size={10} className="shrink-0" />
-              <span className="truncate max-w-[110px]">{d.fileName || d.title || 'Файл'}</span>
-            </span>
-          );
-        }
-        return (
-          <span
-            key={d.id}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-            title={d.title}
-          >
-            <Link2 size={10} className="shrink-0" />
-            <span className="truncate max-w-[110px]">{d.title || 'Ссылка'}</span>
-          </span>
-        );
-      })}
-    </div>
-  );
 }
 
 export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
@@ -216,6 +174,44 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
 
     onChange('tariffs', nextTariffs);
   };
+
+  const handleMoveTariff = (currentIndex: number, direction: -1 | 1) => {
+    const targetIndex = currentIndex + direction;
+    if (targetIndex < 0 || targetIndex >= selectedTariffs.length) return;
+
+    const nextTariffs = [...selectedTariffs];
+    const temp = nextTariffs[currentIndex];
+    nextTariffs[currentIndex] = nextTariffs[targetIndex];
+    nextTariffs[targetIndex] = temp;
+
+    onChange('tariffs', nextTariffs);
+  };
+
+  const orderedTariffCards = useMemo(() => {
+    const selectedMap = new Map<string, number>();
+    selectedTariffs.forEach((t, idx) => {
+      selectedMap.set(t.id, idx);
+    });
+
+    const active: Array<{ item: TariffItem; isSelected: boolean; orderIndex: number }> = [];
+    const inactive: Array<{ item: TariffItem; isSelected: boolean; orderIndex: number }> = [];
+
+    // Selected tariffs in their exact funnel order
+    selectedTariffs.forEach((st, idx) => {
+      const catalogItem =
+        catalogTariffs.find((c) => c.id === st.id) || tariffToTariffItem(st, idx);
+      active.push({ item: catalogItem, isSelected: true, orderIndex: idx });
+    });
+
+    // Unselected catalog tariffs
+    catalogTariffs.forEach((ct) => {
+      if (!selectedMap.has(ct.id)) {
+        inactive.push({ item: ct, isSelected: false, orderIndex: -1 });
+      }
+    });
+
+    return [...active, ...inactive];
+  }, [selectedTariffs, catalogTariffs]);
 
   const handleOpenCreateModal = () => {
     setEditingTariff(null);
@@ -401,117 +397,291 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
 
       {/* ─── Выбор тарифов из каталога ─── */}
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
+        {/* Header row with Title and solid "+ Создать тариф" button */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
             <label
-              className="text-[13px] font-semibold text-[var(--color-foreground)]"
+              className="text-[14px] font-bold text-foreground"
               style={{ display: 'block', marginBottom: 0 }}
             >
               Тарифы на шаге продажи
             </label>
             <InfoTooltip
               title="Тарифы воронки"
-              text="Отметьте галочками тарифы, которые будут предложены клиенту на этом шаге. При выборе 2 и более тарифов бот предложит меню выбора."
+              text="Отметьте тарифы, которые будут предложены клиенту на этом шаге. Порядок кнопок в боте соответствует порядку карточек (Кнопка #1, Кнопка #2 и т.д.)."
             />
+            <span className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] font-semibold text-fg-secondary">
+              Выбрано: {selectedCount}
+            </span>
           </div>
-          <span className="text-[11px] font-medium text-[var(--color-foreground-tertiary)]">
-            Выбрано: {selectedCount}
-          </span>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (onNavigateToCreateTariff) {
+                onNavigateToCreateTariff();
+              } else {
+                handleOpenCreateModal();
+              }
+            }}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover active:scale-[0.98]"
+          >
+            <Plus size={15} />
+            Создать тариф
+          </button>
         </div>
+
+        {/* Reordering helper banner */}
+        {selectedCount >= 2 && (
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-fg-secondary">
+            <span className="font-semibold text-foreground">💡 Очередность кнопок:</span>
+            <span>
+              Кнопка #1 будет первой в сообщении бота. Используйте стрелки ← → на карточках для смены очередности.
+            </span>
+          </div>
+        )}
 
         {/* Loading Spinner */}
         {isLoading && (
-          <div className="flex items-center justify-center py-6 text-[var(--color-foreground-secondary)] gap-2">
-            <Loader2 size={16} className="animate-spin text-[var(--color-primary)]" />
+          <div className="flex items-center justify-center py-6 text-fg-secondary gap-2">
+            <Loader2 size={16} className="animate-spin text-primary" />
             <span className="text-xs">Загрузка тарифов...</span>
           </div>
         )}
 
         {/* Empty Catalog Notice */}
         {!isLoading && catalogTariffs.length === 0 && (
-          <div className="flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/50">
-            <p className="text-[13px] font-medium text-[var(--color-foreground)] mb-1">
-              У вас пока нет созданных тарифов
-            </p>
-            <p className="text-[11px] text-[var(--color-foreground-tertiary)] max-w-xs mb-3">
+          <div className="flex flex-col items-center justify-center p-8 text-center rounded-2xl border border-dashed border-border bg-card/50">
+            <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Layers className="size-6" />
+            </div>
+            <h4 className="text-sm font-bold text-foreground">Нет созданных тарифов</h4>
+            <p className="mt-1 max-w-sm text-xs text-fg-secondary">
               Создайте первый тариф с ценой и автоматической выдачей доступа (канал, чат, файл или ссылка).
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (onNavigateToCreateTariff) {
+                  onNavigateToCreateTariff();
+                } else {
+                  handleOpenCreateModal();
+                }
+              }}
+              className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover"
+            >
+              <Plus size={14} />
+              Создать тариф
+            </button>
           </div>
         )}
 
-        {/* Catalog Tariffs Checkbox List */}
-        {!isLoading && catalogTariffs.length > 0 && (
-          <div className="flex flex-col gap-2">
-            {catalogTariffs.map((item) => {
-              const isChecked = selectedIds.has(item.id);
+        {/* Responsive Catalog Grid */}
+        {!isLoading && orderedTariffCards.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {orderedTariffCards.map(({ item, isSelected, orderIndex }) => {
+              const isSubscription = item.paymentType === 'subscription';
 
               return (
                 <div
                   key={item.id}
                   onClick={() => handleToggleTariff(item)}
-                  className={`group relative flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border transition-all cursor-pointer select-none ${
-                    isChecked
-                      ? 'border-primary/50 bg-primary/5 shadow-2xs'
-                      : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface-2)]/50'
+                  className={`group relative flex flex-col rounded-2xl border p-5 shadow-xs transition-all cursor-pointer select-none ${
+                    isSelected
+                      ? 'border-primary/50 bg-card ring-1 ring-primary/20 shadow-sm'
+                      : 'border-border bg-card/60 hover:border-border-strong hover:bg-card opacity-85 hover:opacity-100'
                   }`}
                 >
-                  {/* Custom Checkbox + Title & Deliverables */}
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div
-                      className={`w-4.5 h-4.5 rounded-md border flex items-center justify-center shrink-0 transition-all ${
-                        isChecked
-                          ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white shadow-2xs'
-                          : 'border-[var(--color-border-strong)] bg-[var(--color-surface)] group-hover:border-[var(--color-primary)]'
-                      }`}
-                    >
-                      {isChecked && <Check size={12} strokeWidth={3} />}
+                  <div className="flex flex-1 flex-col space-y-3.5">
+                    {/* Top Row: Status pill & Sales mode badge / Button order badge */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        {isSelected ? (
+                          <span
+                            className="flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-success"
+                            title="Тариф активен на этом шаге воронки"
+                          >
+                            <span className="size-1.5 rounded-full bg-success" />В воронке
+                          </span>
+                        ) : (
+                          <span
+                            className="flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-fg-secondary"
+                            title="Нажмите, чтобы добавить тариф в этот шаг воронки"
+                          >
+                            <span className="size-1.5 rounded-full bg-fg-tertiary" />Не используется
+                          </span>
+                        )}
+
+                        <div className="flex items-center gap-1.5">
+                          {isSelected && (
+                            <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                              Кнопка #{orderIndex + 1}
+                            </span>
+                          )}
+
+                          {item.salesMode === 'auto' && (
+                            <span className="rounded-md border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+                              Автопродажа
+                            </span>
+                          )}
+                          {item.salesMode === 'application' && (
+                            <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-fg-secondary">
+                              По заявкам
+                            </span>
+                          )}
+                          {item.salesMode === 'hybrid' && (
+                            <span className="rounded-md border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                              Гибрид
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Title */}
+                      <h3 className="text-lg font-bold leading-snug text-foreground">
+                        {item.name || 'Без названия'}
+                      </h3>
+
+                      {/* Description preview */}
+                      <p className="text-xs text-fg-secondary line-clamp-2 leading-relaxed min-h-[32px]">
+                        {stripTelegramHtml(item.description) || (
+                          <span className="italic text-fg-tertiary">Без описания</span>
+                        )}
+                      </p>
                     </div>
 
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[13px] font-semibold text-[var(--color-foreground)] truncate leading-snug">
-                          {item.name || 'Без названия'}
+                    {/* Price Section */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-accent tabular-nums text-2xl font-bold text-foreground">
+                          {item.price ? `${formatNumber(item.price)} ₽` : 'Бесплатно'}
                         </span>
-                        {item.paymentType === 'subscription' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-primary/10 text-primary shrink-0 leading-none">
-                            {getPeriodSuffix(item.billingPeriod).replace('/', '').trim()}
+                        {isSubscription && (
+                          <span className="text-sm text-fg-secondary">
+                            {getPeriodSuffix(item.billingPeriod)}
+                          </span>
+                        )}
+                        {Boolean(item.oldPrice) && (
+                          <span className="font-accent tabular-nums text-sm text-fg-tertiary line-through">
+                            {formatNumber(item.oldPrice)} ₽
                           </span>
                         )}
                       </div>
+                      <div className="inline-flex w-fit rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-fg-secondary">
+                        {isSubscription ? 'Подписка' : 'Разовый платёж'}
+                      </div>
+                    </div>
 
-                      {/* Deliverable Badges */}
-                      {renderDeliverableBadges(item.deliverables)}
+                    {/* Divider */}
+                    <div className="my-1 h-px w-full bg-border" />
+
+                    {/* Deliverables Section */}
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-fg-tertiary">
+                        Выдача доступа
+                      </div>
+
+                      {item.deliverables && item.deliverables.length > 0 ? (
+                        item.deliverables.map((del) => {
+                          const formattedSize =
+                            del.fileSizeFormatted ||
+                            (del.fileSize ? formatNumber(Math.round(del.fileSize / 1024)) + ' КБ' : undefined);
+
+                          return (
+                            <div
+                              key={del.id}
+                              className="flex items-center gap-2.5 text-xs text-fg-secondary"
+                            >
+                              {del.type === 'channel' && (
+                                <Megaphone className="size-3.5 shrink-0 text-fg-tertiary" />
+                              )}
+                              {del.type === 'group' && (
+                                <Users className="size-3.5 shrink-0 text-fg-tertiary" />
+                              )}
+                              {del.type === 'file' && (
+                                <FileText className="size-3.5 shrink-0 text-fg-tertiary" />
+                              )}
+                              {del.type === 'link' && (
+                                <Link2 className="size-3.5 shrink-0 text-fg-tertiary" />
+                              )}
+
+                              <span className="truncate">
+                                {del.title}
+                                {del.accessNote && (
+                                  <span className="text-fg-tertiary"> · 1 вход</span>
+                                )}
+                                {del.type === 'file' && formattedSize && (
+                                  <span className="text-fg-tertiary"> ({formattedSize})</span>
+                                )}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-xs italic text-fg-tertiary">
+                          Доступ не настроен
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Price + Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="flex items-baseline gap-1.5 text-right">
-                      {typeof item.oldPrice === 'number' && item.oldPrice > (item.price || 0) && (
-                        <span className="text-[11px] line-through text-[var(--color-foreground-tertiary)] tabular-nums">
-                          {item.oldPrice.toLocaleString('ru-RU')} ₽
-                        </span>
-                      )}
-                      <span className="font-accent text-[13px] font-bold tabular-nums text-[var(--color-primary)]">
-                        {item.price ? `${item.price.toLocaleString('ru-RU')} ₽` : 'Бесплатно'}
+                  {/* Divider */}
+                  <div className="my-3 h-px w-full bg-border" />
+
+                  {/* Footer: Buyers count & actions */}
+                  <div className="flex shrink-0 items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs text-fg-secondary">
+                      <Users className="size-3.5 text-fg-tertiary" />
+                      <span>
+                        {formatNumber(item.buyersCount || 0)} {pluralizeBuyers(item.buyersCount || 0)}
                       </span>
                     </div>
 
-                    {/* Actions (Pencil & Trash) */}
-                    <div className="flex items-center gap-0.5 ml-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                      {/* Reorder arrows for selected items */}
+                      {isSelected && selectedCount > 1 && (
+                        <div className="flex items-center gap-0.5 mr-1 bg-muted/60 p-0.5 rounded-lg border border-border">
+                          <button
+                            type="button"
+                            disabled={orderIndex === 0}
+                            onClick={() => handleMoveTariff(orderIndex, -1)}
+                            className="p-1 rounded text-fg-secondary hover:text-foreground hover:bg-card disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                            title="Сдвинуть выше / левее в меню бота"
+                            aria-label="Сдвинуть выше в меню"
+                          >
+                            <ArrowLeft size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={orderIndex === selectedCount - 1}
+                            onClick={() => handleMoveTariff(orderIndex, 1)}
+                            className="p-1 rounded text-fg-secondary hover:text-foreground hover:bg-card disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                            title="Сдвинуть ниже / правее в меню бота"
+                            aria-label="Сдвинуть ниже в меню"
+                          >
+                            <ArrowRight size={13} />
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Edit button */}
                       <button
                         type="button"
                         onClick={() => handleOpenEditModal(item)}
-                        className="p-1.5 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] transition-colors"
+                        className="p-1.5 rounded-lg border border-border text-fg-secondary hover:text-foreground hover:bg-muted transition-colors"
                         title="Редактировать тариф"
+                        aria-label="Редактировать тариф"
                       >
                         <Pencil size={13} />
                       </button>
+
+                      {/* Delete button */}
                       <button
                         type="button"
                         onClick={() => handleDeleteTariff(item)}
-                        className="p-1.5 rounded-lg text-[var(--color-foreground-tertiary)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] transition-colors"
+                        className="p-1.5 rounded-lg border border-border text-fg-secondary hover:text-danger hover:border-danger/30 hover:bg-danger/10 transition-colors"
                         title="Удалить тариф"
+                        aria-label="Удалить тариф"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -537,21 +707,6 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
             Выбран 1 тариф. Клиент сразу получит сообщение с кнопкой покупки без промежуточного меню.
           </p>
         )}
-
-        {/* "+ Создать новый тариф" Button */}
-        <button
-          type="button"
-          onClick={() => {
-            if (onNavigateToCreateTariff) {
-              onNavigateToCreateTariff();
-            } else {
-              handleOpenCreateModal();
-            }
-          }}
-          className="flex items-center justify-center gap-2 w-full h-10 border border-dashed border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary-soft)] rounded-xl text-xs font-semibold hover:opacity-90 active:scale-[0.99] transition-all shadow-2xs mt-1 cursor-pointer"
-        >
-          <Plus size={15} /> Создать новый тариф
-        </button>
       </div>
 
       {/* ─── Tariff Editor Modal ─── */}

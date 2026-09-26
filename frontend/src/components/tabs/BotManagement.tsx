@@ -61,7 +61,7 @@ export const BotManagement = () => {
     const bot = bots.find((b) => b.id === botId);
     if (bot) {
       requestBotSelection(bot, {
-        onSelected: () => setActiveTab("build"),
+        onSelected: () => setActiveTab("home"),
       });
     }
   };
@@ -202,7 +202,10 @@ export const BotManagement = () => {
                   {/* --- HEADER --- */}
                   <div className="flex items-start justify-between gap-4">
                     {/* Left: Avatar + Info */}
-                    <div className="flex items-start gap-4 min-w-0">
+                    <div
+                      className="flex items-start gap-4 min-w-0 cursor-pointer"
+                      onClick={() => onEditBot(bot.id)}
+                    >
                       {/* Avatar */}
                       <div className="relative shrink-0">
                         <div
