@@ -1,8 +1,25 @@
 import { useCallback, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarClock, Check, ImagePlus, Link2, Play, Send, X } from 'lucide-react';
+import {
+  CalendarClock,
+  Check,
+  ImagePlus,
+  Link2,
+  Play,
+  Send,
+  X,
+  Ban,
+  CreditCard,
+  MessageSquare,
+  Users,
+  CheckCircle2,
+  UserX,
+  Zap,
+} from 'lucide-react';
 import { useAlert } from '../AlertProvider';
 import { DateTimePicker } from './DateTimePicker';
+import { TelegramTextEditor } from '../TelegramTextEditor';
+import { getPlainTextLength } from '../../lib/telegramHtml';
 import { apiService } from '../../services/api';
 import type { BroadcastButton } from '../../services/api';
 import type {
@@ -10,21 +27,11 @@ import type {
   AudienceSummary,
 } from '../../services/api';
 
-const MAX_LENGTH = 4096;
 const MAX_MEDIA = 10;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 // Минимальный запас до запланированного момента — минута, как на бэкенде.
 const MIN_SCHEDULE_LEAD_MS = 60_000;
 const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60 * 1000;
-
-const AUDIENCE_OPTIONS: {
-  value: AudienceFilter;
-  label: string;
-}[] = [
-  { value: 'all', label: 'Все' },
-  { value: 'paid', label: 'Оплатившие' },
-  { value: 'unpaid', label: 'Без оплаты' },
-];
 
 export type PendingMedia = {
   /** Локальный object-url для превью. */
@@ -126,9 +133,14 @@ export function BroadcastComposerForm({
   const scheduledIso = scheduleMode === 'later' ? toIsoOrNull(scheduleAt) : null;
   const scheduleEmpty = scheduleMode === 'later' && !scheduleAt;
   const mediaPendingLocal = pendingFiles.length > 0;
+  const hasMediaAttached = assetIds.length > 0 || pendingFiles.length > 0;
+  const maxLimit = hasMediaAttached ? 1024 : 4096;
+  const plainLength = getPlainTextLength(text);
+  const isOverLimit = plainLength > maxLimit;
+
   const isValid =
     (trimmed.length > 0 || assetIds.length > 0 || (mediaPendingLocal && mediaReady)) &&
-    text.length <= MAX_LENGTH &&
+    !isOverLimit &&
     (scheduleMode === 'now' || (!scheduleEmpty && scheduleError === null)) &&
     (buttonMode === 'none'
       ? true
@@ -245,6 +257,16 @@ export function BroadcastComposerForm({
 
   // Отправка сразу без окна подтверждения: ошибки показываются как alert.
   const handleSendClick = () => {
+    if (isOverLimit) {
+      showAlert({
+        type: 'danger',
+        title: 'Превышен лимит текста',
+        message: hasMediaAttached
+          ? `При наличии медиа длина текста в Telegram не может превышать 1 024 символа (сейчас ${plainLength}).`
+          : `Длина сообщения в Telegram не может превышать 4 096 символов (сейчас ${plainLength}).`,
+      });
+      return;
+    }
     if (scheduleMode === 'later') {
       const scheduleIssue = validateSchedule(scheduleAt);
       if (scheduleIssue) {
@@ -360,59 +382,53 @@ export function BroadcastComposerForm({
         />
       </div>
 
-      {/* ── Текст ── */}
+      {/* ── Текст с форматированием Telegram ── */}
       <div>
         <label
-          htmlFor={`${idPrefix}-text`}
-          className="text-micro font-medium uppercase tracking-wide text-fg-tertiary"
+          className="text-micro font-bold uppercase tracking-wide text-fg-tertiary mb-1.5 block"
         >
           Текст сообщения
         </label>
-        <textarea
-          id={`${idPrefix}-text`}
+        <TelegramTextEditor
           value={text}
-          onChange={(event) => setText(event.target.value.slice(0, MAX_LENGTH))}
-          rows={4}
+          onChange={setText}
           placeholder="Например: скидка 20% на курс до конца недели…"
-          className="mt-1.5 w-full resize-y rounded-2xl border border-border bg-background px-4 py-3 text-body leading-relaxed text-fg-primary outline-none transition-colors placeholder:text-fg-tertiary focus:border-ring focus:ring-3 focus:ring-ring/30"
+          hasMedia={hasMediaAttached}
+          minHeight="min-h-[110px]"
+          maxHeight="max-h-[300px]"
         />
-        <p
-          className={`mt-1.5 text-right text-meta ${
-            text.length >= MAX_LENGTH ? 'text-warning' : 'text-fg-tertiary'
-          }`}
-        >
-          {text.length.toLocaleString('ru-RU')} /{' '}
-          {MAX_LENGTH.toLocaleString('ru-RU')}
-        </p>
       </div>
 
       {/* ── Кнопка под сообщением ── */}
       <div>
-        <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+        <p className="text-micro font-bold uppercase tracking-wide text-fg-tertiary">
           Кнопка под сообщением
         </p>
-        <div className="mt-2 flex gap-1 rounded-xl bg-muted p-1">
-          {(
-            [
-              { value: 'none', label: 'Нет' },
-              { value: 'tariffs', label: 'Тарифы' },
-              { value: 'consult', label: 'Консультация' },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={buttonMode === option.value}
-              onClick={() => setButtonMode(option.value)}
-              className={`flex h-9 flex-1 items-center justify-center rounded-lg text-body-sm font-semibold transition-colors ${
-                buttonMode === option.value
-                  ? 'bg-card text-fg-primary shadow-xs'
-                  : 'text-fg-secondary hover:text-fg-primary'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+        <div className="mt-2 flex flex-wrap gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/50 w-fit">
+          {[
+            { value: 'none' as const, label: 'Нет', icon: Ban },
+            { value: 'tariffs' as const, label: 'Тарифы', icon: CreditCard },
+            { value: 'consult' as const, label: 'Консультация', icon: MessageSquare },
+          ].map((option) => {
+            const Icon = option.icon;
+            const isSelected = buttonMode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => setButtonMode(option.value)}
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+                  isSelected
+                    ? 'bg-card text-foreground shadow-2xs font-bold'
+                    : 'text-fg-secondary hover:text-foreground hover:bg-card/50'
+                }`}
+              >
+                <Icon className={`size-3.5 ${isSelected ? 'text-primary' : 'text-fg-tertiary'}`} />
+                <span>{option.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {buttonMode === 'consult' && (
@@ -519,17 +535,22 @@ export function BroadcastComposerForm({
         )}
       </div>
 
-      {/* ── Аудитория: мини-переключатель в одну строку ── */}
+      {/* ── Аудитория: компактный переключатель с иконками ── */}
       <div>
-        <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+        <p className="text-micro font-bold uppercase tracking-wide text-fg-tertiary">
           Кому отправить
         </p>
         <div
           role="radiogroup"
           aria-label="Сегмент аудитории"
-          className="mt-2 flex gap-1 rounded-xl bg-muted p-1"
+          className="mt-2 flex flex-wrap gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/50 w-fit"
         >
-          {AUDIENCE_OPTIONS.map((option) => {
+          {[
+            { value: 'all' as const, label: 'Все', icon: Users },
+            { value: 'paid' as const, label: 'Оплатившие', icon: CheckCircle2 },
+            { value: 'unpaid' as const, label: 'Без оплаты', icon: UserX },
+          ].map((option) => {
+            const Icon = option.icon;
             const selected = audience === option.value;
             return (
               <button
@@ -538,16 +559,17 @@ export function BroadcastComposerForm({
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setAudience(option.value)}
-                className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-body-sm font-semibold transition-colors ${
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
                   selected
-                    ? 'bg-card text-fg-primary shadow-xs'
-                    : 'text-fg-secondary hover:text-fg-primary'
+                    ? 'bg-card text-foreground shadow-2xs font-bold'
+                    : 'text-fg-secondary hover:text-foreground hover:bg-card/50'
                 }`}
               >
-                {option.label}
+                <Icon className={`size-3.5 ${selected ? 'text-primary' : 'text-fg-tertiary'}`} />
+                <span>{option.label}</span>
                 <span
-                  className={`rounded-full px-1.5 py-px text-micro font-bold tabular-nums ${
-                    selected ? 'bg-primary/10 text-primary' : 'bg-card/70 text-fg-tertiary'
+                  className={`ml-0.5 rounded-full px-1.5 py-0.2 text-[10px] font-bold tabular-nums ${
+                    selected ? 'bg-primary/15 text-primary' : 'bg-muted text-fg-tertiary'
                   }`}
                 >
                   {countFor(option.value)}
@@ -558,35 +580,35 @@ export function BroadcastComposerForm({
         </div>
       </div>
 
-      {/* ── Планирование ── */}
+      {/* ── Планирование: компактный переключатель с иконками ── */}
       <div>
-        <p className="text-micro font-medium uppercase tracking-wide text-fg-tertiary">
+        <p className="text-micro font-bold uppercase tracking-wide text-fg-tertiary">
           Когда отправить
         </p>
-        <div className="mt-2 flex gap-1 rounded-xl bg-muted p-1">
-          {(
-            [
-              { value: 'now', label: 'Сейчас' },
-              { value: 'later', label: 'Запланировать' },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={scheduleMode === option.value}
-              onClick={() => setScheduleMode(option.value)}
-              className={`flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-body-sm font-semibold transition-colors ${
-                scheduleMode === option.value
-                  ? 'bg-card text-fg-primary shadow-xs'
-                  : 'text-fg-secondary hover:text-fg-primary'
-              }`}
-            >
-              {option.value === 'later' && (
-                <CalendarClock className="size-4" aria-hidden />
-              )}
-              {option.label}
-            </button>
-          ))}
+        <div className="mt-2 flex flex-wrap gap-1.5 p-1 rounded-xl bg-muted/60 border border-border/50 w-fit">
+          {[
+            { value: 'now' as const, label: 'Сейчас', icon: Zap },
+            { value: 'later' as const, label: 'Запланировать', icon: CalendarClock },
+          ].map((option) => {
+            const Icon = option.icon;
+            const isSelected = scheduleMode === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={isSelected}
+                onClick={() => setScheduleMode(option.value)}
+                className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-all ${
+                  isSelected
+                    ? 'bg-card text-foreground shadow-2xs font-bold'
+                    : 'text-fg-secondary hover:text-foreground hover:bg-card/50'
+                }`}
+              >
+                <Icon className={`size-3.5 ${isSelected ? 'text-primary' : 'text-fg-tertiary'}`} />
+                <span>{option.label}</span>
+              </button>
+            );
+          })}
         </div>
         {scheduleMode === 'later' && (
           <div className="mt-2.5 space-y-2">

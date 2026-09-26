@@ -21,8 +21,6 @@ export interface TariffDescriptionEditorProps {
   mediaHint?: string;
 }
 
-const DEFAULT_MAX_CHARACTERS = 3000;
-
 /**
  * Unified rich-text field for the tariff description and payment blocks.
  * Unified with step messages: media row at top, formatting toolbar at bottom.
@@ -30,7 +28,7 @@ const DEFAULT_MAX_CHARACTERS = 3000;
 export function TariffDescriptionEditor({
   value,
   onChange,
-  maxCharacters = DEFAULT_MAX_CHARACTERS,
+  maxCharacters,
   placeholder = "Опишите, что входит в тариф...",
   toolbarAccessory,
   attachment,

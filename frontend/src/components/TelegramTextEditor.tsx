@@ -735,9 +735,23 @@ export const TelegramTextEditor = ({
     }
   };
 
+  const allAssets: NodeMediaAsset[] =
+    mediaAssets.length > 0
+      ? mediaAssets
+      : (mediaAssetId || mediaFileId)
+      ? [
+          {
+            mediaFileId: mediaFileId || "",
+            mediaAssetId: mediaAssetId || "",
+            mediaType: (mediaType || "photo") as "photo" | "video" | "document",
+          },
+        ]
+      : [];
+
+  const hasAnyMedia = hasMedia || allAssets.length > 0 || Boolean(attachment);
+  const effectiveLimit = hasAnyMedia ? 1024 : (maxCharacters || 4096);
   const charCount = getPlainTextLength(value);
-  const limit = maxCharacters || (hasMedia ? 1024 : 4096);
-  const isOverLimit = charCount > limit;
+  const isOverLimit = charCount > effectiveLimit;
   const isEmpty = !value || charCount === 0;
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -761,19 +775,6 @@ export const TelegramTextEditor = ({
       setIsUploading(false);
     }
   };
-
-  const allAssets: NodeMediaAsset[] =
-    mediaAssets.length > 0
-      ? mediaAssets
-      : (mediaAssetId || mediaFileId)
-      ? [
-          {
-            mediaFileId: mediaFileId || "",
-            mediaAssetId: mediaAssetId || "",
-            mediaType: (mediaType || "photo") as "photo" | "video" | "document",
-          },
-        ]
-      : [];
 
   const getFormatBtnClass = (isActive: boolean) =>
     `flex size-7 items-center justify-center rounded-md transition-all ${
@@ -1066,13 +1067,41 @@ export const TelegramTextEditor = ({
           </button>
         </div>
 
-        {/* Правая часть: аксессуар (если передан) */}
-        {toolbarAccessory && (
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
-            {toolbarAccessory}
+        {/* Правая часть: аксессуар (если передан) и Счётчик символов */}
+        <div className="flex items-center gap-2 shrink-0 ml-auto pl-1">
+          {toolbarAccessory}
+          <div
+            className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold tabular-nums select-none transition-colors ${
+              isOverLimit
+                ? "bg-red-500/15 text-red-500 font-bold ring-1 ring-red-500/30"
+                : charCount > effectiveLimit * 0.9
+                ? "bg-amber-500/15 text-amber-500 font-bold"
+                : "text-[var(--color-foreground-tertiary)]"
+            }`}
+            title={
+              hasAnyMedia
+                ? `Лимит Telegram с медиа: 1 024 символа (сейчас ${charCount})`
+                : `Лимит Telegram без медиа: 4 096 символов (сейчас ${charCount})`
+            }
+          >
+            <span>{charCount.toLocaleString("ru-RU")}</span>
+            <span className="opacity-40">/</span>
+            <span>{effectiveLimit.toLocaleString("ru-RU")}</span>
           </div>
-        )}
+        </div>
       </div>
+
+      {/* Предупреждение о превышении лимита Telegram */}
+      {isOverLimit && (
+        <div className="border-t border-red-500/20 bg-red-500/10 px-3 py-1.5 text-[11px] font-medium text-red-500 flex items-center justify-between shrink-0">
+          <span>
+            {hasAnyMedia
+              ? `Лимит подписи к медиа в Telegram — 1 024 символа (сейчас ${charCount})`
+              : `Лимит сообщения в Telegram — 4 096 символов (сейчас ${charCount})`}
+          </span>
+          <span className="font-bold">+{charCount - effectiveLimit} лишних</span>
+        </div>
+      )}
 
       {/* ── Кастомная модалка добавления / редактирования ссылки через Portal ── */}
       {isLinkModalOpen && typeof document !== "undefined" && createPortal(
