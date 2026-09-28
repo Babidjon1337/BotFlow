@@ -187,6 +187,17 @@ class FunnelNodeSchema(BaseModel):
             return [item for item in v if item]
         return []
 
+    @model_validator(mode="before")
+    @classmethod
+    def resolve_delay_and_seconds(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw_delay = data.get("delay")
+            if raw_delay is not None and isinstance(raw_delay, str) and raw_delay.strip():
+                data["delay_seconds"] = cls.parse_delay(raw_delay)
+            elif "delay_seconds" in data and not raw_delay:
+                data["delay_seconds"] = cls.parse_delay(data.get("delay_seconds"))
+        return data
+
     @model_validator(mode="after")
     def sync_primary_media_fields(self):
         if self.media_assets and len(self.media_assets) > 0:

@@ -28,22 +28,28 @@ export function normalizeFunnelNodes(nodes: FunnelNode[]): FunnelNode[] {
 
   const middleNodes = nodes
     .filter(node => node.id !== 'start' && node.id !== 'payment')
-    .map(node => ({
-      ...node,
-      mediaAssets: normalizeNodeMedia(node),
-    }));
+    .map(node => {
+      const copy = {
+        ...node,
+        mediaAssets: normalizeNodeMedia(node),
+      };
+      delete (copy as Record<string, unknown>).delay_seconds;
+      return copy;
+    });
 
   const normalizedStart: FunnelNode = {
     ...INITIAL_BLOCKS[0],
     ...startNode,
     mediaAssets: normalizeNodeMedia(startNode),
   };
+  delete (normalizedStart as unknown as Record<string, unknown>).delay_seconds;
 
   const normalizedPayment: FunnelNode = {
     ...INITIAL_BLOCKS[1],
     ...paymentNode,
     mediaAssets: normalizeNodeMedia(paymentNode),
   };
+  delete (normalizedPayment as unknown as Record<string, unknown>).delay_seconds;
 
   return [normalizedStart, ...middleNodes, normalizedPayment];
 }

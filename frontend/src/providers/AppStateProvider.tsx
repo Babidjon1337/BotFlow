@@ -356,11 +356,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
     if (existingBlock) {
       if (Object.is(existingBlock[field], value)) return;
-      nextBlocks = currentBlocks.map(block => block.id === id ? { ...block, [field]: value } : block);
+      nextBlocks = currentBlocks.map(block => {
+        if (block.id !== id) return block;
+        const updated = { ...block, [field]: value };
+        if (field === 'delay') {
+          delete (updated as unknown as Record<string, unknown>).delay_seconds;
+        }
+        return updated;
+      });
     } else {
       const defaultBlock = INITIAL_BLOCKS.find(block => block.id === id);
       if (!defaultBlock) return;
-      nextBlocks = [...currentBlocks, { ...defaultBlock, [field]: value }];
+      const created = { ...defaultBlock, [field]: value };
+      if (field === 'delay') {
+        delete (created as unknown as Record<string, unknown>).delay_seconds;
+      }
+      nextBlocks = [...currentBlocks, created];
     }
 
     funnelRevisionRef.current += 1;
@@ -378,11 +389,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     let nextBlocks: FunnelNode[] | null = null;
 
     if (existingBlock) {
-      nextBlocks = currentBlocks.map(block => block.id === id ? { ...block, ...updates } : block);
+      nextBlocks = currentBlocks.map(block => {
+        if (block.id !== id) return block;
+        const updated = { ...block, ...updates };
+        if ('delay' in updates) {
+          delete (updated as unknown as Record<string, unknown>).delay_seconds;
+        }
+        return updated;
+      });
     } else {
       const defaultBlock = INITIAL_BLOCKS.find(block => block.id === id);
       if (!defaultBlock) return;
-      nextBlocks = [...currentBlocks, { ...defaultBlock, ...updates }];
+      const created = { ...defaultBlock, ...updates };
+      if ('delay' in updates) {
+        delete (created as unknown as Record<string, unknown>).delay_seconds;
+      }
+      nextBlocks = [...currentBlocks, created];
     }
 
     funnelRevisionRef.current += 1;

@@ -91,17 +91,15 @@ export const TimerPresets = ({
   const [showCustom, setShowCustom] = useState(isCustom);
 
   const parsed = parseDelayString(value);
-  const [inputHours, setInputHours] = useState<number | ''>(
-    parsed.hours || (parsed.minutes === 0 && !isCustom ? 1 : 0)
-  );
-  const [inputMinutes, setInputMinutes] = useState<number | ''>(parsed.minutes || 0);
+  const [inputHours, setInputHours] = useState<number | ''>(parsed.hours);
+  const [inputMinutes, setInputMinutes] = useState<number | ''>(parsed.minutes);
 
   useEffect(() => {
     const p = parseDelayString(value);
     const norm = formatDelayLabel(value);
     const custom = !presets.includes(value) && !presets.includes(norm) && Boolean(value);
-    setInputHours(p.hours || (p.minutes === 0 && !custom ? 0 : p.hours));
-    setInputMinutes(p.minutes || 0);
+    setInputHours(p.hours);
+    setInputMinutes(p.minutes);
     if (custom) {
       setShowCustom(true);
     }
