@@ -1433,12 +1433,11 @@ async def return_to_manual_invoice_choices(callback: CallbackQuery):
     )
 
 
-async def _send_lead_subscription_cards(
-    *,
+async def _get_lead_active_subscription_cards(
     bot_config,
     lead,
-    send_message_fn,
-):
+    fallback_payment=None,
+) -> list[tuple[Any, Any, datetime | None]]:
     now = datetime.now(timezone.utc)
     from database.requests.client_payment_rq import get_lead_subscriptions
     from database.requests.chat_access_rq import (
@@ -1446,10 +1445,25 @@ async def _send_lead_subscription_cards(
         compute_recurring_period_delta,
     )
 
-    all_subs = await get_lead_subscriptions(bot_config.id, lead.id)
+    all_subs = []
+    try:
+        all_subs = await get_lead_subscriptions(bot_config.id, lead.id) or []
+    except Exception as e:
+        logger.debug("Не удалось получить подписки лида из БД: %s", e)
+        all_subs = []
+
+    if fallback_payment is not None:
+        replaced = False
+        for i, p in enumerate(all_subs):
+            if str(getattr(p, "id", None)) == str(getattr(fallback_payment, "id", None)):
+                all_subs[i] = fallback_payment
+                replaced = True
+                break
+        if not replaced:
+            all_subs.insert(0, fallback_payment)
+
     if not all_subs:
-        await send_message_fn("У вас нет активных подписок в этом боте.")
-        return
+        return []
 
     active_cards = []
     seen_tariffs = set()
@@ -1459,7 +1473,12 @@ async def _send_lead_subscription_cards(
         if tariff_id and tariff_id in seen_tariffs:
             continue
 
-        grant = await get_chat_access_grant_for_payment(p.id)
+        grant = None
+        try:
+            grant = await get_chat_access_grant_for_payment(p.id)
+        except Exception as e:
+            logger.debug("Не удалось получить доступ для платежа %s: %s", getattr(p, "id", None), e)
+
         period = (
             p.tariff_snapshot.get("recurring_period")
             or p.tariff_snapshot.get("recurringPeriod")
@@ -1484,68 +1503,115 @@ async def _send_lead_subscription_cards(
 
         active_cards.append((p, grant, expires_at))
 
-    if not active_cards:
-        await send_message_fn("У вас нет активных подписок в этом боте.")
-        return
+    return active_cards
 
-    for payment, grant, expires_at in active_cards:
-        tariff_name = (
-            payment.tariff_snapshot.get("name")
-            or payment.tariff_snapshot.get("title")
-            if payment.tariff_snapshot
-            else "Тариф"
-        ) or "Тариф"
-        amount = payment.amount
-        date_str = expires_at.strftime("%d.%m.%Y %H:%M") if expires_at else "Бессрочно"
-        auto_renew = (
-            payment.tariff_snapshot.get("auto_renew", True)
-            if payment.tariff_snapshot
-            else True
-        )
-        auto_renew_str = "✅ Включено" if auto_renew else "❌ Отключено"
 
-        card_text = (
-            f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
-            f"💳 Стоимость: {amount:,.0f} ₽\n"
-            f"📅 Действует до: {date_str}\n"
-            f"🔄 Автопродление: {auto_renew_str}"
+async def _render_lead_subscription_card(
+    *,
+    bot_config,
+    lead,
+    page_idx: int = 0,
+    notice: str | None = None,
+    cards: list | None = None,
+    fallback_payment=None,
+) -> tuple[str, InlineKeyboardMarkup | None]:
+    if cards is None:
+        cards = await _get_lead_active_subscription_cards(
+            bot_config,
+            lead,
+            fallback_payment=fallback_payment,
         )
 
-        reply_markup = None
-        if auto_renew:
-            reply_markup = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="❌ Отключить автосписание",
-                            callback_data=f"cancel_sub:{payment.id}",
-                        )
-                    ]
-                ]
+    if not cards:
+        return "У вас нет активных подписок в этом боте.", None
+
+    total = len(cards)
+    page_idx = max(0, min(page_idx, total - 1))
+    payment, grant, expires_at = cards[page_idx]
+
+    tariff_name = (
+        payment.tariff_snapshot.get("name")
+        or payment.tariff_snapshot.get("title")
+        if payment.tariff_snapshot
+        else "Тариф"
+    ) or "Тариф"
+    amount = payment.amount
+    now = datetime.now(timezone.utc)
+    date_str = expires_at.strftime("%d.%m.%Y %H:%M") if expires_at else "Бессрочно"
+    auto_renew = (
+        payment.tariff_snapshot.get("auto_renew", True)
+        if payment.tariff_snapshot
+        else True
+    )
+    auto_renew_str = "✅ Включено" if auto_renew else "❌ Отключено"
+
+    # Only show page indicator if more than 1 subscription exists
+    header = f"📄 <b>Подписка {page_idx + 1} из {total}</b>\n\n" if total > 1 else ""
+
+    card_text = (
+        f"{header}"
+        f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
+        f"💳 Стоимость: {f'{amount:,.0f} ₽'.replace(',', ' ')}\n"
+        f"📅 Действует до: {date_str}\n"
+        f"🔄 Автопродление: {auto_renew_str}"
+    )
+    if notice:
+        card_text += f"\n\n{notice}"
+
+    keyboard_rows = []
+    action_suffix = f":{page_idx}" if total > 1 else ""
+
+    if auto_renew:
+        keyboard_rows.append([
+            InlineKeyboardButton(
+                text="❌ Отключить автосписание",
+                callback_data=f"cancel_sub:{payment.id}{action_suffix}",
             )
-        elif not expires_at or expires_at > now:
-            reply_markup = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="🔄 Включить автосписание",
-                            callback_data=f"resume_sub:{payment.id}",
-                        )
-                    ]
-                ]
+        ])
+    elif not expires_at or expires_at > now:
+        keyboard_rows.append([
+            InlineKeyboardButton(
+                text="🔄 Включить автосписание",
+                callback_data=f"resume_sub:{payment.id}{action_suffix}",
             )
-        elif payment.tariff_id:
-            reply_markup = InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="💳 Продлить подписку",
-                            callback_data=f"payment_tariff:{payment.tariff_id}",
-                        )
-                    ]
-                ]
+        ])
+    elif payment.tariff_id:
+        keyboard_rows.append([
+            InlineKeyboardButton(
+                text="💳 Продлить подписку",
+                callback_data=f"payment_tariff:{payment.tariff_id}",
             )
+        ])
+
+    # Navigation row ONLY when total > 1
+    if total > 1:
+        prev_idx = (page_idx - 1) % total
+        next_idx = (page_idx + 1) % total
+        keyboard_rows.append([
+            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"sub_page:{prev_idx}"),
+            InlineKeyboardButton(text=f"{page_idx + 1} / {total}", callback_data="noop"),
+            InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"sub_page:{next_idx}"),
+        ])
+
+    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_rows) if keyboard_rows else None
+    return card_text, reply_markup
+
+
+async def _send_lead_subscription_cards(
+    *,
+    bot_config,
+    lead,
+    send_message_fn,
+):
+    card_text, reply_markup = await _render_lead_subscription_card(
+        bot_config=bot_config,
+        lead=lead,
+        page_idx=0,
+    )
+    if reply_markup is not None:
         await send_message_fn(card_text, reply_markup=reply_markup)
+    else:
+        await send_message_fn(card_text)
 
 
 @user_bot_router.message(Command("sub", "subscriptions", "help"))
@@ -1585,10 +1651,49 @@ async def cb_subscriptions(callback: CallbackQuery):
     )
 
 
+@user_bot_router.callback_query(F.data.startswith("sub_page:"))
+async def cb_subscription_page(callback: CallbackQuery):
+    """Пагинация карточек подписок лида."""
+    await callback.answer()
+    bot_config = await get_bot_by_tg_id(callback.bot.id)
+    if not bot_config:
+        return
+    lead = await get_lead(bot_config.id, callback.from_user.id)
+    if not lead:
+        return
+
+    try:
+        page_idx = int(callback.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        page_idx = 0
+
+    card_text, reply_markup = await _render_lead_subscription_card(
+        bot_config=bot_config,
+        lead=lead,
+        page_idx=page_idx,
+    )
+    try:
+        await callback.message.edit_text(card_text, reply_markup=reply_markup)
+    except TelegramBadRequest:
+        pass
+
+
+@user_bot_router.callback_query(F.data == "noop")
+async def cb_noop(callback: CallbackQuery):
+    """Пустой клик по индикатору страницы."""
+    try:
+        await callback.answer()
+    except TelegramBadRequest:
+        pass
+
+
 @user_bot_router.callback_query(F.data.startswith("cancel_sub:"))
 async def cb_cancel_subscription(callback: CallbackQuery):
     """Отключение автопродления подписки лида."""
-    payment_id_str = callback.data.split(":", 1)[1]
+    parts = callback.data.split(":")
+    payment_id_str = parts[1]
+    page_idx = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
     bot_config = await get_bot_by_tg_id(callback.bot.id)
     if not bot_config:
         await callback.answer("Бот не найден.", show_alert=True)
@@ -1620,8 +1725,12 @@ async def cb_cancel_subscription(callback: CallbackQuery):
         if updated_payment.tariff_snapshot
         else "Тариф"
     ) or "Тариф"
-    amount = updated_payment.amount
-    grant = await get_chat_access_grant_for_payment(updated_payment.id)
+    grant = None
+    try:
+        grant = await get_chat_access_grant_for_payment(updated_payment.id)
+    except Exception as e:
+        logger.debug("Не удалось получить доступ для платежа %s: %s", updated_payment.id, e)
+
     period = (
         updated_payment.tariff_snapshot.get("recurring_period")
         or updated_payment.tariff_snapshot.get("recurringPeriod")
@@ -1636,24 +1745,17 @@ async def cb_cancel_subscription(callback: CallbackQuery):
         expires_at = base_time + delta
     date_str = expires_at.strftime("%d.%m.%Y %H:%M") if expires_at else "конца оплаченного периода"
 
-    # Edit the card message to show auto_renew disabled and offer resume button
-    card_text = (
-        f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
-        f"💳 Стоимость: {amount:,.0f} ₽\n"
-        f"📅 Действует до: {date_str}\n"
-        f"🔄 Автопродление: ❌ Отключено\n\n"
+    notice = (
         f"✅ <i>Автосписание отключено. Доступ к «{escape(str(tariff_name))}» останется активным "
         f"до конца оплаченного периода ({date_str}). После этого списаний не будет.</i>"
     )
-    reply_markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🔄 Включить автосписание",
-                    callback_data=f"resume_sub:{updated_payment.id}",
-                )
-            ]
-        ]
+
+    card_text, reply_markup = await _render_lead_subscription_card(
+        bot_config=bot_config,
+        lead=lead,
+        page_idx=page_idx,
+        notice=notice,
+        fallback_payment=updated_payment,
     )
     try:
         await callback.message.edit_text(card_text, reply_markup=reply_markup)
@@ -1666,7 +1768,10 @@ async def cb_cancel_subscription(callback: CallbackQuery):
 @user_bot_router.callback_query(F.data.startswith("resume_sub:"))
 async def cb_resume_subscription(callback: CallbackQuery):
     """Включение автопродления подписки лида обратно."""
-    payment_id_str = callback.data.split(":", 1)[1]
+    parts = callback.data.split(":")
+    payment_id_str = parts[1]
+    page_idx = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
     bot_config = await get_bot_by_tg_id(callback.bot.id)
     if not bot_config:
         await callback.answer("Бот не найден.", show_alert=True)
@@ -1698,8 +1803,12 @@ async def cb_resume_subscription(callback: CallbackQuery):
         if updated_payment.tariff_snapshot
         else "Тариф"
     ) or "Тариф"
-    amount = updated_payment.amount
-    grant = await get_chat_access_grant_for_payment(updated_payment.id)
+    grant = None
+    try:
+        grant = await get_chat_access_grant_for_payment(updated_payment.id)
+    except Exception as e:
+        logger.debug("Не удалось получить доступ для платежа %s: %s", updated_payment.id, e)
+
     period = (
         updated_payment.tariff_snapshot.get("recurring_period")
         or updated_payment.tariff_snapshot.get("recurringPeriod")
@@ -1714,24 +1823,17 @@ async def cb_resume_subscription(callback: CallbackQuery):
         expires_at = base_time + delta
     date_str = expires_at.strftime("%d.%m.%Y %H:%M") if expires_at else "конца оплаченного периода"
 
-    # Edit the card message to show auto_renew enabled and offer cancel button
-    card_text = (
-        f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
-        f"💳 Стоимость: {amount:,.0f} ₽\n"
-        f"📅 Действует до: {date_str}\n"
-        f"🔄 Автопродление: ✅ Включено\n\n"
+    notice = (
         f"✅ <i>Автопродление включено. Следующее списание пройдет автоматически {date_str}. "
         f"Ваш доступ к «{escape(str(tariff_name))}» продолжится без перерывов.</i>"
     )
-    reply_markup = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="❌ Отключить автосписание",
-                    callback_data=f"cancel_sub:{updated_payment.id}",
-                )
-            ]
-        ]
+
+    card_text, reply_markup = await _render_lead_subscription_card(
+        bot_config=bot_config,
+        lead=lead,
+        page_idx=page_idx,
+        notice=notice,
+        fallback_payment=updated_payment,
     )
     try:
         await callback.message.edit_text(card_text, reply_markup=reply_markup)
