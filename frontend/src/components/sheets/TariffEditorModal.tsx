@@ -25,6 +25,11 @@ import type {
 import type { NodeMediaAsset } from '../../types';
 import { apiService } from '../../services/api';
 import { TariffDescriptionEditor } from '../TariffDescriptionEditor';
+import {
+  formatBillingPeriod,
+  parsePeriodIntoUnitAndValue,
+  buildBillingPeriod,
+} from '../../utils/tariffMappers';
 
 interface ConnectedChat {
   id: string;
@@ -55,12 +60,23 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-const BILLING_PERIODS: { id: BillingPeriod; label: string; days: string }[] = [
-  { id: 'week', label: '1 неделя', days: 'каждые 7 дней' },
-  { id: 'month', label: '1 месяц', days: 'каждые 30 дней' },
-  { id: '3months', label: '3 месяца', days: 'каждые 90 дней' },
-  { id: 'year', label: '1 год', days: 'каждые 365 дней' },
+const BILLING_PRESETS = [
+  { id: '1_week', label: '1 неделя', days: '7 дней', value: 1, unit: 'week' as const },
+  { id: '4_weeks', label: '4 недели', days: '28 дней', value: 4, unit: 'week' as const },
+  { id: '6_weeks', label: '6 недель', days: '42 дня', value: 6, unit: 'week' as const },
+  { id: '1_month', label: '1 месяц', days: '30 дней', value: 1, unit: 'month' as const },
+  { id: '3_months', label: '3 месяца', days: '90 дней', value: 3, unit: 'month' as const },
+  { id: '1_year', label: '1 год', days: '365 дней', value: 12, unit: 'month' as const },
 ];
+
+function isPresetSelected(presetId: string, currentPeriod: string): boolean {
+  if (presetId === currentPeriod) return true;
+  if (presetId === '1_week' && (currentPeriod === 'week' || currentPeriod === '1_week')) return true;
+  if (presetId === '1_month' && (currentPeriod === 'month' || currentPeriod === '1_month')) return true;
+  if (presetId === '3_months' && (currentPeriod === '3months' || currentPeriod === '3_months')) return true;
+  if (presetId === '1_year' && (currentPeriod === 'year' || currentPeriod === '1_year')) return true;
+  return false;
+}
 
 const SALES_MODES: {
   id: SalesMode;
@@ -113,7 +129,13 @@ function TariffEditorForm({
   );
   const [oldPrice, setOldPrice] = useState(tariff?.oldPrice ? String(tariff.oldPrice) : '');
   const [paymentType, setPaymentType] = useState<PaymentType>(tariff?.paymentType || 'subscription');
-  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>(tariff?.billingPeriod || 'month');
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>(tariff?.billingPeriod || '1_month');
+  const [customValue, setCustomValue] = useState<number>(() => {
+    return parsePeriodIntoUnitAndValue(tariff?.billingPeriod || '1_month').value;
+  });
+  const [customUnit, setCustomUnit] = useState<'day' | 'week' | 'month'>(() => {
+    return parsePeriodIntoUnitAndValue(tariff?.billingPeriod || '1_month').unit;
+  });
   const [salesMode, setSalesMode] = useState<SalesMode>(tariff?.salesMode || 'auto');
   const [isActiveInFunnel, setIsActiveInFunnel] = useState(tariff?.isActiveInFunnel !== false);
   const [managerUrl, setManagerUrl] = useState<string>(tariff?.managerUrl || '');
@@ -147,7 +169,10 @@ function TariffEditorForm({
     setPrice(tariff?.price !== undefined && tariff.price !== null ? String(tariff.price) : '');
     setOldPrice(tariff?.oldPrice ? String(tariff.oldPrice) : '');
     setPaymentType(tariff?.paymentType || 'subscription');
-    setBillingPeriod(tariff?.billingPeriod || 'month');
+    const parsed = parsePeriodIntoUnitAndValue(tariff?.billingPeriod || '1_month');
+    setCustomValue(parsed.value);
+    setCustomUnit(parsed.unit);
+    setBillingPeriod(tariff?.billingPeriod || '1_month');
     setSalesMode(tariff?.salesMode || 'auto');
     setIsActiveInFunnel(tariff?.isActiveInFunnel !== false);
     setManagerUrl(tariff?.managerUrl || '');
@@ -721,21 +746,32 @@ function TariffEditorForm({
             </div>
 
             {paymentType === 'subscription' && (
-              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-2.5">
-                <div className="text-xs font-semibold text-foreground">
-                  Период списания
+              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-foreground">
+                    Период списания
+                  </div>
+                  <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+                    {formatBillingPeriod(billingPeriod).label}
+                  </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {BILLING_PERIODS.map((p) => {
-                    const isSelected = billingPeriod === p.id;
+
+                {/* Presets Grid */}
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+                  {BILLING_PRESETS.map((p) => {
+                    const isSelected = isPresetSelected(p.id, billingPeriod);
                     return (
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => setBillingPeriod(p.id)}
-                        className={`flex flex-col items-center justify-center rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all ${
+                        onClick={() => {
+                          setBillingPeriod(p.id);
+                          setCustomValue(p.value);
+                          setCustomUnit(p.unit);
+                        }}
+                        className={`flex flex-col items-center justify-center rounded-xl border px-2.5 py-2 text-xs font-semibold transition-all ${
                           isSelected
-                            ? 'border-primary bg-primary/10 text-primary shadow-xs'
+                            ? 'border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/30'
                             : 'border-border bg-card text-fg-secondary hover:border-border-strong hover:text-foreground'
                         }`}
                       >
@@ -747,9 +783,93 @@ function TariffEditorForm({
                     );
                   })}
                 </div>
-                <p className="text-xs leading-relaxed text-fg-secondary">
-                  Автосписание происходит автоматически в соответствии с выбранным периодом. Клиент может в любой момент отменить автопродление в боте без потери оплаченного срока.
-                </p>
+
+                {/* Manual custom interval selector */}
+                <div className="rounded-xl border border-border bg-card p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-foreground">
+                      Или выберите свой срок подписки:
+                    </span>
+                    <span className="text-[11px] text-fg-secondary">
+                      {formatBillingPeriod(billingPeriod).daysDesc}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <div className="flex items-center gap-2 flex-1">
+                      <label htmlFor="custom-period-val" className="text-xs text-fg-secondary shrink-0 font-medium">
+                        Каждые:
+                      </label>
+                      <input
+                        id="custom-period-val"
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={customValue || ''}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          const safeVal = isNaN(val) ? 1 : Math.max(1, Math.min(365, val));
+                          setCustomValue(safeVal);
+                          setBillingPeriod(buildBillingPeriod(safeVal, customUnit));
+                        }}
+                        className="input h-9 w-24 text-center font-bold text-sm"
+                        placeholder="1"
+                      />
+                    </div>
+
+                    <div className="flex rounded-lg border border-border bg-muted/60 p-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomUnit('day');
+                          setBillingPeriod(buildBillingPeriod(customValue || 1, 'day'));
+                        }}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          customUnit === 'day'
+                            ? 'bg-card text-foreground shadow-xs font-semibold'
+                            : 'text-fg-secondary hover:text-foreground'
+                        }`}
+                      >
+                        Дней
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomUnit('week');
+                          setBillingPeriod(buildBillingPeriod(customValue || 1, 'week'));
+                        }}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          customUnit === 'week'
+                            ? 'bg-card text-foreground shadow-xs font-semibold'
+                            : 'text-fg-secondary hover:text-foreground'
+                        }`}
+                      >
+                        Недель
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomUnit('month');
+                          setBillingPeriod(buildBillingPeriod(customValue || 1, 'month'));
+                        }}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          customUnit === 'month'
+                            ? 'bg-card text-foreground shadow-xs font-semibold'
+                            : 'text-fg-secondary hover:text-foreground'
+                        }`}
+                      >
+                        Месяцев
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-[11px] text-fg-secondary pt-1 border-t border-border/50">
+                    <span className="size-1.5 rounded-full bg-primary shrink-0" />
+                    <span>
+                      Автосписание {formatBillingPeriod(billingPeriod).daysDesc}. Клиент может в любой момент отменить автопродление в боте без потери доступа.
+                    </span>
+                  </div>
+                </div>
               </div>
             )}
           </div>

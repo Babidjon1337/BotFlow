@@ -76,7 +76,14 @@ async def get_funnel_by_bot_id(tg_bot_id: int):
         )
         if not result or not result.funnel_schema:
             return None
-        return parse_stored_funnel_schema(result.funnel_schema)
+
+        # Hydrate funnel payment tariffs with latest data from tariffs table
+        from database.requests.tariff_rq import list_tariffs_by_bot_id
+        from services.funnel_tariff_sync import hydrate_funnel_tariffs
+
+        db_tariffs = await list_tariffs_by_bot_id(result.id)
+        hydrated_schema = hydrate_funnel_tariffs(result.funnel_schema, db_tariffs)
+        return parse_stored_funnel_schema(hydrated_schema or result.funnel_schema)
 
 
 async def create_lead(

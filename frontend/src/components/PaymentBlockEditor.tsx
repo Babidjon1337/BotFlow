@@ -28,6 +28,7 @@ import {
   tariffItemToTariff,
   tariffToTariffItem,
   stripTelegramHtml,
+  getPeriodSuffix,
 } from '../utils/tariffMappers';
 
 interface PaymentBlockEditorProps {
@@ -53,20 +54,6 @@ const MAX_TARIFF_SELECTION_CHARACTERS = 4096;
 function formatNumber(num: number | undefined | null): string {
   if (num === null || num === undefined || isNaN(num)) return '0';
   return num.toLocaleString('ru-RU');
-}
-
-function getPeriodSuffix(period?: string): string {
-  switch (period) {
-    case 'week':
-      return '/ нед';
-    case '3months':
-      return '/ 3 мес';
-    case 'year':
-      return '/ год';
-    case 'month':
-    default:
-      return '/ мес';
-  }
 }
 
 
@@ -131,6 +118,34 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
 
         if (!cancelled) {
           setCatalogTariffs(merged);
+
+          if (loaded.length > 0 && node?.tariffs && node.tariffs.length > 0) {
+            const catalogMap = new Map(loaded.map((item) => [item.id, item]));
+            let hasDrift = false;
+
+            const updatedSelected = node.tariffs.map((nt) => {
+              const fresh = catalogMap.get(nt.id);
+              if (fresh) {
+                const converted = tariffItemToTariff(fresh);
+                if (
+                  nt.name !== converted.name ||
+                  nt.price !== converted.price ||
+                  nt.description !== converted.description ||
+                  nt.salesMode !== converted.salesMode ||
+                  nt.oldPrice !== converted.oldPrice
+                ) {
+                  hasDrift = true;
+                }
+                return { ...nt, ...converted };
+              }
+              return nt;
+            });
+
+            if (hasDrift) {
+              setLocalTariffs(updatedSelected);
+              onChange('tariffs', updatedSelected);
+            }
+          }
         }
       } catch (err) {
         console.error('Failed to load catalog tariffs:', err);

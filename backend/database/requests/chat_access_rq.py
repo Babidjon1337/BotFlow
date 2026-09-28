@@ -14,28 +14,28 @@ def compute_recurring_period_delta(period: str | None) -> timedelta:
     if not period:
         return timedelta(days=30)
     p = str(period).lower().strip()
-    if p in ("1_week", "week", "1 week", "7_days", "7 days", "7d"):
+    if p in ("1_week", "week", "1 week", "7_days", "7 days", "7d", "1 нед", "1 неделя"):
         return timedelta(days=7)
-    elif p in ("3_months", "3months", "3 months", "90_days", "90 days", "90d"):
+    elif p in ("3_months", "3months", "3 months", "90_days", "90 days", "90d", "3 мес", "3 месяца"):
         return timedelta(days=90)
-    elif p in ("1_year", "year", "1 year", "365_days", "365 days", "365d"):
+    elif p in ("1_year", "year", "1 year", "365_days", "365 days", "365d", "1 год", "год"):
         return timedelta(days=365)
-    elif "day" in p:
-        nums = re.findall(r"\d+", p)
-        if nums:
-            return timedelta(days=int(nums[0]))
-    elif "month" in p:
-        nums = re.findall(r"\d+", p)
-        if nums:
-            return timedelta(days=int(nums[0]) * 30)
-    elif "week" in p:
-        nums = re.findall(r"\d+", p)
-        if nums:
-            return timedelta(days=int(nums[0]) * 7)
-    elif "year" in p:
-        nums = re.findall(r"\d+", p)
-        if nums:
-            return timedelta(days=int(nums[0]) * 365)
+    elif p in ("1_month", "month", "1 month", "30_days", "30 days", "30d", "1 мес", "1 месяц"):
+        return timedelta(days=30)
+
+    # Check for custom intervals
+    nums = re.findall(r"\d+", p)
+    val = int(nums[0]) if nums else 1
+
+    if any(k in p for k in ("day", "дн", "ден", "d")):
+        return timedelta(days=val)
+    elif any(k in p for k in ("week", "нед", "w")):
+        return timedelta(days=val * 7)
+    elif any(k in p for k in ("month", "мес", "m")):
+        return timedelta(days=val * 30)
+    elif any(k in p for k in ("year", "год", "лет", "y")):
+        return timedelta(days=val * 365)
+
     return timedelta(days=30)
 
 

@@ -43,6 +43,36 @@ def user_funnel_action_keyboard(
     return user_payment_button(primary_text)
 
 
+import re
+
+
+def format_period_suffix(period: str | None) -> str:
+    """Format recurring period as concise Telegram button suffix."""
+    if not period:
+        return "/ мес"
+    p = str(period).lower().strip()
+    if p in ("1_week", "week", "1 week", "7_days", "7 days", "1 нед", "1 неделя"):
+        return "/ нед"
+    elif p in ("1_month", "month", "1 month", "30_days", "30 days", "1 мес", "1 месяц"):
+        return "/ мес"
+    elif p in ("3_months", "3months", "3 months", "90_days", "90 days", "3 мес", "3 месяца"):
+        return "/ 3 мес"
+    elif p in ("1_year", "year", "1 year", "365_days", "1 год", "год"):
+        return "/ год"
+
+    nums = re.findall(r"\d+", p)
+    val = nums[0] if nums else "1"
+    if any(k in p for k in ("day", "дн", "ден", "d")):
+        return f"/ {val} дн"
+    elif any(k in p for k in ("week", "нед", "w")):
+        return f"/ {val} нед"
+    elif any(k in p for k in ("month", "мес", "m")):
+        return f"/ {val} мес"
+    elif any(k in p for k in ("year", "год", "лет", "y")):
+        return f"/ {val} г"
+    return "/ мес"
+
+
 def user_tariff_keyboard(tariffs, *, include_back: bool = False):
     """Build tariff choices for a V2 payment node."""
     rows = []
@@ -56,8 +86,20 @@ def user_tariff_keyboard(tariffs, *, include_back: bool = False):
             num_price = float(price or 0)
         except (ValueError, TypeError):
             num_price = 0
+
+        is_sub = (
+            getattr(tariff, "installments", False)
+            or getattr(tariff, "payment_type", "") == "recurring"
+            or getattr(tariff, "paymentType", "") == "recurring"
+        )
+        period = (
+            getattr(tariff, "recurring_period", None)
+            or getattr(tariff, "recurringPeriod", None)
+        )
+        sub_suffix = f" {format_period_suffix(period)}" if is_sub else ""
+
         if num_price > 0:
-            label = f"{title} · {num_price:,.0f} ₽".replace(",", " ")
+            label = f"{title} · {num_price:,.0f} ₽{sub_suffix}".replace(",", " ")
         else:
             label = f"{title} · Бесплатно"
         rows.append([InlineKeyboardButton(text=label[:64], callback_data=f"payment_tariff:{tariff_id}")])

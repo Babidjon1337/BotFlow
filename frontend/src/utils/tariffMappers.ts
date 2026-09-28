@@ -2,6 +2,7 @@ import type {
   TariffItem,
   TariffDeliverable,
   DeliverableType,
+  BillingPeriod,
 } from '../types/tariff';
 import type { Tariff } from '../types';
 
@@ -29,6 +30,120 @@ export function stripTelegramHtml(html?: string | null): string {
     .trim();
 }
 
+export function getPeriodSuffix(period?: string): string {
+  if (!period) return '/ мес';
+  const p = String(period).toLowerCase().trim();
+  if (p === 'week' || p === '1_week') return '/ нед';
+  if (p === 'month' || p === '1_month') return '/ мес';
+  if (p === '3months' || p === '3_months') return '/ 3 мес';
+  if (p === 'year' || p === '1_year') return '/ год';
+
+  const match = p.match(/\d+/);
+  const num = match ? match[0] : '1';
+  if (p.includes('day') || p.includes('дн') || p.includes('ден')) return `/ ${num} дн`;
+  if (p.includes('week') || p.includes('нед')) return `/ ${num} нед`;
+  if (p.includes('month') || p.includes('мес')) return `/ ${num} мес`;
+  if (p.includes('year') || p.includes('год') || p.includes('лет')) return `/ ${num} г`;
+  return '/ мес';
+}
+
+export function formatBillingPeriod(period?: string): { label: string; suffix: string; daysDesc: string } {
+  if (!period) {
+    return { label: '1 месяц', suffix: '/ мес', daysDesc: 'каждые 30 дней' };
+  }
+  const p = String(period).toLowerCase().trim();
+  if (p === 'week' || p === '1_week') {
+    return { label: '1 неделя', suffix: '/ нед', daysDesc: 'каждые 7 дней' };
+  }
+  if (p === 'month' || p === '1_month') {
+    return { label: '1 месяц', suffix: '/ мес', daysDesc: 'каждые 30 дней' };
+  }
+  if (p === '3months' || p === '3_months') {
+    return { label: '3 месяца', suffix: '/ 3 мес', daysDesc: 'каждые 90 дней' };
+  }
+  if (p === 'year' || p === '1_year') {
+    return { label: '1 год', suffix: '/ год', daysDesc: 'каждые 365 дней' };
+  }
+
+  const match = p.match(/\d+/);
+  const val = match ? parseInt(match[0], 10) : 1;
+
+  if (p.includes('day') || p.includes('дн') || p.includes('ден')) {
+    const daysWord = val === 1 ? 'день' : val >= 2 && val <= 4 ? 'дня' : 'дней';
+    return {
+      label: `${val} ${daysWord}`,
+      suffix: `/ ${val} дн`,
+      daysDesc: `каждые ${val} ${daysWord}`,
+    };
+  }
+
+  if (p.includes('week') || p.includes('нед')) {
+    const weeksWord = val === 1 ? 'неделя' : val >= 2 && val <= 4 ? 'недели' : 'недель';
+    const totalDays = val * 7;
+    return {
+      label: `${val} ${weeksWord}`,
+      suffix: `/ ${val} нед`,
+      daysDesc: `каждые ${totalDays} дней`,
+    };
+  }
+
+  if (p.includes('month') || p.includes('мес')) {
+    const monthsWord = val === 1 ? 'месяц' : val >= 2 && val <= 4 ? 'месяца' : 'месяцев';
+    const totalDays = val * 30;
+    return {
+      label: `${val} ${monthsWord}`,
+      suffix: `/ ${val} мес`,
+      daysDesc: `каждые ${totalDays} дней`,
+    };
+  }
+
+  if (p.includes('year') || p.includes('год') || p.includes('лет')) {
+    const yearsWord = val === 1 ? 'год' : val >= 2 && val <= 4 ? 'года' : 'лет';
+    const totalDays = val * 365;
+    return {
+      label: `${val} ${yearsWord}`,
+      suffix: `/ ${val} г`,
+      daysDesc: `каждые ${totalDays} дней`,
+    };
+  }
+
+  return { label: '1 месяц', suffix: '/ мес', daysDesc: 'каждые 30 дней' };
+}
+
+export function parsePeriodIntoUnitAndValue(period?: string): { value: number; unit: 'day' | 'week' | 'month' } {
+  if (!period) return { value: 1, unit: 'month' };
+  const p = String(period).toLowerCase().trim();
+  if (p === 'week' || p === '1_week') return { value: 1, unit: 'week' };
+  if (p === 'month' || p === '1_month') return { value: 1, unit: 'month' };
+  if (p === '3months' || p === '3_months') return { value: 3, unit: 'month' };
+  if (p === 'year' || p === '1_year') return { value: 12, unit: 'month' };
+
+  const match = p.match(/\d+/);
+  const val = match ? parseInt(match[0], 10) : 1;
+
+  if (p.includes('day') || p.includes('дн') || p.includes('ден')) {
+    return { value: val, unit: 'day' };
+  }
+  if (p.includes('week') || p.includes('нед')) {
+    return { value: val, unit: 'week' };
+  }
+  if (p.includes('month') || p.includes('мес')) {
+    return { value: val, unit: 'month' };
+  }
+  return { value: val, unit: 'month' };
+}
+
+export function buildBillingPeriod(value: number, unit: 'day' | 'week' | 'month'): string {
+  const v = Math.max(1, Math.round(value || 1));
+  if (unit === 'day') {
+    return v === 1 ? '1_day' : `${v}_days`;
+  }
+  if (unit === 'week') {
+    return v === 1 ? '1_week' : `${v}_weeks`;
+  }
+  return v === 1 ? '1_month' : `${v}_months`;
+}
+
 export function toBackendPayload(item: TariffItem) {
   const isSubscription = item.paymentType === 'subscription';
   let recurringPeriod: string | undefined = undefined;
@@ -36,7 +151,8 @@ export function toBackendPayload(item: TariffItem) {
     if (item.billingPeriod === 'week') recurringPeriod = '1_week';
     else if (item.billingPeriod === '3months') recurringPeriod = '3_months';
     else if (item.billingPeriod === 'year') recurringPeriod = '1_year';
-    else recurringPeriod = '1_month';
+    else if (item.billingPeriod === 'month') recurringPeriod = '1_month';
+    else recurringPeriod = item.billingPeriod || '1_month';
   }
 
   return {
@@ -82,10 +198,12 @@ export function mapBackendTariff(raw: Record<string, unknown>, idx = 0): TariffI
     raw.paymentType === 'subscription';
 
   const recPeriod = String(raw.recurring_period || raw.recurringPeriod || '');
-  let billingPeriod: 'week' | 'month' | '3months' | 'year' = 'month';
-  if (recPeriod === '1_week' || recPeriod === 'week') billingPeriod = 'week';
-  else if (recPeriod === '3_months' || recPeriod === '3months') billingPeriod = '3months';
-  else if (recPeriod === '1_year' || recPeriod === 'year') billingPeriod = 'year';
+  let billingPeriod: BillingPeriod = '1_month';
+  if (recPeriod === '1_week' || recPeriod === 'week') billingPeriod = '1_week';
+  else if (recPeriod === '3_months' || recPeriod === '3months') billingPeriod = '3_months';
+  else if (recPeriod === '1_year' || recPeriod === 'year') billingPeriod = '1_year';
+  else if (recPeriod === '1_month' || recPeriod === 'month') billingPeriod = '1_month';
+  else if (recPeriod) billingPeriod = recPeriod;
 
   const rawSales = String(raw.sales_mode || raw.salesMode || 'auto');
   const salesMode: 'auto' | 'application' | 'hybrid' =
@@ -173,6 +291,8 @@ export function tariffItemToTariff(item: TariffItem): Tariff {
     }
   }
 
+  const isSub = item.paymentType === 'subscription';
+
   return {
     id: item.id,
     name: item.name,
@@ -190,7 +310,11 @@ export function tariffItemToTariff(item: TariffItem): Tariff {
     mediaFileId: item.mediaFileId || null,
     mediaAssetId: item.mediaAssetId || null,
     mediaAssets: item.mediaAssets || null,
-    installments: item.paymentType === 'subscription',
+    installments: isSub,
+    paymentType: isSub ? 'recurring' : 'one_time',
+    payment_type: isSub ? 'recurring' : 'one_time',
+    recurringPeriod: isSub ? item.billingPeriod : undefined,
+    recurring_period: isSub ? item.billingPeriod : undefined,
     deliverables: item.deliverables,
   };
 }
@@ -238,12 +362,25 @@ export function tariffToTariffItem(t: Tariff, idx = 0): TariffItem {
       ? 'hybrid'
       : 'auto';
 
+  const isRecurring =
+    Boolean(t.installments) ||
+    t.paymentType === 'recurring' ||
+    t.payment_type === 'recurring' ||
+    t.paymentType === 'subscription';
+
+  const rawRec = t.recurringPeriod || t.recurring_period;
+  let billingPeriod: BillingPeriod | undefined = undefined;
+  if (isRecurring) {
+    billingPeriod = rawRec ? String(rawRec) : '1_month';
+  }
+
   return {
     id: String(t.id || `t_${idx}`),
     name: t.name || `Тариф ${idx + 1}`,
     price: typeof t.price === 'number' ? t.price : Number(t.price) || 0,
     oldPrice: t.oldPrice ? Number(t.oldPrice) : null,
-    paymentType: t.installments ? 'subscription' : 'one_time',
+    paymentType: isRecurring ? 'subscription' : 'one_time',
+    billingPeriod,
     salesMode,
     isActiveInFunnel: true,
     buyersCount: 0,

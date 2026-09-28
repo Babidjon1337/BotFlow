@@ -690,11 +690,25 @@ async def _send_tariff_invoice(
     amount = float(getattr(tariff, "price", 0) or 0)
     message_text = _get_node_text(node_checkout) if node_checkout else ""
 
+    is_sub = (
+        getattr(tariff, "installments", False)
+        or getattr(tariff, "payment_type", "") == "recurring"
+        or getattr(tariff, "paymentType", "") == "recurring"
+    )
+    period = (
+        getattr(tariff, "recurring_period", None)
+        or getattr(tariff, "recurringPeriod", None)
+    )
+
     tariff_details = f"<b>{escape(tariff_name)}</b>"
     if tariff_description:
         tariff_details += f"\n\n{to_telegram_html(tariff_description)}"
     if amount > 0:
-        tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽</b>".replace(",", " ")
+        if is_sub:
+            from keyboard.user_kb import format_period_suffix
+            tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽ {format_period_suffix(period)}</b> <i>(подписка)</i>".replace(",", " ")
+        else:
+            tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽</b>".replace(",", " ")
     else:
         tariff_details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
     message_text = to_telegram_html(message_text)

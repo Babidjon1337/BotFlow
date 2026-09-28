@@ -217,8 +217,13 @@ async def health_check():
 async def get_funnel(bot_id: int, request: Request):
     """Возвращает текущую схему воронки для бота."""
     bot_config = await get_owned_bot(bot_id, request)
+    funnel_data = bot_config.funnel_schema or {"nodes": {}, "global_settings": {}}
 
-    return bot_config.funnel_schema or {"nodes": {}, "global_settings": {}}
+    from database.requests.tariff_rq import list_tariffs_by_bot_id
+    from services.funnel_tariff_sync import hydrate_funnel_tariffs
+
+    db_tariffs = await list_tariffs_by_bot_id(bot_id)
+    return hydrate_funnel_tariffs(funnel_data, db_tariffs) or funnel_data
 
 
 @app.post("/api/funnel/{bot_id}")

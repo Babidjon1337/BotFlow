@@ -17,7 +17,7 @@ export interface TariffDeliverable {
 
 export type SalesMode = 'auto' | 'application' | 'hybrid';
 export type PaymentType = 'one_time' | 'subscription';
-export type BillingPeriod = 'week' | 'month' | '3months' | 'year';
+export type BillingPeriod = 'week' | 'month' | '3months' | 'year' | string;
 
 export interface TariffItem {
   id: string;

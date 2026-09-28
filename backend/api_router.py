@@ -82,6 +82,12 @@ from database.requests.tariff_rq import (
     delete_tariff,
     get_tariff_summary_stats,
 )
+from services.funnel_tariff_sync import (
+    sync_tariff_to_funnel,
+    remove_tariff_from_funnel,
+    sync_funnel_tariffs_to_db,
+    hydrate_funnel_tariffs,
+)
 from database.requests.admin_rq import (
     get_admin_overview,
     get_admin_user_detail,
@@ -1534,9 +1540,14 @@ async def get_bot_funnel_endpoint(bot_id: int, request: Request):
             status_code=409,
             detail="Эта воронка использует устаревший формат. Сохраните её заново в редакторе.",
         )
+    from database.requests.tariff_rq import list_tariffs_by_bot_id
+    from services.funnel_tariff_sync import hydrate_funnel_tariffs
+
+    db_tariffs = await list_tariffs_by_bot_id(bot.id)
+    hydrated = hydrate_funnel_tariffs(funnel_data, db_tariffs) or funnel_data
     response = FunnelApiResponse(
-        version=funnel_data.get("version", 2),
-        nodes=funnel_data.get("nodes", []),
+        version=hydrated.get("version", 2),
+        nodes=hydrated.get("nodes", []),
         funnelComplete=getattr(bot, "funnel_complete", False),
     )
     return response.model_dump(by_alias=True)
@@ -1885,6 +1896,12 @@ async def update_tariff_endpoint(
     )
     if not updated:
         raise HTTPException(status_code=404, detail="Тариф не найден")
+
+    try:
+        await sync_tariff_to_funnel(bot_id, updated)
+    except Exception as exc:
+        logger.warning("Не удалось синхронизировать тариф с воронкой: %s", exc)
+
     return TariffApiResponse.from_orm_tariff(updated).model_dump(by_alias=True)
 
 
@@ -1901,6 +1918,12 @@ async def delete_tariff_endpoint(
         raise HTTPException(status_code=404, detail="Тариф не найден")
 
     await delete_tariff(tariff.id)
+
+    try:
+        await remove_tariff_from_funnel(bot_id, tariff.id)
+    except Exception as exc:
+        logger.warning("Не удалось удалить тариф из воронки: %s", exc)
+
     return {"status": "ok", "message": "Тариф удален", "tariffId": str(tariff.id)}
 
 
@@ -1919,6 +1942,17 @@ async def save_bot_funnel_endpoint(
         len(body.nodes),
         body.funnel_complete,
     )
+
+    # Synchronize Tariff.is_active in DB based on tariffs selected in payment node
+    payment_node = next((n for n in body.nodes if n.id == "payment"), None)
+    if payment_node and getattr(payment_node, "tariffs", None):
+        active_tariff_ids = {str(t.id) for t in payment_node.tariffs if getattr(t, "id", None)}
+        if active_tariff_ids:
+            try:
+                await sync_funnel_tariffs_to_db(bot_id, active_tariff_ids)
+            except Exception as exc:
+                logger.warning("Не удалось синхронизировать активность тарифов: %s", exc)
+
     connected_chats = await list_connected_chats(bot_id)
     bot_tariffs = await _tariffs_for_bot(bot)
     readiness = evaluate_funnel_readiness(

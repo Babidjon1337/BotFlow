@@ -11,7 +11,7 @@ import {
   Layers,
   AlertTriangle,
 } from 'lucide-react';
-import type { BotConfig } from '../../types';
+import type { BotConfig, Tariff } from '../../types';
 import type { TariffItem } from '../../types/tariff';
 import { apiService } from '../../services/api';
 import { useAppState } from '../../providers/AppStateProvider';
@@ -22,6 +22,7 @@ import {
   mapBackendTariff,
   tariffItemToTariff,
   stripTelegramHtml,
+  getPeriodSuffix,
 } from '../../utils/tariffMappers';
 
 interface BotTariffsScreenProps {
@@ -42,20 +43,6 @@ function pluralizeBuyers(count: number): string {
   if (mod10 === 1) return 'покупатель';
   if (mod10 >= 2 && mod10 <= 4) return 'покупателя';
   return 'покупателей';
-}
-
-function getPeriodSuffix(period?: string): string {
-  switch (period) {
-    case 'week':
-      return '/ нед';
-    case '3months':
-      return '/ 3 мес';
-    case 'year':
-      return '/ год';
-    case 'month':
-    default:
-      return '/ мес';
-  }
 }
 
 export function BotTariffsScreen({
@@ -166,7 +153,6 @@ export function BotTariffsScreen({
 
       // Try dedicated API first
       let savedItem = tariffItem;
-      let savedSuccessfully = false;
       try {
         if (exists) {
           const res = await apiService.updateTariff(
@@ -182,7 +168,6 @@ export function BotTariffsScreen({
           );
           if (res) savedItem = mapBackendTariff(res as unknown as Record<string, unknown>);
         }
-        savedSuccessfully = true;
       } catch (saveErr: unknown) {
         const msg = saveErr instanceof Error ? saveErr.message : String(saveErr);
         if (msg.includes('404')) {
@@ -199,21 +184,33 @@ export function BotTariffsScreen({
 
       setTariffs(updatedTariffs);
 
-      // If dedicated API wasn't available, sync funnel payment node
-      if (!savedSuccessfully) {
-        try {
-          const funnel = await apiService.getFunnel(bot.id);
-          const nodes = Array.isArray(funnel) ? [...funnel] : [];
-          const paymentIdx = nodes.findIndex((n) => n.id === 'payment');
-          if (paymentIdx >= 0) {
-            const paymentNode = { ...nodes[paymentIdx] };
-            paymentNode.tariffs = updatedTariffs.map(tariffItemToTariff);
-            nodes[paymentIdx] = paymentNode;
-            await apiService.saveFunnel(bot.id, nodes, false);
+      // Keep funnel payment node synchronized
+      try {
+        const funnel = await apiService.getFunnel(bot.id);
+        const rawNodes = Array.isArray(funnel) ? funnel : (funnel?.nodes || []);
+        const nodes = Array.isArray(rawNodes) ? [...rawNodes] : [];
+        const paymentIdx = nodes.findIndex((n) => n.id === 'payment');
+        if (paymentIdx >= 0) {
+          const paymentNode = { ...nodes[paymentIdx] };
+          const currentFunnelTariffs = Array.isArray(paymentNode.tariffs) ? [...paymentNode.tariffs] : [];
+          let nextFunnelTariffs: Tariff[];
+          if (!savedItem.isActiveInFunnel) {
+            nextFunnelTariffs = currentFunnelTariffs.filter((t) => t.id !== savedItem.id);
+          } else {
+            const idxInFunnel = currentFunnelTariffs.findIndex((t) => t.id === savedItem.id);
+            const converted = tariffItemToTariff(savedItem);
+            if (idxInFunnel >= 0) {
+              nextFunnelTariffs = currentFunnelTariffs.map((t) => (t.id === savedItem.id ? converted : t));
+            } else {
+              nextFunnelTariffs = [...currentFunnelTariffs, converted];
+            }
           }
-        } catch (e) {
-          console.warn('Funnel sync fallback error:', e);
+          paymentNode.tariffs = nextFunnelTariffs;
+          nodes[paymentIdx] = paymentNode;
+          await apiService.saveFunnel(bot.id, nodes, false);
         }
+      } catch (e) {
+        console.warn('Funnel sync error in handleSaveTariff:', e);
       }
 
       setToastType?.('success');
@@ -242,14 +239,16 @@ export function BotTariffsScreen({
       const updated = tariffs.filter((t) => t.id !== tariffToDelete.id);
       setTariffs(updated);
 
-      // Funnel sync fallback
+      // Keep funnel payment node in sync after delete
       try {
         const funnel = await apiService.getFunnel(bot.id);
-        const nodes = Array.isArray(funnel) ? [...funnel] : [];
+        const rawNodes = Array.isArray(funnel) ? funnel : (funnel?.nodes || []);
+        const nodes = Array.isArray(rawNodes) ? [...rawNodes] : [];
         const paymentIdx = nodes.findIndex((n) => n.id === 'payment');
         if (paymentIdx >= 0) {
           const paymentNode = { ...nodes[paymentIdx] };
-          paymentNode.tariffs = updated.map(tariffItemToTariff);
+          const currentFunnelTariffs = Array.isArray(paymentNode.tariffs) ? [...paymentNode.tariffs] : [];
+          paymentNode.tariffs = currentFunnelTariffs.filter((t) => t.id !== tariffToDelete.id);
           nodes[paymentIdx] = paymentNode;
           await apiService.saveFunnel(bot.id, nodes, false);
         }

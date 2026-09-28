@@ -16,6 +16,10 @@ export interface Tariff {
   inviteExpiresHours?: number;
   chatType?: 'channel' | 'group' | 'supergroup';
   installments?: boolean;
+  paymentType?: string;
+  payment_type?: string;
+  recurringPeriod?: string;
+  recurring_period?: string;
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaType?: 'photo' | 'video' | null;
