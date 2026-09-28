@@ -1588,9 +1588,9 @@ async def _render_lead_subscription_card(
         prev_idx = (page_idx - 1) % total
         next_idx = (page_idx + 1) % total
         keyboard_rows.append([
-            InlineKeyboardButton(text="⬅️ Назад", callback_data=f"sub_page:{prev_idx}"),
+            InlineKeyboardButton(text="<<<", callback_data=f"sub_page:{prev_idx}"),
             InlineKeyboardButton(text=f"{page_idx + 1} / {total}", callback_data="noop"),
-            InlineKeyboardButton(text="Вперёд ➡️", callback_data=f"sub_page:{next_idx}"),
+            InlineKeyboardButton(text=">>>", callback_data=f"sub_page:{next_idx}"),
         ])
 
     reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard_rows) if keyboard_rows else None
