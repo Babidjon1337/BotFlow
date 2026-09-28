@@ -1548,9 +1548,9 @@ async def _send_lead_subscription_cards(
         await send_message_fn(card_text, reply_markup=reply_markup)
 
 
-@user_bot_router.message(Command("sub", "subscriptions"))
+@user_bot_router.message(Command("sub", "subscriptions", "help"))
 async def cmd_subscriptions(message: Message):
-    """Показать активные подписки пользователя в текущем боте."""
+    """Показать активные подписки пользователя в текущем боте (/sub, /help)."""
     bot_config = await get_bot_by_tg_id(message.bot.id)
     if not bot_config:
         return

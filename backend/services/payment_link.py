@@ -694,6 +694,12 @@ async def send_success_message(
                 or tariff_data.get("paymentType") == "recurring"
             )
             if is_recurring and isinstance(node_success, dict):
+                cur_content = node_success.get("content") or ""
+                if "/sub" not in cur_content:
+                    node_success["content"] = (
+                        cur_content.rstrip()
+                        + "\n\n<i>ℹ️ Управлять своими подписками и автосписанием вы можете по кнопке ниже или командами /sub и /help.</i>"
+                    )
                 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                 sub_btn = InlineKeyboardButton(
                     text="⚙️ Управление подпиской", callback_data="my_subscriptions"
