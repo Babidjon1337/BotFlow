@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   CalendarClock,
@@ -21,6 +21,7 @@ import { DateTimePicker } from './DateTimePicker';
 import { TelegramTextEditor } from '../TelegramTextEditor';
 import { getPlainTextLength } from '../../lib/telegramHtml';
 import { apiService } from '../../services/api';
+import { getMediaFilesFromClipboard } from '../../utils/clipboardMedia';
 import type { BroadcastButton } from '../../services/api';
 import type {
   AudienceFilter,
@@ -28,7 +29,7 @@ import type {
 } from '../../services/api';
 
 const MAX_MEDIA = 10;
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
 // Минимальный запас до запланированного момента — минута, как на бэкенде.
 const MIN_SCHEDULE_LEAD_MS = 60_000;
 const MAX_SCHEDULE_AHEAD_MS = 90 * 24 * 60 * 60 * 1000;
@@ -185,23 +186,40 @@ export function BroadcastComposerForm({
     setScheduleError(value ? validateSchedule(value) : null);
   };
 
-  const addFiles = (files: FileList | null) => {
-    if (!files?.length) return;
+  const addFiles = useCallback((files: FileList | File[] | null) => {
+    if (!files || (Array.isArray(files) ? files.length === 0 : files.length === 0)) return;
     const accepted: PendingMedia[] = [];
     for (const file of Array.from(files)) {
       if (assetIds.length + pendingFiles.length + accepted.length >= MAX_MEDIA) break;
       if (file.size > MAX_FILE_BYTES) continue;
       const isPhoto = file.type.startsWith('image/');
       const isVideo = file.type.startsWith('video/');
-      if (!isPhoto && !isVideo) continue;
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const isExtPhoto = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif', 'avif'].includes(ext);
+      const isExtVideo = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', '3gp'].includes(ext);
+      if (!isPhoto && !isVideo && !isExtPhoto && !isExtVideo) continue;
       accepted.push({
         url: URL.createObjectURL(file),
         file,
-        type: isPhoto ? 'photo' : 'video',
+        type: isPhoto || isExtPhoto ? 'photo' : 'video',
       });
     }
     setPendingFiles((prev) => [...prev, ...accepted]);
-  };
+  }, [assetIds.length, pendingFiles.length]);
+
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      const mediaFiles = getMediaFilesFromClipboard(e);
+      if (mediaFiles.length === 0) return;
+
+      e.preventDefault();
+      addFiles(mediaFiles);
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [addFiles]);
 
   const removePending = (index: number) => {
     setPendingFiles((prev) => {
@@ -356,7 +374,7 @@ export function BroadcastComposerForm({
             <li>
               <label
                 htmlFor={`${idPrefix}-media`}
-                title="Добавить фото или видео"
+                title="Добавить фото или видео (или вставьте из буфера Ctrl+V)"
                 className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-border-strong text-fg-tertiary transition-colors hover:border-primary hover:text-primary"
               >
                 <ImagePlus className="size-5" aria-hidden />
@@ -367,8 +385,8 @@ export function BroadcastComposerForm({
         </ul>
         <p className="mt-1.5 text-micro text-fg-tertiary">
           {mediaPendingLocal
-            ? 'Прикрепится при отправке · до 10 файлов по 20 МБ'
-            : 'Медиа уйдёт одним сообщением, текст — следующим · до 10 файлов по 20 МБ'}
+            ? 'Прикрепится при отправке · до 10 файлов · можно вставить Ctrl+V'
+            : 'Медиа уйдёт одним сообщением, текст — следующим · до 10 файлов · можно вставить Ctrl+V'}
         </p>
         <input
           id={`${idPrefix}-media`}

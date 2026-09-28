@@ -1,93 +1,204 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { InfoTooltip } from './InfoTooltip';
 
 interface TimerPresetsProps {
   value: string;
   onChange: (value: string) => void;
-  presets: string[];
+  presets?: string[];
 }
 
-export const TimerPresets = ({ value, onChange, presets }: TimerPresetsProps) => {
-  const isCustom = !presets.includes(value) && value !== '';
+export function parseDelayString(val: string): { hours: number; minutes: number } {
+  if (!val) return { hours: 0, minutes: 0 };
+  const str = val.trim().toLowerCase();
+
+  const hMatch = str.match(/(\d+)\s*(?:ч|час|часа|часов|h)/i);
+  const mMatch = str.match(/(\d+)\s*(?:м|мин|минут|минуты|m)/i);
+
+  let hours = hMatch ? parseInt(hMatch[1], 10) : 0;
+  let minutes = mMatch ? parseInt(mMatch[1], 10) : 0;
+
+  if (!hMatch && !mMatch) {
+    const num = parseInt(str, 10);
+    if (!isNaN(num)) {
+      hours = num;
+    }
+  }
+
+  return {
+    hours: isNaN(hours) ? 0 : Math.max(0, hours),
+    minutes: isNaN(minutes) ? 0 : Math.max(0, Math.min(59, minutes)),
+  };
+}
+
+export function buildDelayString(hours: number, minutes: number): string {
+  const h = Math.max(0, hours || 0);
+  const m = Math.max(0, Math.min(59, minutes || 0));
+  if (h > 0 && m > 0) {
+    return `${h}ч ${m}м`;
+  }
+  if (h > 0) {
+    return `${h}ч`;
+  }
+  if (m > 0) {
+    return `${m}м`;
+  }
+  return '0м';
+}
+
+function pluralizeRu(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const rem = abs % 10;
+  if (abs >= 11 && abs <= 19) return `${n} ${many}`;
+  if (rem === 1) return `${n} ${one}`;
+  if (rem >= 2 && rem <= 4) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
+export function formatDelayDescription(val: string): string {
+  const { hours, minutes } = parseDelayString(val);
+  if (hours > 0 && minutes > 0) {
+    return `через ${pluralizeRu(hours, 'час', 'часа', 'часов')} ${pluralizeRu(minutes, 'минуту', 'минуты', 'минут')}`;
+  }
+  if (hours > 0) {
+    return `через ${pluralizeRu(hours, 'час', 'часа', 'часов')}`;
+  }
+  if (minutes > 0) {
+    return `через ${pluralizeRu(minutes, 'минуту', 'минуты', 'минут')}`;
+  }
+  return 'сразу';
+}
+
+export const DEFAULT_TIMER_PRESETS = ['15м', '30м', '1ч', '6ч', '12ч', '24ч'];
+
+export const TimerPresets = ({
+  value,
+  onChange,
+  presets = DEFAULT_TIMER_PRESETS,
+}: TimerPresetsProps) => {
+  const isCustom = !presets.includes(value) && Boolean(value);
   const [showCustom, setShowCustom] = useState(isCustom);
 
-  const numericVal = parseInt(value) || '';
+  const parsed = parseDelayString(value);
+  const [inputHours, setInputHours] = useState<number | ''>(
+    parsed.hours || (parsed.minutes === 0 && !isCustom ? 1 : 0)
+  );
+  const [inputMinutes, setInputMinutes] = useState<number | ''>(parsed.minutes || 0);
 
-  const btnBase: React.CSSProperties = {
-    height: '32px',
-    padding: '0 12px',
-    borderRadius: '8px',
-    fontSize: '13px',
-    cursor: 'pointer',
-    border: '1px solid',
-    transition: 'all 150ms ease',
-    fontWeight: 500,
-    whiteSpace: 'nowrap',
+  useEffect(() => {
+    const p = parseDelayString(value);
+    setInputHours(p.hours || (p.minutes === 0 && !presets.includes(value) ? 0 : p.hours));
+    setInputMinutes(p.minutes || 0);
+    if (!presets.includes(value) && Boolean(value)) {
+      setShowCustom(true);
+    }
+  }, [value, presets]);
+
+  const handleHoursChange = (hVal: string) => {
+    const num = parseInt(hVal, 10);
+    const safeH = isNaN(num) ? '' : Math.max(0, Math.min(720, num));
+    setInputHours(safeH);
+    const h = typeof safeH === 'number' ? safeH : 0;
+    const m = typeof inputMinutes === 'number' ? inputMinutes : 0;
+    onChange(buildDelayString(h, m));
   };
 
-  const activeBtn: React.CSSProperties = {
-    ...btnBase,
-    borderColor: 'var(--color-primary)',
-    background: 'var(--color-primary-soft)',
-    color: 'var(--color-primary)',
-    fontWeight: 600,
-  };
-
-  const inactiveBtn: React.CSSProperties = {
-    ...btnBase,
-    borderColor: 'var(--color-border)',
-    background: 'transparent',
-    color: 'var(--color-foreground-secondary)',
+  const handleMinutesChange = (mVal: string) => {
+    const num = parseInt(mVal, 10);
+    const safeM = isNaN(num) ? '' : Math.max(0, Math.min(59, num));
+    setInputMinutes(safeM);
+    const h = typeof inputHours === 'number' ? inputHours : 0;
+    const m = typeof safeM === 'number' ? safeM : 0;
+    onChange(buildDelayString(h, m));
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      <div className="flex items-center gap-1">
-        <label className="text-label">Отправить через</label>
-        <InfoTooltip
-          title="Задержка отправки"
-          text="Время (в часах) через которое бот автоматически отправит это сообщение пользователю, если он не купил после предыдущего шага."
-        />
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <label className="text-xs font-semibold text-foreground">Отправить через</label>
+          <InfoTooltip
+            title="Задержка отправки"
+            text="Время (в часах и минутах), через которое бот автоматически отправит это сообщение пользователю, если он не купил после предыдущего шага."
+          />
+        </div>
+        <span className="text-[11px] font-medium text-primary">
+          {formatDelayDescription(value || (presets[0] || '1ч'))}
+        </span>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-        {presets.map(preset => (
-          <button
-            key={preset}
-            type="button"
-            onClick={() => { setShowCustom(false); onChange(preset); }}
-            style={value === preset && !showCustom ? activeBtn : inactiveBtn}
-          >
-            {preset}
-          </button>
-        ))}
+
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((preset) => {
+          const isSelected = value === preset && !showCustom;
+          return (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => {
+                setShowCustom(false);
+                onChange(preset);
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                isSelected
+                  ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                  : 'bg-card border border-border text-fg-secondary hover:text-foreground hover:border-border-strong'
+              }`}
+            >
+              {preset}
+            </button>
+          );
+        })}
         <button
           type="button"
           onClick={() => {
             setShowCustom(true);
-            if (!isCustom) onChange('2ч');
+            if (!isCustom) {
+              const h = typeof inputHours === 'number' ? inputHours : 1;
+              const m = typeof inputMinutes === 'number' ? inputMinutes : 30;
+              onChange(buildDelayString(h, m));
+            }
           }}
-          style={showCustom ? activeBtn : inactiveBtn}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            showCustom
+              ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+              : 'bg-card border border-border text-fg-secondary hover:text-foreground hover:border-border-strong'
+          }`}
         >
           Своё
         </button>
       </div>
+
       {showCustom && (
-        <div className="relative mt-0.5" style={{ width: '140px' }}>
-          <input
-            type="number"
-            min="1"
-            max="720"
-            placeholder="Кол-во часов"
-            value={numericVal}
-            onChange={(e) => {
-              const val = e.target.value;
-              onChange(val ? `${val}ч` : '');
-            }}
-            className="input w-full pr-8 text-[13px] font-medium"
-            style={{ height: '34px' }}
-          />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[13px] font-bold pointer-events-none" style={{ color: 'var(--color-primary)' }}>
-            ч
+        <div className="flex items-center gap-2 pt-1 border-t border-border/40 text-xs">
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="0"
+              max="720"
+              placeholder="0"
+              value={inputHours}
+              onChange={(e) => handleHoursChange(e.target.value)}
+              className="h-8 w-14 rounded-lg border border-border bg-card text-center font-bold text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-fg-secondary font-medium">ч</span>
+          </div>
+
+          <span className="text-fg-tertiary font-bold">+</span>
+
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              min="0"
+              max="59"
+              placeholder="0"
+              value={inputMinutes}
+              onChange={(e) => handleMinutesChange(e.target.value)}
+              className="h-8 w-14 rounded-lg border border-border bg-card text-center font-bold text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span className="text-fg-secondary font-medium">мин</span>
+          </div>
+
+          <span className="text-[11px] text-fg-tertiary ml-1.5 font-normal">
+            (укажите часы и минуты)
           </span>
         </div>
       )}

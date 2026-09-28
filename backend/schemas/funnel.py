@@ -149,6 +149,7 @@ class FunnelNodeSchema(BaseModel):
     id: str                        # "start" | reminder id | "payment"
     step: str                      # отображаемое название
     subtitle: str = ""
+    delay: Optional[str] = Field(default=None)
     delay_seconds: int = Field(
         default=0,
         validation_alias=AliasChoices("delay_seconds", "delay"),
@@ -205,6 +206,15 @@ class FunnelNodeSchema(BaseModel):
                     mediaType=self.media_type or "photo",
                 )
             ]
+        if not self.delay and self.delay_seconds > 0:
+            h = self.delay_seconds // 3600
+            m = (self.delay_seconds % 3600) // 60
+            if h > 0 and m > 0:
+                self.delay = f"{h}ч {m}м"
+            elif h > 0:
+                self.delay = f"{h}ч"
+            elif m > 0:
+                self.delay = f"{m}м"
         return self
 
     @field_validator("delay_seconds", mode="before")
@@ -212,23 +222,46 @@ class FunnelNodeSchema(BaseModel):
     def parse_delay(cls, v: Any) -> int:
         if isinstance(v, int):
             return v
+        if isinstance(v, float):
+            return int(v)
         if isinstance(v, str):
+            normalized = v.strip().lower()
+            if not normalized:
+                return 0
             mapping = {
                 "0 мин": 0, "0м": 0, "0": 0,
+                "15м": 900, "15 мин": 900,
+                "30м": 1800, "30 мин": 1800,
                 "1ч": 3600, "1 час": 3600,
                 "6ч": 21600, "6 часов": 21600,
                 "12ч": 43200, "12 часов": 43200,
                 "24ч": 86400, "24 часа": 86400,
                 "48ч": 172800, "48 часов": 172800,
             }
-            normalized = v.strip()
             if normalized in mapping:
                 return mapping[normalized]
-            match = re.fullmatch(r"(\d+)\s*(ч|час|часа|часов|м|мин|минут)", normalized, re.IGNORECASE)
-            if match:
-                amount = int(match.group(1))
-                unit = match.group(2).lower()
-                return amount * 60 if unit.startswith("м") else amount * 3600
+
+            hours = 0
+            minutes = 0
+
+            h_match = re.search(r"(\d+)\s*(?:ч|час|часа|часов|h|hours?)\b", normalized, re.IGNORECASE)
+            if not h_match:
+                h_match = re.search(r"(\d+)\s*(?:ч|час|часа|часов|h)", normalized, re.IGNORECASE)
+
+            m_match = re.search(r"(\d+)\s*(?:мин|минута|минуты|минут|m|mins?|minutes?)\b", normalized, re.IGNORECASE)
+            if not m_match:
+                m_match = re.search(r"(\d+)\s*м(?![а-яa-z])", normalized, re.IGNORECASE)
+
+            if h_match or m_match:
+                if h_match:
+                    hours = int(h_match.group(1))
+                if m_match:
+                    minutes = int(m_match.group(1))
+                return hours * 3600 + minutes * 60
+
+            if normalized.isdigit():
+                return int(normalized)
+
             return 0
         return 0
 

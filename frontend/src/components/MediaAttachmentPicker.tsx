@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileImage, ImagePlus, Trash2, Video } from "lucide-react";
 import { apiService } from "../services/api";
+import { getMediaFilesFromClipboard } from "../utils/clipboardMedia";
 
 type MediaType = "photo" | "video" | null | undefined;
 
@@ -71,6 +72,22 @@ export function MediaAttachmentPicker({
     }
   };
 
+  const handlePaste = async (event: React.ClipboardEvent) => {
+    const mediaFiles = getMediaFilesFromClipboard(event);
+    if (mediaFiles.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsUploading(true);
+      try {
+        await onUpload(mediaFiles[0]);
+      } catch {
+        // The parent shows the contextual upload error.
+      } finally {
+        setIsUploading(false);
+      }
+    }
+  };
+
   const hasMedia = Boolean(fileId && mediaType);
   const attachmentContent = hasMedia ? (
     <div className="flex items-center gap-3">
@@ -89,7 +106,7 @@ export function MediaAttachmentPicker({
   ) : null;
 
   return (
-    <div className={triggerOnly ? "contents" : embedded ? "border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2" : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"}>
+    <div onPaste={handlePaste} className={triggerOnly ? "contents" : embedded ? "border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2" : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"}>
       <input ref={inputRef} type="file" accept="image/*,video/*" className="sr-only" onChange={handleChange} />
       {hasMedia ? (
         attachmentContent

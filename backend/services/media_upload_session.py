@@ -40,6 +40,8 @@ def get_node_human_title(node_id: str, funnel_schema: dict | None = None) -> str
         return "Дожим 1"
     elif node_id == "push2":
         return "Дожим 2"
+    elif node_id in ("delivery", "success", "node_success"):
+        return "Выдача"
     elif node_id == "payment":
         return "Оплата"
     elif node_id.startswith("payment:tariff:") or node_id.startswith("tariff:"):
@@ -54,6 +56,11 @@ def get_node_human_title(node_id: str, funnel_schema: dict | None = None) -> str
         return "Тариф"
     elif node_id == "broadcast":
         return "Рассылка"
+    if funnel_schema and isinstance(funnel_schema, dict):
+        nodes = funnel_schema.get("nodes") or []
+        target = next((n for n in nodes if isinstance(n, dict) and n.get("id") == node_id), None)
+        if target and target.get("label"):
+            return str(target["label"])
     return node_id
 
 

@@ -33,6 +33,7 @@ import {
 } from "../lib/telegramHtml";
 import { apiService } from "../services/api";
 import type { NodeMediaAsset } from "../types";
+import { getMediaFilesFromClipboard } from "../utils/clipboardMedia";
 
 function captureFirstFrame(videoUrl: string): Promise<string> {
   return new Promise((resolve) => {
@@ -401,37 +402,32 @@ export const TelegramTextEditor = ({
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
     // 1. Проверяем вставку медиафайлов из буфера обмена (картинки, скриншоты, видео)
-    const items = event.clipboardData.items ? Array.from(event.clipboardData.items) : [];
-    const mediaFiles: File[] = [];
-    for (const item of items) {
-      if (item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/"))) {
-        const f = item.getAsFile();
-        if (f) mediaFiles.push(f);
-      }
-    }
-    if (mediaFiles.length === 0 && event.clipboardData.files) {
-      for (const f of Array.from(event.clipboardData.files)) {
-        if (f.type.startsWith("image/") || f.type.startsWith("video/")) {
-          mediaFiles.push(f);
-        }
-      }
-    }
+    const mediaFiles = getMediaFilesFromClipboard(event);
 
     if (mediaFiles.length > 0 && onUploadMedia) {
       event.preventDefault();
+      event.stopPropagation();
       setIsUploading(true);
       (async () => {
         try {
           for (const mediaFile of mediaFiles) {
-            if (mediaFile.size > 20 * 1024 * 1024) {
+            if (mediaFile.size > 50 * 1024 * 1024) {
               if (onUploadLargeMedia) {
                 onUploadLargeMedia(mediaFile);
               } else {
-                alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+                alert("Файл слишком большой для прямой отправки. Отправьте его напрямую в Telegram-бота.");
               }
               break;
             }
-            await onUploadMedia(mediaFile);
+            try {
+              await onUploadMedia(mediaFile);
+            } catch (err) {
+              if (onUploadLargeMedia) {
+                onUploadLargeMedia(mediaFile);
+                break;
+              }
+              throw err;
+            }
           }
         } finally {
           setIsUploading(false);
@@ -440,14 +436,20 @@ export const TelegramTextEditor = ({
       return;
     }
 
-    // 2. Обычная вставка форматированного текста
-    event.preventDefault();
-    const htmlData = event.clipboardData.getData("text/html");
-    const plainText = event.clipboardData.getData("text/plain");
-    const cleanHtml = normalizePasteInput(htmlData, plainText);
-    if (cleanHtml) {
-      insertHtmlAtSelection(cleanHtml);
-      handleInput();
+    // 2. Обычная вставка форматированного текста, если событие произошло в поле ввода
+    const isTargetingEditor =
+      editorRef.current &&
+      (editorRef.current === event.target || editorRef.current.contains(event.target as Node));
+
+    if (isTargetingEditor) {
+      event.preventDefault();
+      const htmlData = event.clipboardData.getData("text/html");
+      const plainText = event.clipboardData.getData("text/plain");
+      const cleanHtml = normalizePasteInput(htmlData, plainText);
+      if (cleanHtml) {
+        insertHtmlAtSelection(cleanHtml);
+        handleInput();
+      }
     }
   };
 
@@ -474,15 +476,23 @@ export const TelegramTextEditor = ({
       setIsUploading(true);
       try {
         for (const mediaFile of files) {
-          if (mediaFile.size > 20 * 1024 * 1024) {
+          if (mediaFile.size > 50 * 1024 * 1024) {
             if (onUploadLargeMedia) {
               onUploadLargeMedia(mediaFile);
             } else {
-              alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+              alert("Файл слишком большой для прямой отправки. Отправьте его напрямую в Telegram-бота.");
             }
             break;
           }
-          await onUploadMedia(mediaFile);
+          try {
+            await onUploadMedia(mediaFile);
+          } catch (err) {
+            if (onUploadLargeMedia) {
+              onUploadLargeMedia(mediaFile);
+              break;
+            }
+            throw err;
+          }
         }
       } finally {
         setIsUploading(false);
@@ -807,15 +817,23 @@ export const TelegramTextEditor = ({
     setIsUploading(true);
     try {
       for (const selectedFile of selectedFiles) {
-        if (selectedFile.size > 20 * 1024 * 1024) {
+        if (selectedFile.size > 50 * 1024 * 1024) {
           if (onUploadLargeMedia) {
             onUploadLargeMedia(selectedFile);
           } else {
-            alert("Размер файла превышает 20 МБ. Используйте загрузку через Telegram-бота.");
+            alert("Файл слишком большой для прямой отправки. Отправьте его напрямую в Telegram-бота.");
           }
           break;
         }
-        await onUploadMedia(selectedFile);
+        try {
+          await onUploadMedia(selectedFile);
+        } catch (err) {
+          if (onUploadLargeMedia) {
+            onUploadLargeMedia(selectedFile);
+            break;
+          }
+          throw err;
+        }
       }
     } finally {
       setIsUploading(false);
@@ -831,10 +849,12 @@ export const TelegramTextEditor = ({
 
   return (
     <div
+      tabIndex={-1}
+      onPaste={handlePaste}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`flex flex-col overflow-hidden rounded-[var(--radius-sm)] border bg-[var(--color-surface)] shadow-2xs transition-all ${
+      className={`flex flex-col overflow-hidden rounded-[var(--radius-sm)] border bg-[var(--color-surface)] shadow-2xs transition-all outline-none ${
         isDraggingOver
           ? "border-[var(--color-primary)] ring-2 ring-[var(--color-primary-soft)]"
           : isOverLimit
@@ -933,7 +953,7 @@ export const TelegramTextEditor = ({
                 onMouseDown={keepEditorSelection}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                title="Добавить фото или видео"
+                title="Добавить фото или видео (или вставьте из буфера Ctrl+V)"
                 aria-label="Добавить медиафайл"
                 className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-border-strong)] text-[var(--color-foreground-tertiary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50 shrink-0"
               >
@@ -950,12 +970,13 @@ export const TelegramTextEditor = ({
             )}
           </div>
           <p className="mt-1.5 text-[11px] text-[var(--color-foreground-tertiary)]">
-            {mediaHint ||
-              (allAssets.length > 1
-                ? "Перетаскивайте блоки вправо или влево для смены порядка"
+            {mediaHint
+              ? `${mediaHint} · можно вставить Ctrl+V`
+              : (allAssets.length > 1
+                ? "Перетаскивайте блоки вправо или влево для смены порядка · вставка Ctrl+V"
                 : allAssets.length === 1
-                ? "Медиа над текстом · до 10 файлов (фото и видео)"
-                : "Фото или видео над текстом · до 10 файлов")}
+                ? "Медиа над текстом · до 10 файлов (фото и видео) · можно вставить Ctrl+V"
+                : "Фото или видео над текстом · до 10 файлов · можно вставить Ctrl+V")}
           </p>
         </div>
       )}

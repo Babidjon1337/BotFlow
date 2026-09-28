@@ -21,6 +21,7 @@ import { FunnelCard } from "../FunnelCard";
 import { TelegramTextEditor, SyncedMediaPreview } from "../TelegramTextEditor";
 import { PaymentBlockEditor } from "../PaymentBlockEditor";
 import { TimerPresets } from "../TimerPresets";
+import { getMediaFilesFromClipboard } from "../../utils/clipboardMedia";
 
 import { useAppState } from "../../providers/AppStateProvider";
 import { useBotToggle } from "../../hooks/useBotToggle";
@@ -293,8 +294,9 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     if (!appState.activeBot) return;
     const uploadBotId = appState.activeBot.id;
     const workspaceGeneration = getFunnelWorkspaceGeneration();
-    if (file.size > 20 * 1024 * 1024) {
-      throw new Error("Размер файла не должен превышать 20 МБ.");
+    if (file.size > 50 * 1024 * 1024) {
+      handleLargeFileDetected(nodeId, file);
+      return;
     }
     try {
       const { apiService } = await import("../../services/api");
@@ -326,7 +328,11 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
 
       setToastType("success");
       setToastMessage("Файл синхронизирован с Telegram");
-    } catch (error) {
+    } catch (error: any) {
+      if (file.size > 20 * 1024 * 1024 || (error?.message && /размер|слишком|large|413|entity too large/i.test(error.message))) {
+        handleLargeFileDetected(nodeId, file);
+        return;
+      }
       showAlert({
         title: "Не удалось загрузить файл",
         message: error instanceof Error ? error.message : "Повторите попытку.",
@@ -337,6 +343,29 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
       throw error;
     }
   };
+
+  useEffect(() => {
+    const handleFunnelPaste = async (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      const mediaFiles = getMediaFilesFromClipboard(e);
+      if (mediaFiles.length === 0) return;
+
+      const targetId = selectedBlockId || (blocks.length > 0 ? blocks[0].id : "start");
+      if (!targetId) return;
+
+      e.preventDefault();
+      for (const file of mediaFiles) {
+        try {
+          await handleMediaUpload(targetId, file);
+        } catch {
+          // Alert is handled inside handleMediaUpload
+        }
+      }
+    };
+
+    window.addEventListener("paste", handleFunnelPaste);
+    return () => window.removeEventListener("paste", handleFunnelPaste);
+  }, [selectedBlockId, blocks, appState.activeBot]);
 
   const removeMedia = (nodeId: string, assetIdToRemove?: string) => {
     const node = getBlock(nodeId);
@@ -397,6 +426,20 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
       let unsubCancelled: (() => void) | null = null;
 
       const applyAssets = (assets: Array<{ mediaAssetId: string; mediaFileId: string; mediaType: 'photo' | 'video' | 'document' }>) => {
+        if (!assets || assets.length === 0) return;
+        if (nodeId.startsWith("payment:tariff:") || nodeId.startsWith("tariff:")) {
+          const tariffId = nodeId.replace(/^payment:tariff:|^tariff:/, "");
+          const tariffs = (getBlock("payment")?.tariffs || []).map((t) =>
+            t.id === tariffId
+              ? { ...t, mediaFileId: assets[0].mediaFileId, mediaAssetId: assets[0].mediaAssetId, mediaType: assets[0].mediaType as "photo" | "video" }
+              : t
+          );
+          updateBlock("payment", "tariffs", tariffs);
+          setToastType("success");
+          setToastMessage("Медиа тарифа получено из Telegram!");
+          return;
+        }
+
         const node = getBlock(nodeId);
         const currentAssets: NodeMediaAsset[] = Array.isArray(node?.mediaAssets) && node.mediaAssets.length > 0
           ? [...node.mediaAssets]
@@ -536,9 +579,9 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     if (file) {
       const sizeMb = Math.round(file.size / (1024 * 1024));
       showConfirm({
-        title: "Видео весит слишком много",
-        message: `Файл (${sizeMb} МБ) превышает лимит браузера (20 МБ).\nОтправьте его напрямую в Telegram-бота — он примет большое видео до 2 ГБ и сохранит для этого блока.`,
-        confirmText: "Открыть бота",
+        title: "Загрузка через Telegram-бота",
+        message: `Файл (${sizeMb} МБ) слишком большой для прямой веб-отправки.\nПерейдите в своего Telegram-бота — он примет большое видео (до 2 ГБ) и прикрепит его к этому сообщению.`,
+        confirmText: "Перейти в бота",
         cancelText: "Отмена",
         onConfirm: () => handleOpenLargeMediaUpload(nodeId),
       });
@@ -560,7 +603,10 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
 
   const handleTariffMediaUpload = async (tariffId: string, file: File) => {
     if (!appState.activeBot) return;
-    if (file.size > 20 * 1024 * 1024) throw new Error("Размер файла не должен превышать 20 МБ.");
+    if (file.size > 50 * 1024 * 1024) {
+      handleLargeFileDetected(`payment:tariff:${tariffId}`, file);
+      return;
+    }
     try {
       const { apiService } = await import("../../services/api");
       const media = await apiService.uploadBotMedia(appState.activeBot.id, `payment:tariff:${tariffId}`, file);
@@ -570,7 +616,11 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
       updateBlock("payment", "tariffs", tariffs);
       setToastType("success");
       setToastMessage("Файл синхронизирован с Telegram");
-    } catch (error) {
+    } catch (error: any) {
+      if (file.size > 20 * 1024 * 1024 || (error?.message && /размер|слишком|large|413|entity too large/i.test(error.message))) {
+        handleLargeFileDetected(`payment:tariff:${tariffId}`, file);
+        return;
+      }
       showAlert({
         title: "Не удалось загрузить файл",
         message: error instanceof Error ? error.message : "Повторите попытку.",
@@ -1045,7 +1095,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                       <TimerPresets
                         value={block.delay || (idx === 0 ? "1ч" : "24ч")}
                         onChange={(val) => updateBlock(block.id, "delay", val)}
-                        presets={["1ч", "6ч", "12ч", "24ч", "48ч"]}
+                        presets={["15м", "30м", "1ч", "6ч", "12ч", "24ч"]}
                       />
                     </div>
                   </div>
@@ -1092,6 +1142,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                   onManagerUrlChange={(v) => updateBlock("payment", "managerUrl", v)}
                   onManagerTextChange={(v) => updateBlock("payment", "managerText", v)}
                   onUploadPaymentMedia={(file) => handleMediaUpload("payment", file)}
+                  onUploadLargePaymentMedia={(file) => handleLargeFileDetected("payment", file)}
                   onRemovePaymentMedia={() => removeMedia("payment")}
                   onUploadTariffMedia={handleTariffMediaUpload}
                   onUploadLargeTariffMedia={(tariffId, file) => handleLargeFileDetected(`payment:tariff:${tariffId}`, file)}

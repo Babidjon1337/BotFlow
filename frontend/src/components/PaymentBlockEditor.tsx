@@ -42,6 +42,7 @@ interface PaymentBlockEditorProps {
   onManagerUrlChange: (v: string) => void;
   onManagerTextChange: (v: string) => void;
   onUploadPaymentMedia: (file: File) => Promise<void>;
+  onUploadLargePaymentMedia?: (file?: File) => void;
   onRemovePaymentMedia: () => void;
   onUploadTariffMedia?: (tariffId: string, file: File) => Promise<void>;
   onUploadLargeTariffMedia?: (tariffId: string, file?: File) => void;
@@ -68,6 +69,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
   onManagerUrlChange,
   onManagerTextChange,
   onUploadPaymentMedia,
+  onUploadLargePaymentMedia,
   onRemovePaymentMedia,
   onNavigateToCreateTariff,
 }) => {
@@ -376,8 +378,9 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                   : null
               }
               onUploadMedia={onUploadPaymentMedia}
+              onUploadLargeMedia={onUploadLargePaymentMedia}
               onRemoveMedia={onRemovePaymentMedia}
-              mediaHint="Фото или видео над текстом выбора тарифа · до 20 МБ"
+              mediaHint="Фото или видео над текстом выбора тарифа"
             />
           </motion.div>
         )}

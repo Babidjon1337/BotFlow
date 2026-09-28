@@ -2090,10 +2090,11 @@ async def upload_bot_media(
             status_code=415,
             detail="Для тарифа можно использовать только фото или видео.",
         )
-    payload = await file.read(20 * 1024 * 1024 + 1)
-    if not payload or len(payload) > 20 * 1024 * 1024:
+    payload = await file.read(50 * 1024 * 1024 + 1)
+    if not payload or len(payload) > 50 * 1024 * 1024:
         raise HTTPException(
-            status_code=413, detail="Размер файла должен быть не больше 20 МБ."
+            status_code=413,
+            detail="Размер файла превышает лимит прямой отправки Telegram (50 МБ). Загрузите файл напрямую через бота.",
         )
 
     from aiogram import Bot

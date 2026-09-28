@@ -41,7 +41,7 @@ export function TariffDescriptionEditor({
   onUploadLargeMedia,
   onRemoveMedia,
   onReorderMedia,
-  mediaHint = "Клиент увидит фото или видео над описанием тарифа · до 20 МБ",
+  mediaHint = "Клиент увидит фото или видео над описанием тарифа",
 }: TariffDescriptionEditorProps) {
   return (
     <TelegramTextEditor

@@ -47,21 +47,30 @@ export function getPeriodSuffix(period?: string): string {
   return '/ мес';
 }
 
+function pluralizeRu(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const rem = abs % 10;
+  if (abs >= 11 && abs <= 19) return `${n} ${many}`;
+  if (rem === 1) return `${n} ${one}`;
+  if (rem >= 2 && rem <= 4) return `${n} ${few}`;
+  return `${n} ${many}`;
+}
+
 export function formatBillingPeriod(period?: string): { label: string; suffix: string; daysDesc: string } {
   if (!period) {
     return { label: '1 месяц', suffix: '/ мес', daysDesc: 'каждые 30 дней' };
   }
   const p = String(period).toLowerCase().trim();
-  if (p === 'week' || p === '1_week') {
+  if (p === 'week' || p === '1_week' || p === '7_days') {
     return { label: '1 неделя', suffix: '/ нед', daysDesc: 'каждые 7 дней' };
   }
-  if (p === 'month' || p === '1_month') {
+  if (p === 'month' || p === '1_month' || p === '30_days') {
     return { label: '1 месяц', suffix: '/ мес', daysDesc: 'каждые 30 дней' };
   }
-  if (p === '3months' || p === '3_months') {
+  if (p === '3months' || p === '3_months' || p === '90_days') {
     return { label: '3 месяца', suffix: '/ 3 мес', daysDesc: 'каждые 90 дней' };
   }
-  if (p === 'year' || p === '1_year') {
+  if (p === 'year' || p === '1_year' || p === '12_months' || p === '365_days') {
     return { label: '1 год', suffix: '/ год', daysDesc: 'каждые 365 дней' };
   }
 
@@ -69,41 +78,40 @@ export function formatBillingPeriod(period?: string): { label: string; suffix: s
   const val = match ? parseInt(match[0], 10) : 1;
 
   if (p.includes('day') || p.includes('дн') || p.includes('ден')) {
-    const daysWord = val === 1 ? 'день' : val >= 2 && val <= 4 ? 'дня' : 'дней';
     return {
-      label: `${val} ${daysWord}`,
+      label: pluralizeRu(val, 'день', 'дня', 'дней'),
       suffix: `/ ${val} дн`,
-      daysDesc: `каждые ${val} ${daysWord}`,
+      daysDesc: `каждые ${pluralizeRu(val, 'день', 'дня', 'дней')}`,
     };
   }
 
   if (p.includes('week') || p.includes('нед')) {
-    const weeksWord = val === 1 ? 'неделя' : val >= 2 && val <= 4 ? 'недели' : 'недель';
     const totalDays = val * 7;
     return {
-      label: `${val} ${weeksWord}`,
+      label: pluralizeRu(val, 'неделя', 'недели', 'недель'),
       suffix: `/ ${val} нед`,
-      daysDesc: `каждые ${totalDays} дней`,
+      daysDesc: `каждые ${pluralizeRu(totalDays, 'день', 'дня', 'дней')}`,
     };
   }
 
   if (p.includes('month') || p.includes('мес')) {
-    const monthsWord = val === 1 ? 'месяц' : val >= 2 && val <= 4 ? 'месяца' : 'месяцев';
+    if (val === 12) {
+      return { label: '1 год', suffix: '/ год', daysDesc: 'каждые 365 дней' };
+    }
     const totalDays = val * 30;
     return {
-      label: `${val} ${monthsWord}`,
+      label: pluralizeRu(val, 'месяц', 'месяца', 'месяцев'),
       suffix: `/ ${val} мес`,
-      daysDesc: `каждые ${totalDays} дней`,
+      daysDesc: `каждые ${pluralizeRu(totalDays, 'день', 'дня', 'дней')}`,
     };
   }
 
   if (p.includes('year') || p.includes('год') || p.includes('лет')) {
-    const yearsWord = val === 1 ? 'год' : val >= 2 && val <= 4 ? 'года' : 'лет';
     const totalDays = val * 365;
     return {
-      label: `${val} ${yearsWord}`,
-      suffix: `/ ${val} г`,
-      daysDesc: `каждые ${totalDays} дней`,
+      label: pluralizeRu(val, 'год', 'года', 'лет'),
+      suffix: val === 1 ? '/ год' : `/ ${val} г`,
+      daysDesc: `каждые ${pluralizeRu(totalDays, 'день', 'дня', 'дней')}`,
     };
   }
 
@@ -113,10 +121,10 @@ export function formatBillingPeriod(period?: string): { label: string; suffix: s
 export function parsePeriodIntoUnitAndValue(period?: string): { value: number; unit: 'day' | 'week' | 'month' } {
   if (!period) return { value: 1, unit: 'month' };
   const p = String(period).toLowerCase().trim();
-  if (p === 'week' || p === '1_week') return { value: 1, unit: 'week' };
-  if (p === 'month' || p === '1_month') return { value: 1, unit: 'month' };
-  if (p === '3months' || p === '3_months') return { value: 3, unit: 'month' };
-  if (p === 'year' || p === '1_year') return { value: 12, unit: 'month' };
+  if (p === 'week' || p === '1_week' || p === '7_days') return { value: 1, unit: 'week' };
+  if (p === 'month' || p === '1_month' || p === '30_days') return { value: 1, unit: 'month' };
+  if (p === '3months' || p === '3_months' || p === '90_days') return { value: 3, unit: 'month' };
+  if (p === 'year' || p === '1_year' || p === '12_months' || p === '365_days') return { value: 12, unit: 'month' };
 
   const match = p.match(/\d+/);
   const val = match ? parseInt(match[0], 10) : 1;
@@ -129,6 +137,9 @@ export function parsePeriodIntoUnitAndValue(period?: string): { value: number; u
   }
   if (p.includes('month') || p.includes('мес')) {
     return { value: val, unit: 'month' };
+  }
+  if (p.includes('year') || p.includes('год') || p.includes('лет')) {
+    return { value: val * 12, unit: 'month' };
   }
   return { value: val, unit: 'month' };
 }

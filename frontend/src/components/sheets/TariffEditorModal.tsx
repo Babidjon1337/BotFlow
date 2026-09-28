@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -30,6 +30,7 @@ import {
   parsePeriodIntoUnitAndValue,
   buildBillingPeriod,
 } from '../../utils/tariffMappers';
+import { getMediaFilesFromClipboard } from '../../utils/clipboardMedia';
 
 interface ConnectedChat {
   id: string;
@@ -61,20 +62,35 @@ function formatFileSize(bytes: number): string {
 }
 
 const BILLING_PRESETS = [
-  { id: '1_week', label: '1 неделя', days: '7 дней', value: 1, unit: 'week' as const },
-  { id: '4_weeks', label: '4 недели', days: '28 дней', value: 4, unit: 'week' as const },
-  { id: '6_weeks', label: '6 недель', days: '42 дня', value: 6, unit: 'week' as const },
-  { id: '1_month', label: '1 месяц', days: '30 дней', value: 1, unit: 'month' as const },
-  { id: '3_months', label: '3 месяца', days: '90 дней', value: 3, unit: 'month' as const },
-  { id: '1_year', label: '1 год', days: '365 дней', value: 12, unit: 'month' as const },
+  { id: '1_week', label: '1 нед', value: 1, unit: 'week' as const },
+  { id: '4_weeks', label: '4 нед', value: 4, unit: 'week' as const },
+  { id: '6_weeks', label: '6 нед', value: 6, unit: 'week' as const },
+  { id: '1_month', label: '1 мес', value: 1, unit: 'month' as const },
+  { id: '3_months', label: '3 мес', value: 3, unit: 'month' as const },
+  { id: '1_year', label: '1 год', value: 12, unit: 'month' as const },
 ];
 
 function isPresetSelected(presetId: string, currentPeriod: string): boolean {
+  if (!currentPeriod) return false;
   if (presetId === currentPeriod) return true;
-  if (presetId === '1_week' && (currentPeriod === 'week' || currentPeriod === '1_week')) return true;
-  if (presetId === '1_month' && (currentPeriod === 'month' || currentPeriod === '1_month')) return true;
-  if (presetId === '3_months' && (currentPeriod === '3months' || currentPeriod === '3_months')) return true;
-  if (presetId === '1_year' && (currentPeriod === 'year' || currentPeriod === '1_year')) return true;
+  if (presetId === '1_week') {
+    return currentPeriod === 'week' || currentPeriod === '1_week' || currentPeriod === '7_days' || currentPeriod === '7_day';
+  }
+  if (presetId === '4_weeks') {
+    return currentPeriod === '4_weeks' || currentPeriod === '4_week' || currentPeriod === '28_days' || currentPeriod === '28_day';
+  }
+  if (presetId === '6_weeks') {
+    return currentPeriod === '6_weeks' || currentPeriod === '6_week' || currentPeriod === '42_days' || currentPeriod === '42_day';
+  }
+  if (presetId === '1_month') {
+    return currentPeriod === 'month' || currentPeriod === '1_month' || currentPeriod === '30_days' || currentPeriod === '30_day';
+  }
+  if (presetId === '3_months') {
+    return currentPeriod === '3months' || currentPeriod === '3_months' || currentPeriod === '3_month' || currentPeriod === '90_days' || currentPeriod === '90_day';
+  }
+  if (presetId === '1_year') {
+    return currentPeriod === 'year' || currentPeriod === '1_year' || currentPeriod === '12_months' || currentPeriod === '12_month' || currentPeriod === '365_days' || currentPeriod === '365_day';
+  }
   return false;
 }
 
@@ -135,6 +151,10 @@ function TariffEditorForm({
   });
   const [customUnit, setCustomUnit] = useState<'day' | 'week' | 'month'>(() => {
     return parsePeriodIntoUnitAndValue(tariff?.billingPeriod || '1_month').unit;
+  });
+  const [isCustomMode, setIsCustomMode] = useState<boolean>(() => {
+    const period = tariff?.billingPeriod || '1_month';
+    return !BILLING_PRESETS.some((p) => isPresetSelected(p.id, period));
   });
   const [salesMode, setSalesMode] = useState<SalesMode>(tariff?.salesMode || 'auto');
   const [isActiveInFunnel, setIsActiveInFunnel] = useState(tariff?.isActiveInFunnel !== false);
@@ -346,43 +366,6 @@ function TariffEditorForm({
     setDeliverables((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const handleUploadTariffMedia = async (file: File) => {
-    if (!botId) return;
-    if (file.size > 20 * 1024 * 1024) {
-      void handleUploadLargeMedia(file);
-      return;
-    }
-    try {
-      const tariffId = tariff?.id || 'new';
-      const media = await apiService.uploadBotMedia(
-        botId,
-        `tariff:${tariffId}`,
-        file
-      );
-      const existing = [...mediaAssets];
-      const newAssets: NodeMediaAsset[] =
-        media.mediaAssets && media.mediaAssets.length > 0
-          ? (media.mediaAssets as NodeMediaAsset[])
-          : [
-              ...existing.filter((a) => a.mediaAssetId !== media.id),
-              {
-                mediaFileId: media.fileId,
-                mediaAssetId: media.id,
-                mediaType: (media.mediaType as 'photo' | 'video') || 'photo',
-              },
-            ].slice(-10);
-
-      setMediaAssets(newAssets);
-      if (newAssets.length > 0) {
-        setMediaType(newAssets[0].mediaType === 'video' ? 'video' : 'photo');
-        setMediaFileId(newAssets[0].mediaFileId);
-        setMediaAssetId(newAssets[0].mediaAssetId);
-      }
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Не удалось загрузить медиа');
-    }
-  };
-
   const handleUploadLargeMedia = async (_file?: File) => {
     if (!botId) return;
     const tariffId = tariff?.id || 'new';
@@ -461,6 +444,67 @@ function TariffEditorForm({
       setFormError(err instanceof Error ? err.message : 'Не удалось открыть бота для загрузки');
     }
   };
+
+  const handleUploadTariffMedia = useCallback(async (file: File) => {
+    if (!botId) return;
+    if (file.size > 50 * 1024 * 1024) {
+      void handleUploadLargeMedia(file);
+      return;
+    }
+    try {
+      const tariffId = tariff?.id || 'new';
+      const media = await apiService.uploadBotMedia(
+        botId,
+        `tariff:${tariffId}`,
+        file
+      );
+      setMediaAssets((prev) => {
+        const existing = [...prev];
+        const newAssets: NodeMediaAsset[] =
+          media.mediaAssets && media.mediaAssets.length > 0
+            ? (media.mediaAssets as NodeMediaAsset[])
+            : [
+                ...existing.filter((a) => a.mediaAssetId !== media.id),
+                {
+                  mediaFileId: media.fileId,
+                  mediaAssetId: media.id,
+                  mediaType: (media.mediaType as 'photo' | 'video') || 'photo',
+                },
+              ].slice(-10);
+
+        if (newAssets.length > 0) {
+          setMediaType(newAssets[0].mediaType === 'video' ? 'video' : 'photo');
+          setMediaFileId(newAssets[0].mediaFileId);
+          setMediaAssetId(newAssets[0].mediaAssetId);
+        }
+        return newAssets;
+      });
+      setFormError(null);
+    } catch (err: any) {
+      if (file.size > 20 * 1024 * 1024 || (err?.message && /размер|слишком|large|413|entity too large/i.test(err.message))) {
+        void handleUploadLargeMedia(file);
+        return;
+      }
+      setFormError(err instanceof Error ? err.message : 'Не удалось загрузить медиа');
+    }
+  }, [botId, tariff?.id]);
+
+  useEffect(() => {
+    const handleGlobalPaste = async (e: ClipboardEvent) => {
+      if (e.defaultPrevented) return;
+      const mediaFiles = getMediaFilesFromClipboard(e);
+      if (mediaFiles.length === 0) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      for (const file of mediaFiles) {
+        await handleUploadTariffMedia(file);
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, [handleUploadTariffMedia]);
 
   const handleRemoveMedia = (assetIdToRemove?: string) => {
     if (assetIdToRemove && mediaAssets.length > 0) {
@@ -711,7 +755,7 @@ function TariffEditorForm({
               onReorderMedia={handleReorderMedia}
               placeholder="Опишите, что входит в тариф..."
               helperText="Клиент увидит этот текст и медиа в Telegram при выборе тарифа"
-              mediaHint="Фото или видео над описанием тарифа в Telegram · до 20 МБ"
+              mediaHint="Фото или видео над описанием тарифа в Telegram"
             />
           </div>
 
@@ -746,130 +790,103 @@ function TariffEditorForm({
             </div>
 
             {paymentType === 'subscription' && (
-              <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-semibold text-foreground">
-                    Период списания
-                  </div>
-                  <span className="text-[11px] font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded-md">
+              <div className="rounded-xl border border-border/80 bg-muted/20 p-3 space-y-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-foreground">Период списания</span>
+                  <span className="text-primary font-medium">
                     {formatBillingPeriod(billingPeriod).label}
+                    {!String(billingPeriod).includes('day') && (
+                      <span className="text-fg-tertiary ml-1.5 font-normal">
+                        ({formatBillingPeriod(billingPeriod).daysDesc})
+                      </span>
+                    )}
                   </span>
                 </div>
 
-                {/* Presets Grid */}
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
+                {/* Presets and Custom Chips */}
+                <div className="flex flex-wrap gap-1.5">
                   {BILLING_PRESETS.map((p) => {
-                    const isSelected = isPresetSelected(p.id, billingPeriod);
+                    const isSelected = !isCustomMode && isPresetSelected(p.id, billingPeriod);
                     return (
                       <button
                         key={p.id}
                         type="button"
                         onClick={() => {
+                          setIsCustomMode(false);
                           setBillingPeriod(p.id);
                           setCustomValue(p.value);
                           setCustomUnit(p.unit);
                         }}
-                        className={`flex flex-col items-center justify-center rounded-xl border px-2.5 py-2 text-xs font-semibold transition-all ${
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                           isSelected
-                            ? 'border-primary bg-primary/10 text-primary shadow-xs ring-1 ring-primary/30'
-                            : 'border-border bg-card text-fg-secondary hover:border-border-strong hover:text-foreground'
+                            ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                            : 'bg-card border border-border text-fg-secondary hover:text-foreground hover:border-border-strong'
                         }`}
                       >
-                        <span>{p.label}</span>
-                        <span className="mt-0.5 text-[10px] font-normal opacity-75">
-                          {p.days}
-                        </span>
+                        {p.label}
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsCustomMode(true);
+                      setBillingPeriod(buildBillingPeriod(customValue || 1, customUnit));
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                      isCustomMode
+                        ? 'bg-primary text-primary-foreground font-semibold shadow-xs'
+                        : 'bg-card border border-border text-fg-secondary hover:text-foreground hover:border-border-strong'
+                    }`}
+                  >
+                    Свой срок
+                  </button>
                 </div>
 
-                {/* Manual custom interval selector */}
-                <div className="rounded-xl border border-border bg-card p-3 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-foreground">
-                      Или выберите свой срок подписки:
-                    </span>
-                    <span className="text-[11px] text-fg-secondary">
-                      {formatBillingPeriod(billingPeriod).daysDesc}
-                    </span>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                    <div className="flex items-center gap-2 flex-1">
-                      <label htmlFor="custom-period-val" className="text-xs text-fg-secondary shrink-0 font-medium">
-                        Каждые:
-                      </label>
-                      <input
-                        id="custom-period-val"
-                        type="number"
-                        min={1}
-                        max={365}
-                        value={customValue || ''}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          const safeVal = isNaN(val) ? 1 : Math.max(1, Math.min(365, val));
-                          setCustomValue(safeVal);
-                          setBillingPeriod(buildBillingPeriod(safeVal, customUnit));
-                        }}
-                        className="input h-9 w-24 text-center font-bold text-sm"
-                        placeholder="1"
-                      />
-                    </div>
-
-                    <div className="flex rounded-lg border border-border bg-muted/60 p-0.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomUnit('day');
-                          setBillingPeriod(buildBillingPeriod(customValue || 1, 'day'));
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                          customUnit === 'day'
-                            ? 'bg-card text-foreground shadow-xs font-semibold'
-                            : 'text-fg-secondary hover:text-foreground'
-                        }`}
-                      >
-                        Дней
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomUnit('week');
-                          setBillingPeriod(buildBillingPeriod(customValue || 1, 'week'));
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                          customUnit === 'week'
-                            ? 'bg-card text-foreground shadow-xs font-semibold'
-                            : 'text-fg-secondary hover:text-foreground'
-                        }`}
-                      >
-                        Недель
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomUnit('month');
-                          setBillingPeriod(buildBillingPeriod(customValue || 1, 'month'));
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                          customUnit === 'month'
-                            ? 'bg-card text-foreground shadow-xs font-semibold'
-                            : 'text-fg-secondary hover:text-foreground'
-                        }`}
-                      >
-                        Месяцев
-                      </button>
+                {/* Inline custom interval row */}
+                {isCustomMode && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-border/40 text-xs">
+                    <span className="text-fg-secondary shrink-0">Каждые:</span>
+                    <input
+                      id="custom-period-val"
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={customValue || ''}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        const safeVal = isNaN(val) ? 1 : Math.max(1, Math.min(365, val));
+                        setCustomValue(safeVal);
+                        setBillingPeriod(buildBillingPeriod(safeVal, customUnit));
+                      }}
+                      className="h-8 w-16 rounded-lg border border-border bg-card text-center font-bold text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      placeholder="1"
+                    />
+                    <div className="inline-flex rounded-lg border border-border bg-muted/60 p-0.5 shrink-0">
+                      {(['day', 'week', 'month'] as const).map((unit) => {
+                        const unitLabels = { day: 'дней', week: 'недель', month: 'месяцев' };
+                        const isUnitSelected = customUnit === unit;
+                        return (
+                          <button
+                            key={unit}
+                            type="button"
+                            onClick={() => {
+                              setCustomUnit(unit);
+                              setBillingPeriod(buildBillingPeriod(customValue || 1, unit));
+                            }}
+                            className={`px-2.5 py-1 text-xs rounded-md transition-all ${
+                              isUnitSelected
+                                ? 'bg-card text-foreground font-semibold shadow-xs'
+                                : 'text-fg-secondary hover:text-foreground'
+                            }`}
+                          >
+                            {unitLabels[unit]}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-1.5 text-[11px] text-fg-secondary pt-1 border-t border-border/50">
-                    <span className="size-1.5 rounded-full bg-primary shrink-0" />
-                    <span>
-                      Автосписание {formatBillingPeriod(billingPeriod).daysDesc}. Клиент может в любой момент отменить автопродление в боте без потери доступа.
-                    </span>
-                  </div>
-                </div>
+                )}
               </div>
             )}
           </div>
