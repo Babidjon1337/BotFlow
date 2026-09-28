@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronsUpDown } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { AppRoute } from '../../routes';
 import { ACCOUNT_TABS } from '../../routes';
 import type { BotConfig } from '../../types';
@@ -20,12 +21,19 @@ function BotStatusBadge({ status }: { status: BotConfig['status'] }) {
   } as const;
   const view = map[status] ?? map.inactive;
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${view.className}`}
-    >
-      <span className="size-1.5 rounded-full bg-current" />
-      {view.label}
-    </span>
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.span
+        key={status}
+        initial={{ opacity: 0, y: 3, scale: 0.92 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: -3, scale: 0.92 }}
+        transition={{ duration: 0.18 }}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${view.className}`}
+      >
+        <span className="size-1.5 rounded-full bg-current" />
+        {view.label}
+      </motion.span>
+    </AnimatePresence>
   );
 }
 

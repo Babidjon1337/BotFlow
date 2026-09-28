@@ -48,7 +48,12 @@ export const useBotToggle = () => {
         let updatedActiveBot: BotConfig | null = prev.activeBot;
         if (prev.activeBot && String(prev.activeBot.id) === targetBotId) {
           const fresh = refreshedBots?.find(item => String(item.id) === targetBotId);
-          updatedActiveBot = fresh ? { ...fresh, status: actualStatus } : { ...prev.activeBot, status: actualStatus };
+          updatedActiveBot = {
+            ...prev.activeBot,
+            ...(fresh || {}),
+            id: targetBotId,
+            status: actualStatus,
+          };
         }
         return {
           ...prev,

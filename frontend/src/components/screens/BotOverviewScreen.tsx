@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   ArrowRight,
   BadgeCheck,
@@ -203,7 +204,13 @@ function LaunchChecklist({
   }, [bot.funnelComplete, platformDone, publishReady, paymentDone, publishing, onNavigate, onPublish]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20">
+    <motion.div
+      initial={{ opacity: 0, filter: "blur(4px)", y: 8 }}
+      animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+      exit={{ opacity: 0, filter: "blur(4px)" }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20"
+    >
       <PageHeader
         kicker="Обзор"
         tone="blue"
@@ -443,7 +450,7 @@ function LaunchChecklist({
           </article>
         </aside>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -489,7 +496,13 @@ function LaunchedOverview({
   }, [bot.id]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20">
+    <motion.div
+      initial={{ opacity: 0, filter: "blur(4px)", y: 8 }}
+      animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
+      exit={{ opacity: 0, filter: "blur(4px)" }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-20"
+    >
       <PageHeader
         kicker="Обзор"
         tone="blue"
@@ -521,7 +534,7 @@ function LaunchedOverview({
       </div>
 
       <QuickLinks hasPayment={Boolean(bot.hasPaymentCredentials)} onNavigate={onNavigate} />
-    </div>
+    </motion.div>
   );
 }
 

@@ -21,6 +21,7 @@ import { FunnelCard } from "../FunnelCard";
 import { TelegramTextEditor, SyncedMediaPreview } from "../TelegramTextEditor";
 import { PaymentBlockEditor } from "../PaymentBlockEditor";
 import { TimerPresets, formatDelayLabel, DEFAULT_TIMER_PRESETS } from "../TimerPresets";
+import { StatusBadge } from "../common/StatusBadge";
 import { getMediaFilesFromClipboard } from "../../utils/clipboardMedia";
 
 import { useAppState } from "../../providers/AppStateProvider";
@@ -289,6 +290,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     return () => window.clearTimeout(timer);
   }, [selectedBlockId]);
   const { toggleBot, isToggling } = useBotToggle();
+  const [isPendingToggle, setIsPendingToggle] = useState(false);
 
   const handleMediaUpload = async (nodeId: string, file: File) => {
     if (!appState.activeBot) return;
@@ -639,8 +641,8 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     updateBlock("payment", "tariffs", tariffs);
   };
 
-  const handleSave = async () => {
-    if (!appState.activeBot) return;
+  const handleSave = async (options?: { silentToast?: boolean }) => {
+    if (!appState.activeBot) return false;
     const activeBotId = appState.activeBot.id;
     const revisionAtSave = getFunnelRevision();
     setIsSaving(true);
@@ -668,7 +670,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
       if (savedFunnel.stopped) {
         setToastType("error");
         setToastMessage("Бот остановлен: воронка не заполнена");
-      } else {
+      } else if (!options?.silentToast) {
         setToastType("success");
         setToastMessage("Воронка сохранена");
       }
@@ -853,6 +855,8 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     );
   }
 
+  const isBotActive = appState.activeBot.status === "active";
+  const isToggleBusy = Boolean(isToggling[String(appState.activeBot.id)]) || isSaving || isPendingToggle;
 
   return (
     <div className="relative flex min-h-0 flex-col overflow-x-hidden pb-[calc(72px+env(safe-area-inset-bottom,0px))] lg:pb-0">
@@ -872,6 +876,21 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
             <span className="kicker text-cyan hidden sm:inline">Сценарий</span>
             <span className="text-fg-tertiary hidden sm:inline">·</span>
             <h1 className="text-base sm:text-title font-bold text-foreground truncate">Воронка продаж</h1>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={isBotActive ? "active" : "draft"}
+                initial={{ opacity: 0, scale: 0.85, y: 2 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.85, y: -2 }}
+                transition={{ duration: 0.18 }}
+                className="shrink-0"
+              >
+                <StatusBadge
+                  tone={isBotActive ? "success" : "neutral"}
+                  label={isBotActive ? "Активна" : "Черновик"}
+                />
+              </motion.span>
+            </AnimatePresence>
             {/* Progress indicator (2/4) - always visible */}
             <div
               aria-live="polite"
@@ -929,43 +948,76 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
             )}
           </div>
 
-          <button
+          <motion.button
             type="button"
+            whileTap={{ scale: 0.88 }}
             onClick={async () => {
-              if (!appState.activeBot) return;
-              if (appState.activeBot.status !== "active" && appState.isDirty) {
-                const saved = await handleSave();
-                if (!saved) return;
+              if (!appState.activeBot || isToggleBusy) return;
+              setIsPendingToggle(true);
+              try {
+                if (!isBotActive && appState.isDirty) {
+                  const saved = await handleSave({ silentToast: true });
+                  if (!saved) return;
+                }
+                await toggleBot(appState.activeBot);
+              } finally {
+                setIsPendingToggle(false);
               }
-              await toggleBot(appState.activeBot);
             }}
-            disabled={Boolean(isToggling[String(appState.activeBot?.id || "")]) || isSaving}
-            className="size-8 sm:size-9 rounded-lg flex items-center justify-center border transition-colors shrink-0"
+            disabled={isToggleBusy}
+            className={`size-8 sm:size-9 rounded-lg flex items-center justify-center border shrink-0 ${
+              isToggleBusy ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+            }`}
             style={{
               borderColor:
-                appState.activeBot.status === "active"
+                isBotActive
                   ? "var(--color-success-soft)"
                   : "var(--color-border)",
               color:
-                appState.activeBot.status === "active"
+                isBotActive
                   ? "var(--color-success)"
                   : "var(--color-foreground-tertiary)",
               background:
-                appState.activeBot.status === "active"
+                isBotActive
                   ? "var(--color-success-soft)"
                   : "transparent",
-              opacity: (isToggling[String(appState.activeBot.id)] || isSaving) ? 0.5 : 1,
+              boxShadow:
+                isBotActive
+                  ? "0 0 12px -2px rgba(34, 197, 94, 0.35)"
+                  : "none",
+              transition:
+                "background-color 300ms cubic-bezier(0.4, 0, 0.2, 1), border-color 300ms cubic-bezier(0.4, 0, 0.2, 1), color 300ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1)",
             }}
-            title={appState.activeBot.status === "active" ? "Остановить бота" : "Запустить бота"}
-            aria-label={appState.activeBot.status === "active" ? "Остановить бота" : "Запустить бота"}
-            aria-busy={Boolean(isToggling[String(appState.activeBot.id)]) || undefined}
+            title={isBotActive ? "Остановить воронку" : "Запустить воронку"}
+            aria-label={isBotActive ? "Остановить воронку" : "Запустить воронку"}
+            aria-busy={isToggleBusy || undefined}
           >
-            {isToggling[String(appState.activeBot.id)] || isSaving ? (
-              <div className="animate-spin size-3.5 border-2 border-current border-t-transparent rounded-full" />
-            ) : (
-              <Power size={15} className="sm:size-4" />
-            )}
-          </button>
+            <AnimatePresence mode="wait" initial={false}>
+              {isToggleBusy ? (
+                <motion.div
+                  key="spinner"
+                  initial={{ opacity: 0, scale: 0.6, rotate: -45 }}
+                  animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                  exit={{ opacity: 0, scale: 0.6 }}
+                  transition={{ duration: 0.16 }}
+                  className="flex items-center justify-center"
+                >
+                  <div className="animate-spin size-3.5 border-2 border-current border-t-transparent rounded-full" />
+                </motion.div>
+              ) : (
+                <motion.span
+                  key={isBotActive ? "on" : "off"}
+                  initial={{ scale: 0.4, rotate: -90, opacity: 0 }}
+                  animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                  exit={{ scale: 0.4, rotate: 90, opacity: 0 }}
+                  transition={{ type: "spring", stiffness: 520, damping: 24 }}
+                  className="flex items-center justify-center"
+                >
+                  <Power size={15} className="sm:size-4" />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Check, Plus, X, RefreshCw } from 'lucide-react';
 import type { BotConfig } from '../../types';
 
@@ -94,8 +94,9 @@ export const BotSwitcher = ({ bots, activeBotId, switchingBotId, selectionDisabl
             </button>
 
             {/* Status Toggle */}
-            <button
+            <motion.button
               type="button"
+              whileTap={{ scale: 0.88 }}
               aria-label={`${bot.status === 'active' ? 'Выключить' : 'Включить'} бота ${bot.name}`}
               disabled={Boolean(switchingBotId) || selectionDisabled}
               onClick={(e) => {
@@ -106,15 +107,26 @@ export const BotSwitcher = ({ bots, activeBotId, switchingBotId, selectionDisabl
               }}
               style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                padding: '4px 8px', borderRadius: '12px', border: 'none',
+                padding: '4px 10px', borderRadius: '12px', border: 'none',
                 background: bot.status === 'active' ? 'var(--color-success-soft)' : 'var(--color-surface-2)',
                 color: bot.status === 'active' ? 'var(--color-success)' : 'var(--color-foreground-tertiary)',
                 fontSize: '11px', fontWeight: 600, cursor: switchingBotId || selectionDisabled ? 'not-allowed' : 'pointer', flexShrink: 0,
                 minHeight: '36px',
+                transition: 'background-color 250ms ease, color 250ms ease',
               }}
             >
-              {bot.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'}
-            </button>
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={bot.status === 'active' ? 'on' : 'off'}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.15 }}
+                >
+                  {bot.status === 'active' ? 'ВКЛ' : 'ВЫКЛ'}
+                </motion.span>
+              </AnimatePresence>
+            </motion.button>
           </div>
         ))}
         </div>

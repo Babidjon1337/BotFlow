@@ -369,7 +369,7 @@ export default function App() {
 
   const funnelWorkspaceReady = !appState.activeBot || (
     funnelLoadState.status === 'ready' &&
-    funnelLoadState.botId === appState.activeBot.id
+    String(funnelLoadState.botId) === String(appState.activeBot.id)
   );
 
   if (appState.isLoading) {
@@ -453,9 +453,9 @@ export default function App() {
             {resolvedRoute.level === 'bot' && resolvedRoute.view === 'overview' && appState.activeBot && (
               funnelWorkspaceReady ? (
                 appState.activeBot.status === 'active'
-                  ? <Home key="overview" />
+                  ? <Home key="overview-dashboard" />
                   : <BotOverviewScreen
-                      key="overview"
+                      key="overview-checklist"
                       bot={appState.activeBot}
                       subscriptionStatus={appState.subscriptionStatus}
                       onNavigate={(view) => setRoute({ level: 'bot', view })}

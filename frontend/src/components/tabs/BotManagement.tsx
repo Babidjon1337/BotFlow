@@ -252,23 +252,35 @@ export const BotManagement = () => {
                       <motion.button
                         whileTap={{ scale: 0.85 }}
                         onClick={() => toggleBot(bot)}
-                        disabled={isToggling[bot.id]}
-                        className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-colors ${isActive ? "text-[var(--color-success)] hover:bg-[var(--color-success-soft)]" : "text-[var(--color-foreground-tertiary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"} ${isToggling[bot.id] ? "opacity-50 cursor-not-allowed" : ""}`}
+                        disabled={Boolean(isToggling[String(bot.id)])}
+                        className={`w-9 h-9 md:w-10 md:h-10 rounded-full flex items-center justify-center transition-colors ${isActive ? "text-[var(--color-success)] hover:bg-[var(--color-success-soft)]" : "text-[var(--color-foreground-tertiary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"} ${isToggling[String(bot.id)] ? "opacity-50 cursor-not-allowed" : ""}`}
                         title={isActive ? "Остановить" : "Запустить"}
                       >
-                        {isToggling[bot.id] ? (
-                          <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
-                        ) : (
-                          <motion.span
-                            key={isActive ? "on" : "off"}
-                            initial={{ scale: 0.4, rotate: -90 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            transition={{ type: "spring", stiffness: 520, damping: 24 }}
-                            className="flex"
-                          >
-                            <Power size={18} />
-                          </motion.span>
-                        )}
+                        <AnimatePresence mode="wait" initial={false}>
+                          {isToggling[String(bot.id)] ? (
+                            <motion.div
+                              key="spinner"
+                              initial={{ opacity: 0, scale: 0.6 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.6 }}
+                              transition={{ duration: 0.15 }}
+                              className="flex items-center justify-center"
+                            >
+                              <div className="animate-spin w-4 h-4 border-2 border-current border-t-transparent rounded-full" />
+                            </motion.div>
+                          ) : (
+                            <motion.span
+                              key={isActive ? "on" : "off"}
+                              initial={{ scale: 0.4, rotate: -90, opacity: 0 }}
+                              animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                              exit={{ scale: 0.4, rotate: 90, opacity: 0 }}
+                              transition={{ type: "spring", stiffness: 520, damping: 24 }}
+                              className="flex items-center justify-center"
+                            >
+                              <Power size={18} />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
                       </motion.button>
 
                       <div className="relative">
