@@ -206,15 +206,19 @@ class FunnelNodeSchema(BaseModel):
                     mediaType=self.media_type or "photo",
                 )
             ]
-        if not self.delay and self.delay_seconds > 0:
+        if self.delay_seconds > 0:
             h = self.delay_seconds // 3600
             m = (self.delay_seconds % 3600) // 60
             if h > 0 and m > 0:
-                self.delay = f"{h}ч {m}м"
+                self.delay = f"{h}ч {m} мин"
             elif h > 0:
                 self.delay = f"{h}ч"
             elif m > 0:
-                self.delay = f"{m}м"
+                self.delay = f"{m} мин"
+            else:
+                self.delay = f"{self.delay_seconds} сек"
+        elif not self.delay or self.delay in ("0", "0м", "0 мин"):
+            self.delay = "0 мин"
         return self
 
     @field_validator("delay_seconds", mode="before")
@@ -230,9 +234,16 @@ class FunnelNodeSchema(BaseModel):
                 return 0
             mapping = {
                 "0 мин": 0, "0м": 0, "0": 0,
-                "15м": 900, "15 мин": 900,
-                "30м": 1800, "30 мин": 1800,
+                "1м": 60, "1 мин": 60, "1 минута": 60, "1m": 60, "1min": 60, "1 minute": 60,
+                "2м": 120, "2 мин": 120, "2 минуты": 120,
+                "3м": 180, "3 мин": 180, "3 минуты": 180,
+                "5м": 300, "5 мин": 300, "5 минут": 300,
+                "10м": 600, "10 мин": 600, "10 минут": 600,
+                "15м": 900, "15 мин": 900, "15 минут": 900,
+                "30м": 1800, "30 мин": 1800, "30 минут": 1800,
                 "1ч": 3600, "1 час": 3600,
+                "2ч": 7200, "2 часа": 7200,
+                "3ч": 10800, "3 часа": 10800,
                 "6ч": 21600, "6 часов": 21600,
                 "12ч": 43200, "12 часов": 43200,
                 "24ч": 86400, "24 часа": 86400,

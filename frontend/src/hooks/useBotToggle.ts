@@ -10,10 +10,11 @@ export const useBotToggle = () => {
   const [isToggling, setIsToggling] = useState<Record<string, boolean>>({});
 
   const toggleBot = async (bot: BotConfig) => {
-    if (isToggling[bot.id]) return; // Prevent double clicks
+    const botKey = String(bot.id);
+    if (isToggling[botKey]) return; // Prevent double clicks
     const newStatus = bot.status === 'active' ? 'inactive' : 'active';
     
-    if (newStatus === 'active' && appState.activeBot?.id === bot.id && appState.isDirty) {
+    if (newStatus === 'active' && String(appState.activeBot?.id) === botKey && appState.isDirty) {
       showAlert({
         title: 'Сначала сохраните воронку',
         message: 'У бота есть несохранённые изменения. Сохраните их перед запуском, чтобы бот использовал актуальный сценарий.',
@@ -23,12 +24,11 @@ export const useBotToggle = () => {
       return;
     }
 
-
-    setIsToggling(prev => ({ ...prev, [bot.id]: true }));
+    setIsToggling(prev => ({ ...prev, [botKey]: true }));
     try {
       const { apiService } = await import('../services/api');
       const result = await apiService.toggleBot(bot.id, newStatus === 'active' ? 'start' : 'stop');
-      const actualStatus = result.botStatus === 'active' ? 'active' : 'inactive';
+      const actualStatus: 'active' | 'inactive' = result.botStatus === 'active' ? 'active' : 'inactive';
       let refreshedBots: BotConfig[] | null = null;
       try {
         const response = await apiService.getBots();
@@ -40,27 +40,40 @@ export const useBotToggle = () => {
       const tg = (window as Window & { Telegram?: { WebApp?: { HapticFeedback?: { notificationOccurred: (type: 'success') => void } } } }).Telegram?.WebApp;
       tg?.HapticFeedback?.notificationOccurred('success');
 
-      setAppState(prev => ({
-        ...prev,
-        bots: refreshedBots ?? prev.bots.map(item => item.id === bot.id ? { ...item, status: actualStatus } : item),
-        activeBot: refreshedBots
-          ? refreshedBots.find(item => item.id === prev.activeBot?.id) ?? prev.activeBot
-          : prev.activeBot?.id === bot.id
-            ? { ...prev.activeBot, status: actualStatus }
-            : prev.activeBot,
-      }));
+      setAppState(prev => {
+        const targetBotId = String(bot.id);
+        const updatedBots: BotConfig[] = (refreshedBots ?? prev.bots).map(item =>
+          String(item.id) === targetBotId ? { ...item, status: actualStatus } : item
+        );
+        let updatedActiveBot: BotConfig | null = prev.activeBot;
+        if (prev.activeBot && String(prev.activeBot.id) === targetBotId) {
+          const fresh = refreshedBots?.find(item => String(item.id) === targetBotId);
+          updatedActiveBot = fresh ? { ...fresh, status: actualStatus } : { ...prev.activeBot, status: actualStatus };
+        }
+        return {
+          ...prev,
+          bots: updatedBots,
+          activeBot: updatedActiveBot,
+        };
+      });
 
       setToastType('success');
       setToastMessage(newStatus === 'active' ? 'Бот успешно запущен' : 'Бот остановлен');
     } catch (error: unknown) {
       setToastType('error');
-      setToastMessage(
-        error instanceof Error
-          ? error.message
-          : (newStatus === 'active' ? 'Не удалось запустить бота' : 'Не удалось остановить бота'),
-      );
+      const errorMsg = error instanceof Error
+        ? error.message
+        : (newStatus === 'active' ? 'Не удалось запустить бота' : 'Не удалось остановить бота');
+      setToastMessage(errorMsg);
+      showAlert({
+        title: newStatus === 'active' ? 'Не удалось запустить бота' : 'Не удалось остановить бота',
+        message: errorMsg,
+        type: 'danger',
+        confirmText: 'Понятно',
+        cancelText: '',
+      });
     } finally {
-      setIsToggling(prev => ({ ...prev, [bot.id]: false }));
+      setIsToggling(prev => ({ ...prev, [botKey]: false }));
     }
   };
 

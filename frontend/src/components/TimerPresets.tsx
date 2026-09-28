@@ -12,7 +12,7 @@ export function parseDelayString(val: string): { hours: number; minutes: number 
   const str = val.trim().toLowerCase();
 
   const hMatch = str.match(/(\d+)\s*(?:ч|час|часа|часов|h)/i);
-  const mMatch = str.match(/(\d+)\s*(?:м|мин|минут|минуты|m)/i);
+  const mMatch = str.match(/(\d+)\s*(?:мин|минут|минуты|минута|м|m)/i);
 
   let hours = hMatch ? parseInt(hMatch[1], 10) : 0;
   let minutes = mMatch ? parseInt(mMatch[1], 10) : 0;
@@ -34,15 +34,15 @@ export function buildDelayString(hours: number, minutes: number): string {
   const h = Math.max(0, hours || 0);
   const m = Math.max(0, Math.min(59, minutes || 0));
   if (h > 0 && m > 0) {
-    return `${h}ч ${m}м`;
+    return `${h}ч ${m} мин`;
   }
   if (h > 0) {
     return `${h}ч`;
   }
   if (m > 0) {
-    return `${m}м`;
+    return `${m} мин`;
   }
-  return '0м';
+  return '0 мин';
 }
 
 function pluralizeRu(n: number, one: string, few: string, many: string): string {
@@ -68,14 +68,26 @@ export function formatDelayDescription(val: string): string {
   return 'сразу';
 }
 
-export const DEFAULT_TIMER_PRESETS = ['15м', '30м', '1ч', '6ч', '12ч', '24ч'];
+export function formatDelayLabel(val?: string | null): string {
+  if (!val) return '1ч';
+  const trimmed = val.trim();
+  const { hours, minutes } = parseDelayString(trimmed);
+  if (hours === 0 && minutes === 0) {
+    if (/^0\s*(?:м|мин|m)?$/i.test(trimmed)) return '0 мин';
+    return trimmed;
+  }
+  return buildDelayString(hours, minutes);
+}
+
+export const DEFAULT_TIMER_PRESETS = ['1 мин', '15 мин', '30 мин', '1ч', '6ч', '12ч', '24ч'];
 
 export const TimerPresets = ({
   value,
   onChange,
   presets = DEFAULT_TIMER_PRESETS,
 }: TimerPresetsProps) => {
-  const isCustom = !presets.includes(value) && Boolean(value);
+  const normalizedValue = formatDelayLabel(value);
+  const isCustom = !presets.includes(value) && !presets.includes(normalizedValue) && Boolean(value);
   const [showCustom, setShowCustom] = useState(isCustom);
 
   const parsed = parseDelayString(value);
@@ -86,9 +98,11 @@ export const TimerPresets = ({
 
   useEffect(() => {
     const p = parseDelayString(value);
-    setInputHours(p.hours || (p.minutes === 0 && !presets.includes(value) ? 0 : p.hours));
+    const norm = formatDelayLabel(value);
+    const custom = !presets.includes(value) && !presets.includes(norm) && Boolean(value);
+    setInputHours(p.hours || (p.minutes === 0 && !custom ? 0 : p.hours));
     setInputMinutes(p.minutes || 0);
-    if (!presets.includes(value) && Boolean(value)) {
+    if (custom) {
       setShowCustom(true);
     }
   }, [value, presets]);
@@ -128,7 +142,7 @@ export const TimerPresets = ({
 
       <div className="flex flex-wrap gap-1.5">
         {presets.map((preset) => {
-          const isSelected = value === preset && !showCustom;
+          const isSelected = (value === preset || normalizedValue === preset) && !showCustom;
           return (
             <button
               key={preset}

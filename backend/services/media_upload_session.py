@@ -12,8 +12,9 @@ class UploadSession:
     bot_id: int
     tg_bot_id: int
     owner_tg_id: int
-    node_id: str
-    node_title: str
+    uploader_tg_id: int | None = None
+    node_id: str = ""
+    node_title: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc) + timedelta(minutes=30)
@@ -70,17 +71,19 @@ def create_upload_session(
     owner_tg_id: int,
     node_id: str,
     node_title: str,
+    uploader_tg_id: int | None = None,
 ) -> UploadSession:
     cleanup_expired_sessions()
     
-    # Cancel previous session for this owner and bot if exists
-    key = (owner_tg_id, tg_bot_id)
-    old_session_id = _sessions_by_user_bot.get(key)
-    if old_session_id and old_session_id in _sessions:
-        old_sess = _sessions[old_session_id]
-        old_sess.is_cancelled = True
-        if old_sess.debounce_task and not old_sess.debounce_task.done():
-            old_sess.debounce_task.cancel()
+    # Cancel previous session for this owner/uploader and bot if exists
+    for uid in (owner_tg_id, uploader_tg_id):
+        if uid and tg_bot_id:
+            old_session_id = _sessions_by_user_bot.get((uid, tg_bot_id))
+            if old_session_id and old_session_id in _sessions:
+                old_sess = _sessions[old_session_id]
+                old_sess.is_cancelled = True
+                if old_sess.debounce_task and not old_sess.debounce_task.done():
+                    old_sess.debounce_task.cancel()
 
     session_id = secrets.token_hex(6)  # 12 chars
     session = UploadSession(
@@ -88,17 +91,38 @@ def create_upload_session(
         bot_id=bot_id,
         tg_bot_id=tg_bot_id,
         owner_tg_id=owner_tg_id,
+        uploader_tg_id=uploader_tg_id,
         node_id=node_id,
         node_title=node_title,
     )
     _sessions[session_id] = session
-    _sessions_by_user_bot[key] = session_id
+    if tg_bot_id:
+        if owner_tg_id:
+            _sessions_by_user_bot[(owner_tg_id, tg_bot_id)] = session_id
+        if uploader_tg_id:
+            _sessions_by_user_bot[(uploader_tg_id, tg_bot_id)] = session_id
     logger.info(
         "Создана сессия загрузки большого медиа %s для бота %s, блок %s (%s)",
         session_id,
         bot_id,
         node_id,
         node_title,
+    )
+    return session
+
+
+def activate_session_for_uploader(session_id: str, uploader_tg_id: int, tg_bot_id: int) -> UploadSession | None:
+    session = _sessions.get(session_id)
+    if not session or session.is_cancelled or session.is_completed:
+        return None
+    session.uploader_tg_id = uploader_tg_id
+    session.tg_bot_id = tg_bot_id
+    _sessions_by_user_bot[(uploader_tg_id, tg_bot_id)] = session.id
+    logger.info(
+        "Активирована сессия загрузки %s для пользователя %s на боте %s",
+        session_id,
+        uploader_tg_id,
+        tg_bot_id,
     )
     return session
 
@@ -113,16 +137,16 @@ def get_upload_session(session_id: str) -> UploadSession | None:
     return session
 
 
-def get_active_session_for_user_bot(owner_tg_id: int, tg_bot_id: int) -> UploadSession | None:
-    session_id = _sessions_by_user_bot.get((owner_tg_id, tg_bot_id))
+def get_active_session_for_user_bot(user_tg_id: int, tg_bot_id: int) -> UploadSession | None:
+    session_id = _sessions_by_user_bot.get((user_tg_id, tg_bot_id))
     if not session_id:
         return None
     session = _sessions.get(session_id)
     if not session:
-        _sessions_by_user_bot.pop((owner_tg_id, tg_bot_id), None)
+        _sessions_by_user_bot.pop((user_tg_id, tg_bot_id), None)
         return None
     if session.is_cancelled or session.is_completed:
-        _sessions_by_user_bot.pop((owner_tg_id, tg_bot_id), None)
+        _sessions_by_user_bot.pop((user_tg_id, tg_bot_id), None)
         return None
     if datetime.now(timezone.utc) > session.expires_at:
         cancel_upload_session(session_id)
@@ -137,7 +161,10 @@ def cancel_upload_session(session_id: str) -> bool:
     session.is_cancelled = True
     if session.debounce_task and not session.debounce_task.done():
         session.debounce_task.cancel()
-    _sessions_by_user_bot.pop((session.owner_tg_id, session.tg_bot_id), None)
+    if session.tg_bot_id:
+        _sessions_by_user_bot.pop((session.owner_tg_id, session.tg_bot_id), None)
+        if session.uploader_tg_id:
+            _sessions_by_user_bot.pop((session.uploader_tg_id, session.tg_bot_id), None)
     logger.info("Сессия загрузки %s отменена", session_id)
     return True
 
@@ -149,7 +176,10 @@ def complete_upload_session(session_id: str) -> bool:
     session.is_completed = True
     if session.debounce_task and not session.debounce_task.done():
         session.debounce_task.cancel()
-    _sessions_by_user_bot.pop((session.owner_tg_id, session.tg_bot_id), None)
+    if session.tg_bot_id:
+        _sessions_by_user_bot.pop((session.owner_tg_id, session.tg_bot_id), None)
+        if session.uploader_tg_id:
+            _sessions_by_user_bot.pop((session.uploader_tg_id, session.tg_bot_id), None)
     logger.info("Сессия загрузки %s успешно завершена", session_id)
     return True
 
@@ -162,8 +192,10 @@ def cleanup_expired_sessions() -> None:
     ]
     for s_id in expired_ids:
         s = _sessions.pop(s_id, None)
-        if s:
+        if s and s.tg_bot_id:
             _sessions_by_user_bot.pop((s.owner_tg_id, s.tg_bot_id), None)
+            if s.uploader_tg_id:
+                _sessions_by_user_bot.pop((s.uploader_tg_id, s.tg_bot_id), None)
 
     if len(_sessions) > MAX_SESSIONS:
         overflow_count = len(_sessions) - MAX_SESSIONS
@@ -172,7 +204,10 @@ def cleanup_expired_sessions() -> None:
             if s.debounce_task and not s.debounce_task.done():
                 s.debounce_task.cancel()
             _sessions.pop(s.id, None)
-            _sessions_by_user_bot.pop((s.owner_tg_id, s.tg_bot_id), None)
+            if s.tg_bot_id:
+                _sessions_by_user_bot.pop((s.owner_tg_id, s.tg_bot_id), None)
+                if s.uploader_tg_id:
+                    _sessions_by_user_bot.pop((s.uploader_tg_id, s.tg_bot_id), None)
         logger.warning(
             "Сессии загрузки медиа превысили лимит %d, удалено %d старых сессий",
             MAX_SESSIONS,

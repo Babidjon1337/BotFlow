@@ -526,7 +526,7 @@ def start_scheduler():
     scheduler.add_job(
         check_reminders_job,
         trigger="interval",
-        seconds=60,
+        seconds=10,
         max_instances=1,
         coalesce=True,
         id="bot-reminders",

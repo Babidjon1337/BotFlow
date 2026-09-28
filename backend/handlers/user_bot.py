@@ -198,24 +198,32 @@ async def start_command_handler(message: Message, command: CommandObject | None 
     if bot_config.status == "archived":
         return
 
-    # Проверяем deep link загрузки большого медиа для владельца бота
+    # Проверяем deep link загрузки большого медиа для владельца бота или админа
     if command and command.args and command.args.startswith("up_"):
-        if lead_id == bot_config.owner.telegram_id:
-            session_token = command.args.removeprefix("up_")
-            session = get_upload_session(session_token)
-            if session and session.owner_tg_id == lead_id and session.tg_bot_id == tg_bot_id:
-                text = (
-                    f"Отправьте фото или видео для блока “{session.node_title}”.\n"
-                    "Можно отправить несколько файлов подряд."
-                )
-                kb = InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text="Отмена", callback_data=f"cancel_upload:{session.id}")]
-                    ]
-                )
-                sent = await message.answer(text, reply_markup=kb)
-                session.prompt_message_id = sent.message_id
-                return
+        session_token = command.args.removeprefix("up_")
+        session = get_upload_session(session_token)
+        from config import ADMIN_TELEGRAM_IDS
+        owner_tg = getattr(getattr(bot_config, "owner", None), "telegram_id", None)
+        is_authorized = (
+            (owner_tg is not None and lead_id == owner_tg)
+            or (lead_id in ADMIN_TELEGRAM_IDS)
+            or (session is not None and (lead_id == session.owner_tg_id or lead_id == getattr(session, "uploader_tg_id", None)))
+        )
+        if is_authorized and session and not session.is_cancelled and not session.is_completed:
+            from services.media_upload_session import activate_session_for_uploader
+            activate_session_for_uploader(session.id, lead_id, tg_bot_id)
+            text = (
+                f"Отправьте фото или видео для блока “{session.node_title}”.\n"
+                "Можно отправить видео или фото любого размера (до 2 ГБ) — бот автоматически сохранит его и прикрепит к воронке."
+            )
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Отмена", callback_data=f"cancel_upload:{session.id}")]
+                ]
+            )
+            sent = await message.answer(text, reply_markup=kb)
+            session.prompt_message_id = sent.message_id
+            return
 
     from config import ADMIN_TELEGRAM_IDS
     is_owner_or_admin = (lead_id == bot_config.owner.telegram_id) or (lead_id in ADMIN_TELEGRAM_IDS)
@@ -352,19 +360,25 @@ async def start_command_handler(message: Message, command: CommandObject | None 
 async def on_cancel_upload_callback(callback: CallbackQuery):
     session_id = callback.data.removeprefix("cancel_upload:")
     bot_config = await get_bot_by_tg_id(callback.bot.id)
-    if not bot_config or callback.from_user.id != bot_config.owner.telegram_id:
+    session = get_upload_session(session_id)
+    from config import ADMIN_TELEGRAM_IDS
+    owner_tg = getattr(getattr(bot_config, "owner", None), "telegram_id", None) if bot_config else None
+    is_authorized = (
+        (owner_tg is not None and callback.from_user.id == owner_tg)
+        or (callback.from_user.id in ADMIN_TELEGRAM_IDS)
+        or (session is not None and (callback.from_user.id == session.owner_tg_id or callback.from_user.id == getattr(session, "uploader_tg_id", None)))
+    )
+    if not is_authorized:
         await callback.answer("Действие недоступно", show_alert=True)
         return
 
-    session = get_upload_session(session_id)
     cancel_upload_session(session_id)
     if session:
         from services.event_bus import event_bus
-        event_bus.publish_user(
-            session.owner_tg_id,
-            "media:upload_cancelled",
-            {"botId": session.bot_id, "sessionId": session.id, "nodeId": session.node_id, "isCancelled": True},
-        )
+        cancel_payload = {"botId": session.bot_id, "sessionId": session.id, "nodeId": session.node_id, "isCancelled": True}
+        event_bus.publish_user(session.owner_tg_id, "media:upload_cancelled", cancel_payload)
+        if getattr(session, "uploader_tg_id", None) and session.uploader_tg_id != session.owner_tg_id:
+            event_bus.publish_user(session.uploader_tg_id, "media:upload_cancelled", cancel_payload)
     try:
         await callback.message.delete()
     except Exception:
@@ -385,17 +399,16 @@ async def _finalize_large_upload_after_delay(session_id: str, bot, chat_id: int)
 
         session.is_completed = True
         from services.event_bus import event_bus
-        event_bus.publish_user(
-            session.owner_tg_id,
-            "media:upload_completed",
-            {
-                "botId": session.bot_id,
-                "sessionId": session.id,
-                "nodeId": session.node_id,
-                "mediaAssets": session.media_assets,
-                "isCompleted": True,
-            },
-        )
+        done_payload = {
+            "botId": session.bot_id,
+            "sessionId": session.id,
+            "nodeId": session.node_id,
+            "mediaAssets": session.media_assets,
+            "isCompleted": True,
+        }
+        event_bus.publish_user(session.owner_tg_id, "media:upload_completed", done_payload)
+        if getattr(session, "uploader_tg_id", None) and session.uploader_tg_id != session.owner_tg_id:
+            event_bus.publish_user(session.uploader_tg_id, "media:upload_completed", done_payload)
 
         done_msg = None
         try:
@@ -440,11 +453,22 @@ async def _finalize_large_upload_after_delay(session_id: str, bot, chat_id: int)
 @user_bot_router.message(F.photo | F.video | F.document)
 async def on_owner_media_message(message: Message):
     bot_config = await get_bot_by_tg_id(message.bot.id)
-    if not bot_config or message.from_user.id != bot_config.owner.telegram_id:
+    if not bot_config:
         return
 
     session = get_active_session_for_user_bot(message.from_user.id, message.bot.id)
     if not session or session.is_cancelled or session.is_completed:
+        return
+
+    from config import ADMIN_TELEGRAM_IDS
+    owner_tg = getattr(getattr(bot_config, "owner", None), "telegram_id", None)
+    is_authorized = (
+        (owner_tg is not None and message.from_user.id == owner_tg)
+        or (message.from_user.id in ADMIN_TELEGRAM_IDS)
+        or (message.from_user.id == session.owner_tg_id)
+        or (message.from_user.id == getattr(session, "uploader_tg_id", None))
+    )
+    if not is_authorized:
         return
 
     telegram_file_id = None

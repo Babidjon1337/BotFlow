@@ -20,7 +20,7 @@ import type { NodeMediaAsset, FunnelNode } from "../../types";
 import { FunnelCard } from "../FunnelCard";
 import { TelegramTextEditor, SyncedMediaPreview } from "../TelegramTextEditor";
 import { PaymentBlockEditor } from "../PaymentBlockEditor";
-import { TimerPresets } from "../TimerPresets";
+import { TimerPresets, formatDelayLabel, DEFAULT_TIMER_PRESETS } from "../TimerPresets";
 import { getMediaFilesFromClipboard } from "../../utils/clipboardMedia";
 
 import { useAppState } from "../../providers/AppStateProvider";
@@ -672,6 +672,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
         setToastType("success");
         setToastMessage("Воронка сохранена");
       }
+      return true;
     } catch (error) {
       setIsSaving(false);
       showAlert({
@@ -681,6 +682,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
         confirmText: "Понятно",
         cancelText: "",
       });
+      return false;
     }
   };
 
@@ -929,8 +931,15 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
 
           <button
             type="button"
-            onClick={() => toggleBot(appState.activeBot!)}
-            disabled={isToggling[appState.activeBot.id]}
+            onClick={async () => {
+              if (!appState.activeBot) return;
+              if (appState.activeBot.status !== "active" && appState.isDirty) {
+                const saved = await handleSave();
+                if (!saved) return;
+              }
+              await toggleBot(appState.activeBot);
+            }}
+            disabled={Boolean(isToggling[String(appState.activeBot?.id || "")]) || isSaving}
             className="size-8 sm:size-9 rounded-lg flex items-center justify-center border transition-colors shrink-0"
             style={{
               borderColor:
@@ -945,13 +954,13 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                 appState.activeBot.status === "active"
                   ? "var(--color-success-soft)"
                   : "transparent",
-              opacity: isToggling[appState.activeBot.id] ? 0.5 : 1,
+              opacity: (isToggling[String(appState.activeBot.id)] || isSaving) ? 0.5 : 1,
             }}
             title={appState.activeBot.status === "active" ? "Остановить бота" : "Запустить бота"}
             aria-label={appState.activeBot.status === "active" ? "Остановить бота" : "Запустить бота"}
-            aria-busy={isToggling[appState.activeBot.id] || undefined}
+            aria-busy={Boolean(isToggling[String(appState.activeBot.id)]) || undefined}
           >
-            {isToggling[appState.activeBot.id] ? (
+            {isToggling[String(appState.activeBot.id)] || isSaving ? (
               <div className="animate-spin size-3.5 border-2 border-current border-t-transparent rounded-full" />
             ) : (
               <Power size={15} className="sm:size-4" />
@@ -1043,7 +1052,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                   <div className="absolute w-[2px] h-full bg-[var(--color-border)] left-1/2 -translate-x-1/2" />
                   <div className="relative z-10 px-3 py-1 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] text-[11px] font-semibold text-[var(--color-foreground-secondary)] flex items-center gap-1.5 shadow-sm">
                     <Clock size={12} className="text-[var(--color-primary)]" />
-                    <span>Через {block.delay || (idx === 0 ? "1ч" : "24ч")}</span>
+                    <span>Через {formatDelayLabel(block.delay || (idx === 0 ? "1ч" : "24ч"))}</span>
                   </div>
                 </div>
 
@@ -1093,9 +1102,12 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                     {/* Delay selector — at bottom, secondary control */}
                     <div className="-mx-5 -mb-6 px-5 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface-2)] rounded-b-[var(--radius-lg)]">
                       <TimerPresets
-                        value={block.delay || (idx === 0 ? "1ч" : "24ч")}
-                        onChange={(val) => updateBlock(block.id, "delay", val)}
-                        presets={["15м", "30м", "1ч", "6ч", "12ч", "24ч"]}
+                        value={formatDelayLabel(block.delay || (idx === 0 ? "1ч" : "24ч"))}
+                        onChange={(val) => {
+                          updateBlock(block.id, "delay", val);
+                          updateBlock(block.id, "subtitle", `Через ${val}`);
+                        }}
+                        presets={DEFAULT_TIMER_PRESETS}
                       />
                     </div>
                   </div>
@@ -1387,7 +1399,7 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                           >
                             <div className="self-center text-[11px] font-semibold text-[var(--color-foreground-secondary)] bg-[var(--color-surface-2)] border border-[var(--color-border)] px-3 py-1 rounded-full flex items-center gap-1 shadow-2xs">
                               <Clock size={11} className="text-[var(--color-primary)]" />
-                              <span>Через {r.delay || (rIdx === 0 ? "1ч" : "24ч")} (если не купил)</span>
+                              <span>Через {formatDelayLabel(r.delay || (rIdx === 0 ? "1ч" : "24ч"))} (если не купил)</span>
                             </div>
                             <MessageBubble
                               text={r.content}

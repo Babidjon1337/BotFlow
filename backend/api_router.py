@@ -2344,12 +2344,28 @@ async def upload_bot_media(
 async def create_large_media_session(bot_id: int, request: Request):
     """Create a temporary session for uploading large media via the user's Telegram bot."""
     bot = await get_owned_bot(bot_id, request)
+    current_user = None
+    try:
+        current_user = await get_current_user(request)
+    except Exception:
+        current_user = None
     body = await request.json()
     node_id = (body.get("node_id") or "").strip()
     if not node_id:
         raise HTTPException(status_code=422, detail="node_id обязателен")
 
     bot_username = (bot.username or "").lstrip("@")
+    tg_bot_id = bot.tg_bot_id or 0
+    if not tg_bot_id and bot.bot_token_enc:
+        try:
+            token = crypto.decrypt(bot.bot_token_enc)
+            token_bot_id = int(token.split(":", 1)[0])
+            tg_bot_id = token_bot_id
+            from database.requests.bot_rq import update_bot_config
+            await update_bot_config(bot.id, tg_bot_id=token_bot_id)
+        except Exception:
+            pass
+
     if not bot_username and bot.bot_token_enc:
         try:
             from aiogram import Bot
@@ -2359,9 +2375,10 @@ async def create_large_media_session(bot_id: int, request: Request):
             me = await temp_bot.get_me()
             if me and me.username:
                 bot_username = me.username.lstrip("@")
+                tg_bot_id = me.id
                 from database.requests.bot_rq import update_bot_config
 
-                await update_bot_config(bot.id, username=bot_username)
+                await update_bot_config(bot.id, username=bot_username, tg_bot_id=tg_bot_id)
         except Exception as exc:
             logger.warning(
                 "Не удалось определить username бота %s через Telegram API: %s",
@@ -2381,13 +2398,16 @@ async def create_large_media_session(bot_id: int, request: Request):
     )
 
     node_title = get_node_human_title(node_id, bot.funnel_schema)
-    owner_tg_id = bot.owner.telegram_id if getattr(bot, "owner", None) else bot.owner_id
+    bot_owner_tg_id = getattr(getattr(bot, "owner", None), "telegram_id", None)
+    uploader_tg_id = getattr(current_user, "telegram_id", None) or getattr(current_user, "id", None)
+    owner_tg_id = bot_owner_tg_id or uploader_tg_id or bot.owner_id
     session = create_upload_session(
         bot_id=bot.id,
-        tg_bot_id=bot.tg_bot_id or 0,
+        tg_bot_id=tg_bot_id,
         owner_tg_id=owner_tg_id,
         node_id=node_id,
         node_title=node_title,
+        uploader_tg_id=uploader_tg_id,
     )
     return {
         "sessionId": session.id,
