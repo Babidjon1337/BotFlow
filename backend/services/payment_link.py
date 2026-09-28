@@ -392,6 +392,12 @@ async def _create_prodamus_link(
         if period:
             data["recurring_period"] = str(period)
             data["subscription_period"] = str(period)
+    if getattr(bot_config, "username", None):
+        clean_username = bot_config.username.lstrip("@")
+        bot_url = f"https://t.me/{clean_username}"
+        data["url_success"] = bot_url
+        data["url_return"] = bot_url
+
     demo_mode_val = creds.get("demo_mode")
     if demo_mode_val is None:
         demo_mode_val = creds.get("is_test")
@@ -600,6 +606,8 @@ async def send_success_message(
 
                         title = str(tariff.get("name", "Тариф"))
                         content_lines = [f"{header_text}\n\nДоступ к «{title}» активирован."]
+                        if tariff.get("description"):
+                            content_lines.append(f"\n{tariff.get('description')}")
                         if buttons or file_items:
                             content_lines.append("Все доступы и материалы открыты по кнопкам ниже 👇")
                         if chat_items and not chat_error:
@@ -613,10 +621,16 @@ async def send_success_message(
                         if text_items:
                             content_lines.append("\n" + "\n".join(str(t.get("content", "")) for t in text_items if t.get("content")))
 
+                        tariff_media_assets = tariff.get("media_assets") or tariff.get("mediaAssets") or []
+                        if not media_file_id and tariff.get("media_file_id"):
+                            media_file_id = tariff.get("media_file_id")
+                            media_type = tariff.get("media_type") or "photo"
+
                         node_success = {
                             "content": "\n".join(content_lines),
                             "media_file_id": media_file_id,
                             "media_type": media_type,
+                            "media_assets": tariff_media_assets,
                             "reply_markup": InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None,
                         }
                 if not node_success:
