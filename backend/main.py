@@ -440,6 +440,23 @@ async def universal_payment_webhook(
             from services.payment_webhook import extend_subscription_access
             await extend_subscription_access(payment.id)
 
+        if (
+            isinstance(payment.tariff_snapshot, dict)
+            and (
+                payment.tariff_snapshot.get("payment_type") == "recurring"
+                or payment.tariff_snapshot.get("paymentType") == "recurring"
+            )
+        ):
+            try:
+                from database.requests.subscription_rq import create_subscription_from_payment
+                await create_subscription_from_payment(
+                    payment=payment,
+                    binding_id=verified_payment.payment_id,
+                    subscription_id=str(verified_payment.payment_id),
+                )
+            except Exception as sub_exc:
+                logger.warning("Не удалось сохранить запись подписки: %s", sub_exc)
+
         logger.info(
             "Платёж обработан: payment_id=%s, new=%s, access=%s, owner_notice=%s",
             payment.id,

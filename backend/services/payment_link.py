@@ -383,6 +383,9 @@ async def _create_prodamus_link(
         or tariff_snapshot.get("paymentType") == "recurring"
     ):
         data["subscription"] = "1"
+        data["subscription_auto"] = "0"
+        data["recurring"] = "1"
+        data["binding"] = "1"
         period = (
             tariff_snapshot.get("recurring_period")
             or tariff_snapshot.get("recurringPeriod")
@@ -604,7 +607,7 @@ async def send_success_message(
                                     media_file_id = f_path
                                     media_type = "document"
 
-                        title = str(tariff.get("name", "Тариф"))
+                        title = str(tariff.get("name") or tariff.get("title") or "Тариф")
                         content_lines = [f"{header_text}\n\nДоступ к «{title}» активирован."]
                         if tariff.get("description"):
                             content_lines.append(f"\n{tariff.get('description')}")

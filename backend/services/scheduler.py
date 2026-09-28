@@ -507,6 +507,27 @@ async def expire_chat_access_grants_job():
     await asyncio.gather(*[_process_expired_grant(g) for g in grants])
 
 
+async def renew_client_recurring_subscriptions_job():
+    """Собственный планировщик списаний рекуррентных подписок клиентов (Prodamus и YooKassa)."""
+    try:
+        from database.requests.subscription_rq import get_due_subscriptions
+        from services.recurring_charge import execute_recurring_charge
+
+        due_subs = await get_due_subscriptions(limit=50)
+        if not due_subs:
+            return
+
+        logger.info("⏳ Найдено %s рекуррентных подписок клиентов, подлежащих продлению.", len(due_subs))
+        for sub in due_subs:
+            try:
+                success, msg = await execute_recurring_charge(sub, manual=False)
+                logger.info("Автосписание подписки %s: success=%s, msg=%s", sub.id, success, msg)
+            except Exception as exc:
+                logger.exception("Ошибка при автосписании подписки %s: %s", sub.id, exc)
+    except Exception as exc:
+        logger.exception("Ошибка в джобе renew_client_recurring_subscriptions_job: %s", exc)
+
+
 def apscheduler_listener(event):
     scheduler_runtime[event.job_id] = {
         "last_finished_at": datetime.now(timezone.utc).isoformat(),
@@ -611,6 +632,15 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="broadcast-history-prune",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        renew_client_recurring_subscriptions_job,
+        trigger="interval",
+        minutes=5,
+        max_instances=1,
+        coalesce=True,
+        id="client-subscription-renewal",
         replace_existing=True,
     )
     scheduler.start()

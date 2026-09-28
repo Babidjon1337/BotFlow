@@ -963,6 +963,88 @@ async def retry_admin_operation_endpoint(payment_id: UUID, request: Request):
         raise
 
 
+@api_router.get("/api/admin/subscriptions")
+async def get_admin_subscriptions_endpoint(
+    request: Request,
+    status: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    """List client recurring subscriptions for admin monitoring."""
+    await get_current_admin(request)
+    from database.requests.subscription_rq import list_subscriptions_for_admin
+    subscriptions, total = await list_subscriptions_for_admin(status=status, page=page, limit=limit)
+    return {"subscriptions": subscriptions, "total": total, "page": page, "limit": limit}
+
+
+@api_router.post("/api/admin/subscriptions/{subscription_id}/cancel")
+async def cancel_admin_subscription_endpoint(subscription_id: str, request: Request):
+    """Cancel a recurring subscription by administrator."""
+    admin = await get_current_admin(request)
+    from database.requests.subscription_rq import cancel_subscription
+    sub = await cancel_subscription(subscription_id, reason="Отменено администратором")
+    if not sub:
+        raise HTTPException(status_code=404, detail="Подписка не найдена.")
+
+    await write_admin_audit_log(
+        actor_telegram_id=admin.telegram_id,
+        action="subscription_cancel",
+        target_type="subscription",
+        target_id=str(subscription_id),
+        details={"bot_id": sub.bot_id, "lead_id": sub.lead_id},
+    )
+    return {"status": "ok", "message": "Подписка успешно отменена."}
+
+
+@api_router.post("/api/admin/subscriptions/{subscription_id}/retry")
+async def retry_admin_subscription_charge_endpoint(subscription_id: str, request: Request):
+    """Manually trigger a recurring charge attempt for administrator."""
+    admin = await get_current_admin(request)
+    from services.recurring_charge import execute_recurring_charge
+    success, msg = await execute_recurring_charge(subscription_id, manual=True)
+
+    await write_admin_audit_log(
+        actor_telegram_id=admin.telegram_id,
+        action="subscription_manual_charge",
+        target_type="subscription",
+        target_id=str(subscription_id),
+        details={"success": success, "message": msg},
+    )
+    if not success:
+        raise HTTPException(status_code=422, detail=msg)
+    return {"status": "ok", "message": msg}
+
+
+@api_router.get("/api/bots/{bot_id}/subscriptions")
+async def get_bot_subscriptions_endpoint(
+    bot_id: int,
+    request: Request,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=50, ge=1, le=100),
+):
+    """List recurring subscriptions belonging to a specific client bot."""
+    await get_owned_bot(bot_id, request)
+    from database.requests.subscription_rq import list_subscriptions_by_bot
+    subscriptions, total = await list_subscriptions_by_bot(bot_id, page=page, limit=limit)
+    return {"subscriptions": subscriptions, "total": total, "page": page, "limit": limit}
+
+
+@api_router.post("/api/bots/{bot_id}/subscriptions/{subscription_id}/cancel")
+async def cancel_bot_subscription_endpoint(
+    bot_id: int,
+    subscription_id: str,
+    request: Request,
+):
+    """Cancel a recurring subscription by bot owner."""
+    await get_owned_bot(bot_id, request)
+    from database.requests.subscription_rq import cancel_subscription, get_subscription_by_id
+    sub = await get_subscription_by_id(subscription_id)
+    if not sub or sub.bot_id != bot_id:
+        raise HTTPException(status_code=404, detail="Подписка не найдена.")
+    await cancel_subscription(subscription_id, reason="Отменено владельцем бота")
+    return {"status": "ok", "message": "Подписка отменена."}
+
+
 @api_router.get("/api/admin/audit-log")
 async def get_admin_audit_log_endpoint(
     request: Request,

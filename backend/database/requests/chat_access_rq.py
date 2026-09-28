@@ -194,3 +194,27 @@ async def extend_chat_access_grants_for_payment(
         for g in grants:
             await session.refresh(g)
         return grants
+
+
+async def revoke_chat_access_grants_for_payment(
+    payment_id: uuid.UUID | str,
+) -> list[ChatAccessGrant]:
+    """Revoke all grants belonging to this client payment."""
+    try:
+        normalized_id = uuid.UUID(str(payment_id))
+    except (ValueError, TypeError):
+        return []
+    async with async_session() as session:
+        grants = list(
+            (
+                await session.scalars(
+                    select(ChatAccessGrant).where(ChatAccessGrant.client_payment_id == normalized_id)
+                )
+            ).all()
+        )
+        for g in grants:
+            g.status = "revoked"
+        await session.commit()
+        for g in grants:
+            await session.refresh(g)
+        return grants

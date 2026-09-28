@@ -170,6 +170,9 @@ class BotConfig(Base):
     tariffs: Mapped[list["Tariff"]] = relationship(
         back_populates="bot", cascade="all, delete-orphan", order_by="Tariff.created_at"
     )
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="bot", cascade="all, delete-orphan"
+    )
 
 
 # ==========================================
@@ -205,6 +208,9 @@ class Lead(Base):
         back_populates="lead", cascade="all, delete-orphan"
     )
     client_payments: Mapped[list["ClientPayment"]] = relationship(
+        back_populates="lead", cascade="all, delete-orphan"
+    )
+    subscriptions: Mapped[list["Subscription"]] = relationship(
         back_populates="lead", cascade="all, delete-orphan"
     )
 
@@ -254,6 +260,79 @@ class ClientPayment(Base):
 
     bot: Mapped["BotConfig"] = relationship(back_populates="client_payments")
     lead: Mapped["Lead"] = relationship(back_populates="client_payments")
+
+
+# ==========================================
+# 4b. SUBSCRIPTIONS & PAYMENT ATTEMPTS (Рекуррентные подписки клиентов)
+# ==========================================
+class Subscription(Base):
+    """Рекуррентная подписка клиента на тариф бота с собственным планировщиком списаний."""
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("leads.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True, nullable=True)
+    tariff_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    tariff_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    initial_payment_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("client_payments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_subscription_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    provider_payment_method_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RUB")
+    next_charge_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True, nullable=True)
+    last_charge_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    canceled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    bot: Mapped["BotConfig"] = relationship(back_populates="subscriptions")
+    lead: Mapped["Lead"] = relationship(back_populates="subscriptions")
+    initial_payment: Mapped[Optional["ClientPayment"]] = relationship()
+    attempts: Mapped[list["PaymentAttempt"]] = relationship(
+        back_populates="subscription", cascade="all, delete-orphan", order_by="PaymentAttempt.created_at.desc()"
+    )
+
+
+class PaymentAttempt(Base):
+    """Попытка списания по подписке с гарантией идемпотентности."""
+
+    __tablename__ = "payment_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    subscription_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("subscriptions.id", ondelete="CASCADE"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_payment_id: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), default="RUB")
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[Optional[Text]] = mapped_column(Text, nullable=True)
+
+    subscription: Mapped["Subscription"] = relationship(back_populates="attempts")
 
 
 class ChatAccessGrant(Base):

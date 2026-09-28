@@ -1491,6 +1491,7 @@ async def _send_lead_subscription_cards(
     for payment, grant, expires_at in active_cards:
         tariff_name = (
             payment.tariff_snapshot.get("name")
+            or payment.tariff_snapshot.get("title")
             if payment.tariff_snapshot
             else "Тариф"
         ) or "Тариф"
@@ -1615,6 +1616,7 @@ async def cb_cancel_subscription(callback: CallbackQuery):
 
     tariff_name = (
         updated_payment.tariff_snapshot.get("name")
+        or updated_payment.tariff_snapshot.get("title")
         if updated_payment.tariff_snapshot
         else "Тариф"
     ) or "Тариф"
@@ -1639,7 +1641,9 @@ async def cb_cancel_subscription(callback: CallbackQuery):
         f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
         f"💳 Стоимость: {amount:,.0f} ₽\n"
         f"📅 Действует до: {date_str}\n"
-        f"🔄 Автопродление: ❌ Отключено"
+        f"🔄 Автопродление: ❌ Отключено\n\n"
+        f"✅ <i>Автосписание отключено. Доступ к «{escape(str(tariff_name))}» останется активным "
+        f"до конца оплаченного периода ({date_str}). После этого списаний не будет.</i>"
     )
     reply_markup = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1657,11 +1661,6 @@ async def cb_cancel_subscription(callback: CallbackQuery):
         pass
 
     await callback.answer("Автосписание успешно отключено!")
-    await callback.message.answer(
-        f"✅ <b>Автосписание успешно отключено!</b>\n\n"
-        f"Ваш доступ к «{escape(str(tariff_name))}» останется активным до конца оплаченного периода "
-        f"(<b>{date_str}</b>). После этого списаний не будет."
-    )
 
 
 @user_bot_router.callback_query(F.data.startswith("resume_sub:"))
@@ -1695,6 +1694,7 @@ async def cb_resume_subscription(callback: CallbackQuery):
 
     tariff_name = (
         updated_payment.tariff_snapshot.get("name")
+        or updated_payment.tariff_snapshot.get("title")
         if updated_payment.tariff_snapshot
         else "Тариф"
     ) or "Тариф"
@@ -1719,7 +1719,9 @@ async def cb_resume_subscription(callback: CallbackQuery):
         f"📦 <b>Подписка: {escape(str(tariff_name))}</b>\n"
         f"💳 Стоимость: {amount:,.0f} ₽\n"
         f"📅 Действует до: {date_str}\n"
-        f"🔄 Автопродление: ✅ Включено"
+        f"🔄 Автопродление: ✅ Включено\n\n"
+        f"✅ <i>Автопродление включено. Следующее списание пройдет автоматически {date_str}. "
+        f"Ваш доступ к «{escape(str(tariff_name))}» продолжится без перерывов.</i>"
     )
     reply_markup = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -1737,9 +1739,4 @@ async def cb_resume_subscription(callback: CallbackQuery):
         pass
 
     await callback.answer("Автопродление успешно включено!")
-    await callback.message.answer(
-        f"✅ <b>Автопродление успешно включено!</b>\n\n"
-        f"Следующее списание пройдет автоматически <b>{date_str}</b>. "
-        f"Ваш доступ к «{escape(str(tariff_name))}» продолжится без перерывов."
-    )
 
