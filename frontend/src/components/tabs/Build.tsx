@@ -123,7 +123,14 @@ const MessageBubble = ({
   botId?: string;
   theme: "light" | "dark";
   onButtonClick?: (btnIndex: 1 | 2) => void;
-}) => (
+}) => {
+  const sortedMediaAssets = [...mediaAssets].sort((a, b) => {
+    const isDocA = a.mediaType === "document" ? 0 : 1;
+    const isDocB = b.mediaType === "document" ? 0 : 1;
+    return isDocA - isDocB;
+  });
+
+  return (
   <div
     style={{
       display: "flex",
@@ -136,7 +143,7 @@ const MessageBubble = ({
       style={{
         background: theme === "dark" ? "#27272a" : "#ffffff",
         color: "var(--color-foreground)",
-        padding: mediaAssetId || mediaAssets.length ? "4px" : "10px 14px",
+        padding: mediaAssetId || sortedMediaAssets.length ? "4px" : "10px 14px",
         borderRadius: "16px",
         borderBottomLeftRadius: "4px",
         fontSize: "14px",
@@ -147,10 +154,10 @@ const MessageBubble = ({
             : "0 1px 2px rgba(0,0,0,0.05), 0 2px 8px rgba(0,0,0,0.03)",
       }}
     >
-      {/* Медиа-группа: 2+ сетки подряд */}
-      {mediaAssets.length > 1 && botId && (
+      {/* Медиа-группа: документы сверху, фото/видео снизу */}
+      {sortedMediaAssets.length > 1 && botId && (
         <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: text ? "8px" : "0" }}>
-          {mediaAssets.map((asset) => (
+          {sortedMediaAssets.map((asset) => (
             <div key={asset.mediaAssetId} style={{ overflow: "hidden", borderRadius: "10px" }}>
               <SyncedMediaPreview
                 botId={botId}
@@ -163,7 +170,7 @@ const MessageBubble = ({
           ))}
         </div>
       )}
-      {mediaAssetId && botId && mediaAssets.length <= 1 && (
+      {mediaAssetId && botId && sortedMediaAssets.length <= 1 && (
         <div style={{ marginBottom: text ? "8px" : "0", overflow: "hidden", borderRadius: "12px" }}>
           <SyncedMediaPreview
             botId={botId}
@@ -176,7 +183,7 @@ const MessageBubble = ({
       {text && (
         <div
           style={{
-            padding: mediaAssetId ? "0 8px 8px 8px" : "0",
+            padding: mediaAssetId || sortedMediaAssets.length ? "0 8px 8px 8px" : "0",
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}
@@ -232,7 +239,8 @@ const MessageBubble = ({
       </div>
     )}
   </div>
-);
+  );
+};
 
 interface BuildProps {
   onNavigateToCreateTariff?: () => void;
