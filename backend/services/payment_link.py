@@ -2,6 +2,7 @@ import html
 import json
 import re
 import hashlib
+import hmac
 import uuid
 import httpx
 from typing import Any, Optional
@@ -114,8 +115,8 @@ async def validate_payment_credentials(
         )
     if normalized_provider == "prodamus":
         valid = bool(
-            (credentials.get("api_key") or credentials.get("secret"))
-            and (credentials.get("domain") or credentials.get("payment_page"))
+            (credentials.get("api_key") or credentials.get("secret") or credentials.get("secret_key") or credentials.get("token"))
+            and (credentials.get("domain") or credentials.get("payment_page") or credentials.get("subdomain") or credentials.get("shop_id"))
         )
         return (
             (True, "Реквизиты Prodamus заполнены.")
@@ -273,6 +274,25 @@ async def _create_yookassa_link(
                 amount,
             )
             return data["confirmation"]["confirmation_url"]
+
+        if response.status_code == 400 and payload.get("save_payment_method"):
+            logger.warning(
+                "ЮKassa отклонила save_payment_method (%s). Повторяем запрос как разовый платёж...",
+                response.text[:200],
+            )
+            fallback_payload = dict(payload)
+            fallback_payload.pop("save_payment_method", None)
+            fallback_headers = dict(headers)
+            fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
+            fallback_resp = await _safe_http_request(
+                "post", url, json=fallback_payload, headers=fallback_headers, auth=(str(shop_id), str(api_key))
+            )
+            if fallback_resp.status_code == 200:
+                data = fallback_resp.json()
+                if client_payment:
+                    await set_client_payment_provider_id(client_payment.id, str(data["id"]))
+                return data["confirmation"]["confirmation_url"]
+
         logger.error(f"Ошибка API ЮKassa: {response.text}")
     except Exception as e:
         logger.error(f"Сетевой сбой при обращении к ЮKassa: {e}")
@@ -339,6 +359,22 @@ async def _create_robokassa_link(
 # ==========================================
 # 3. ИНТЕГРАЦИЯ PRODAMUS
 # ==========================================
+def _sign_prodamus_data(data: dict[str, Any], secret: str) -> str:
+    """
+    Sign Prodamus payload matching Prodamus PHP backend behavior.
+    PHP's json_encode($data, JSON_UNESCAPED_UNICODE) escapes '/' as '\\/' by default.
+    Python's standard json.dumps does not escape '/', which causes signature verification
+    failure on the Prodamus server whenever any URL or slash is present.
+    """
+    raw_json = json.dumps(data, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+    php_json = raw_json.replace('/', r'\/')
+    return hmac.new(
+        bytes(str(secret).strip(), 'utf-8'),
+        msg=bytes(php_json, 'utf-8'),
+        digestmod=hashlib.sha256,
+    ).hexdigest()
+
+
 async def _create_prodamus_link(
     creds: dict,
     amount: float,
@@ -347,18 +383,34 @@ async def _create_prodamus_link(
     bot_config: BotConfig,
     client_payment: ClientPayment | None,
 ) -> Optional[str]:
-    payment_page = creds.get("payment_page") or creds.get("domain", "")
-    if payment_page and not payment_page.startswith("http"):
-        payment_page = f"https://{payment_page}"
-    payment_page = payment_page.rstrip("/") + "/"
-    api_key = creds.get("api_key") or creds.get("secret")
-    integration_code = creds.get("sys")
+    payment_page = (
+        creds.get("payment_page")
+        or creds.get("domain")
+        or creds.get("subdomain")
+        or creds.get("shop_id")
+        or ""
+    )
+    if payment_page:
+        s = payment_page.strip().rstrip("/")
+        if not s.startswith("http"):
+            if "." not in s:
+                s = f"https://{s}.payform.ru"
+            else:
+                s = f"https://{s}"
+        payment_page = s.rstrip("/") + "/"
+    api_key = (
+        creds.get("api_key")
+        or creds.get("secret")
+        or creds.get("secret_key")
+        or creds.get("token")
+        or ""
+    )
+    integration_code = creds.get("sys") or creds.get("integration_code")
 
     if not payment_page or not api_key:
         logger.error("Для Prodamus не переданы domain или api_key!")
         return None
 
-    prodamus = ProdamusPy(api_key)
     order_id = (
         str(client_payment.id) if client_payment else f"{telegram_id}_{uuid.uuid4()}"
     )
@@ -408,7 +460,7 @@ async def _create_prodamus_link(
         data["demo_mode"] = "1"
     if integration_code:
         data["sys"] = str(integration_code)
-    data["signature"] = prodamus.sign(data)
+    data["signature"] = _sign_prodamus_data(data, api_key)
 
     def _flatten(prefix, value):
         items = []
@@ -436,9 +488,13 @@ async def _create_prodamus_link(
             found = re.findall(r"https?://payform\.ru/[a-zA-Z0-9]+/?", content)
             if found:
                 return found[0]
-        logger.error(
-            f"Prodamus API error {response.status_code}: {response.text[:100]}"
-        )
+            err_clean = re.sub(r"<[^>]+>", " ", content)
+            err_clean = " ".join(err_clean.split())[:200]
+            logger.error("Prodamus вернул страницу без ссылки (200): %s", err_clean)
+        else:
+            logger.error(
+                "Prodamus API error %s: %s", response.status_code, response.text[:200]
+            )
     except Exception as e:
         logger.error(f"Ошибка при получении ссылки Prodamus: {e}")
 

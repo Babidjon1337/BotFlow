@@ -900,13 +900,8 @@ async def _send_tariff_invoice(
     if not payment_url:
         error_text = "Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку."
         try:
-            if edit_message and getattr(callback.message, "text", None) is not None:
-                await callback.message.edit_text(error_text)
-            elif edit_message and getattr(callback.message, "caption", None) is not None:
-                await callback.message.edit_caption(caption=error_text)
-            else:
-                await callback.message.answer(error_text)
-        except TelegramBadRequest:
+            await callback.answer(error_text, show_alert=True)
+        except Exception:
             try:
                 await callback.message.answer(error_text)
             except Exception:
@@ -916,7 +911,7 @@ async def _send_tariff_invoice(
 
             await notify_billing_user(
                 bot_config.owner.telegram_id,
-                f"⚠️ Не удалось сформировать счёт для лида {callback.from_user.full_name}. Проверьте реквизиты кассы в настройках бота «{bot_config.display_name}».",
+                f"⚠️ Не удалось сформировать счёт для лида {callback.from_user.full_name}. Проверьте реквизиты кассы ({bot_config.payment_provider}) в настройках бота «{bot_config.display_name}».",
             )
         except Exception as exc:
             logger.warning("Не удалось уведомить владельца о сбое счёта: %s", exc)
@@ -933,7 +928,7 @@ async def _send_tariff_invoice(
             _get_node_button_text(node_checkout, default="🟢 Оплатить") or "🟢 Оплатить"
         )
 
-    rows = [[InlineKeyboardButton(text=primary_btn_text, url=payment_url, style="success")]]
+    rows = [[InlineKeyboardButton(text=primary_btn_text, url=payment_url)]]
     if mode == "hybrid":
         rows.append([manager_button])
     if has_multiple:
@@ -1362,7 +1357,7 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
             )
             return
         details += f"\n\n💳 <b>Стоимость: {payment.amount:,.0f} ₽</b>".replace(",", " ")
-        rows = [[InlineKeyboardButton(text="Оплатить", url=url, style="success")]]
+        rows = [[InlineKeyboardButton(text="Оплатить", url=url)]]
     if payment.invoice_batch_id:
         rows.append(
             [

@@ -73,9 +73,16 @@ class ProdamusProvider(PaymentProvider):
 
     @classmethod
     def _sign_prodamus_data(cls, data: dict[str, Any], secret: str) -> str:
-        from prodamuspy import ProdamusPy
-        prodamus = ProdamusPy(secret)
-        return prodamus.sign(data)
+        import hmac
+        import hashlib
+        import json
+        raw_json = json.dumps(data, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+        php_json = raw_json.replace('/', r'\/')
+        return hmac.new(
+            bytes(str(secret).strip(), 'utf-8'),
+            msg=bytes(php_json, 'utf-8'),
+            digestmod=hashlib.sha256,
+        ).hexdigest()
 
     @classmethod
     def _flatten(cls, prefix: str, value: Any) -> list[tuple[str, str]]:
