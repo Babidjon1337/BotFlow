@@ -976,42 +976,18 @@ async def _send_payment_message(
 ) -> None:
     """Send text/photo/video payment screens without unsupported Telegram edits."""
     chat_id = callback.message.chat.id
-    if media_assets and len(media_assets) > 1:
-        from aiogram.types import InputMediaPhoto, InputMediaVideo
-        group = []
-        for i, a in enumerate(media_assets[:10]):
-            fid = a.get("mediaFileId") or a.get("file_id") if isinstance(a, dict) else getattr(a, "media_file_id", None)
-            m_type = a.get("mediaType") or a.get("type") if isinstance(a, dict) else getattr(a, "media_type", None)
-            if not fid:
-                continue
-            cap = text if i == 0 else None
-            if m_type == "video":
-                group.append(InputMediaVideo(media=fid, caption=cap, parse_mode="HTML"))
-            else:
-                group.append(InputMediaPhoto(media=fid, caption=cap, parse_mode="HTML"))
-        if group:
-            await callback.bot.send_media_group(chat_id=chat_id, media=group)
-            if reply_markup:
-                await callback.bot.send_message(chat_id=chat_id, text="👇", reply_markup=reply_markup)
-            return
-
-    effective_file_id = file_id
-    effective_media_type = media_type
-    if not effective_file_id and media_assets and len(media_assets) == 1:
-        first = media_assets[0]
-        effective_file_id = first.get("mediaFileId") or first.get("file_id") if isinstance(first, dict) else getattr(first, "media_file_id", None)
-        effective_media_type = first.get("mediaType") or first.get("type") if isinstance(first, dict) else getattr(first, "media_type", None)
-
-    if effective_media_type == "photo" and effective_file_id:
-        await callback.bot.send_photo(
-            chat_id, effective_file_id, caption=text or "👋", reply_markup=reply_markup
-        )
-    elif effective_media_type == "video" and effective_file_id:
-        await callback.bot.send_video(
-            chat_id, effective_file_id, caption=text or "👋", reply_markup=reply_markup
-        )
-    else:
-        await callback.bot.send_message(chat_id, text or "👋", reply_markup=reply_markup)
+    node_mock = {
+        "content": text,
+        "mediaType": media_type,
+        "mediaFileId": file_id,
+        "mediaAssets": media_assets or [],
+    }
+    await send_funnel_node_message(
+        callback.bot,
+        chat_id,
+        node_mock,
+        reply_markup=reply_markup,
+    )
 
 
 async def _send_tariff_selection_message(callback: CallbackQuery, node_checkout, tariffs) -> None:

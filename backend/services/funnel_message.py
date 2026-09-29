@@ -210,6 +210,19 @@ def to_telegram_html(value: object) -> str:
     return formatter.render()
 
 
+def _resolve_media_source(fid: str):
+    """Resolve file_id or local uploads path to a Telegram-compatible media source."""
+    if not fid or not isinstance(fid, str):
+        return fid
+    if fid.startswith("/uploads/") or "/" in fid or "\\" in fid:
+        from pathlib import Path
+        from aiogram.types import FSInputFile
+        local_path = Path(__file__).resolve().parent.parent / fid.lstrip("/\\")
+        if local_path.exists():
+            return FSInputFile(str(local_path))
+    return fid
+
+
 async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=None) -> None:
     if isinstance(node, dict):
         text = node.get("content", "")
@@ -253,71 +266,153 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
                 fid = item.get("mediaFileId") or item.get("media_file_id") or item.get("fileId")
                 mtype = item.get("mediaType") or item.get("media_type") or "photo"
                 if fid:
-                    valid_assets.append((fid, mtype))
+                    valid_assets.append((str(fid), str(mtype).lower()))
             elif hasattr(item, "media_file_id") and item.media_file_id:
-                valid_assets.append((item.media_file_id, getattr(item, "media_type", "photo")))
+                valid_assets.append((str(item.media_file_id), str(getattr(item, "media_type", "photo")).lower()))
     elif file_id:
-        valid_assets.append((file_id, media_type or "photo"))
+        valid_assets.append((str(file_id), str(media_type or "photo").lower()))
 
     try:
-        if len(valid_assets) > 1:
-            from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument
-            group = []
-            for i, (fid, mtype) in enumerate(valid_assets):
-                caption = text if i == 0 else None
-                parse_mode = "HTML" if caption else None
-                if mtype == "video":
-                    group.append(InputMediaVideo(media=fid, caption=caption, parse_mode=parse_mode))
-                elif mtype == "document":
-                    group.append(InputMediaDocument(media=fid, caption=caption, parse_mode=parse_mode))
-                else:
-                    group.append(InputMediaPhoto(media=fid, caption=caption, parse_mode=parse_mode))
-            await bot.send_media_group(chat_id=chat_id, media=group)
-            if reply_markup:
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text="👇",
-                    reply_markup=reply_markup,
-                )
-            return
+        from aiogram.types import InputMediaPhoto, InputMediaVideo, InputMediaDocument
 
-        active_file_id = valid_assets[0][0] if valid_assets else file_id
-        active_media_type = valid_assets[0][1] if valid_assets else media_type
+        visual_assets = [a for a in valid_assets if a[1] in ("photo", "video")]
+        doc_assets = [a for a in valid_assets if a[1] == "document"]
+        other_assets = [a for a in valid_assets if a[1] not in ("photo", "video", "document")]
+        if other_assets:
+            visual_assets.extend(other_assets)
 
-        if active_media_type == "video" and active_file_id:
-            await bot.send_video(
-                chat_id=chat_id,
-                video=active_file_id,
-                caption=text,
-                reply_markup=reply_markup,
-            )
-        elif active_media_type == "photo" and active_file_id:
-            await bot.send_photo(
-                chat_id=chat_id,
-                photo=active_file_id,
-                caption=text,
-                reply_markup=reply_markup,
-            )
-        elif active_media_type == "document" and active_file_id:
-            doc_file = active_file_id
-            if isinstance(active_file_id, str) and (active_file_id.startswith("/uploads/") or "/" in active_file_id or "\\" in active_file_id):
-                from pathlib import Path
-                from aiogram.types import FSInputFile
-                local_path = Path(__file__).resolve().parent.parent / active_file_id.lstrip("/")
-                if local_path.exists():
-                    doc_file = FSInputFile(str(local_path))
-            await bot.send_document(
-                chat_id=chat_id,
-                document=doc_file,
-                caption=text,
-                reply_markup=reply_markup,
-            )
-        else:
+        if not valid_assets:
             await bot.send_message(
                 chat_id=chat_id,
                 text=text or "👋",
                 reply_markup=reply_markup,
             )
+            return
+
+        # Case A: Only visual assets (photos and videos can be combined into one media group)
+        if visual_assets and not doc_assets:
+            if len(visual_assets) == 1:
+                fid, mtype = visual_assets[0]
+                source = _resolve_media_source(fid)
+                if mtype == "video":
+                    await bot.send_video(
+                        chat_id=chat_id,
+                        video=source,
+                        caption=text,
+                        reply_markup=reply_markup,
+                    )
+                else:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=source,
+                        caption=text,
+                        reply_markup=reply_markup,
+                    )
+            else:
+                group = []
+                for i, (fid, mtype) in enumerate(visual_assets):
+                    caption = text if i == 0 else None
+                    parse_mode = "HTML" if caption else None
+                    source = _resolve_media_source(fid)
+                    if mtype == "video":
+                        group.append(InputMediaVideo(media=source, caption=caption, parse_mode=parse_mode))
+                    else:
+                        group.append(InputMediaPhoto(media=source, caption=caption, parse_mode=parse_mode))
+                await bot.send_media_group(chat_id=chat_id, media=group)
+                if reply_markup:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text="👇",
+                        reply_markup=reply_markup,
+                    )
+            return
+
+        # Case B: Only document assets (Telegram allows multiple documents in a document group)
+        if doc_assets and not visual_assets:
+            if len(doc_assets) == 1:
+                fid, _ = doc_assets[0]
+                source = _resolve_media_source(fid)
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=source,
+                    caption=text,
+                    reply_markup=reply_markup,
+                )
+            else:
+                group = []
+                for i, (fid, _) in enumerate(doc_assets):
+                    caption = text if i == 0 else None
+                    parse_mode = "HTML" if caption else None
+                    source = _resolve_media_source(fid)
+                    group.append(InputMediaDocument(media=source, caption=caption, parse_mode=parse_mode))
+                await bot.send_media_group(chat_id=chat_id, media=group)
+                if reply_markup:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text="👇",
+                        reply_markup=reply_markup,
+                    )
+            return
+
+        # Case C: Mixed assets (visual AND documents)
+        # Telegram Bot API forbids mixing InputMediaDocument with Photo/Video in send_media_group.
+        # Send visual assets first with text caption, then documents, then reply markup.
+        if visual_assets:
+            if len(visual_assets) == 1:
+                fid, mtype = visual_assets[0]
+                source = _resolve_media_source(fid)
+                if mtype == "video":
+                    await bot.send_video(chat_id=chat_id, video=source, caption=text)
+                else:
+                    await bot.send_photo(chat_id=chat_id, photo=source, caption=text)
+            else:
+                group = []
+                for i, (fid, mtype) in enumerate(visual_assets):
+                    caption = text if i == 0 else None
+                    parse_mode = "HTML" if caption else None
+                    source = _resolve_media_source(fid)
+                    if mtype == "video":
+                        group.append(InputMediaVideo(media=source, caption=caption, parse_mode=parse_mode))
+                    else:
+                        group.append(InputMediaPhoto(media=source, caption=caption, parse_mode=parse_mode))
+                await bot.send_media_group(chat_id=chat_id, media=group)
+
+        if doc_assets:
+            if len(doc_assets) == 1:
+                fid, _ = doc_assets[0]
+                source = _resolve_media_source(fid)
+                caption = text if not visual_assets else None
+                await bot.send_document(chat_id=chat_id, document=source, caption=caption)
+            else:
+                group = []
+                for i, (fid, _) in enumerate(doc_assets):
+                    caption = text if (not visual_assets and i == 0) else None
+                    parse_mode = "HTML" if caption else None
+                    source = _resolve_media_source(fid)
+                    group.append(InputMediaDocument(media=source, caption=caption, parse_mode=parse_mode))
+                await bot.send_media_group(chat_id=chat_id, media=group)
+
+        if reply_markup:
+            await bot.send_message(
+                chat_id=chat_id,
+                text="👇",
+                reply_markup=reply_markup,
+            )
+        return
+
     except Exception as e:
-        logger.warning(f"Ошибка отправки сообщения пользователю {chat_id}: {e}")
-        raise e
+        logger.warning(
+            f"Ошибка отправки медиа-сообщения пользователю {chat_id}: {e}. "
+            "Отправляем текстовое сообщение в качестве фоллбека."
+        )
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=text or "👋",
+                reply_markup=reply_markup,
+            )
+        except Exception as fallback_e:
+            logger.error(
+                f"Не удалось отправить даже текстовое сообщение пользователю {chat_id}: {fallback_e}"
+            )
+            raise e
