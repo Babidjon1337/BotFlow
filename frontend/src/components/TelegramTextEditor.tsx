@@ -20,7 +20,6 @@ import {
   Link2,
   Image as ImageIcon,
   ImagePlus,
-  FileText,
   X,
   Play,
 } from "lucide-react";
@@ -34,6 +33,8 @@ import {
 import { apiService } from "../services/api";
 import type { NodeMediaAsset } from "../types";
 import { getMediaFilesFromClipboard } from "../utils/clipboardMedia";
+import { DocumentThumbnail } from "./common/DocumentThumbnail";
+import { ALLOWED_MEDIA_ACCEPT, validateMediaFile } from "../utils/mediaValidation";
 
 function captureFirstFrame(videoUrl: string): Promise<string> {
   return new Promise((resolve) => {
@@ -69,21 +70,29 @@ export const SyncedMediaPreview = ({
   botId,
   assetId,
   mediaType,
+  fileName,
   compact,
 }: {
   botId: string;
   assetId: string;
-  mediaType: "photo" | "video";
+  mediaType?: "photo" | "video" | "document" | null;
+  fileName?: string;
   compact?: boolean;
 }) => {
   const [mediaState, setMediaState] = useState<{
     assetId: string;
     url: string | null;
     error: boolean;
+    mimeType?: string;
+    detectedFileName?: string;
+    isDocument?: boolean;
   }>({
     assetId,
     url: null,
     error: false,
+    mimeType: undefined,
+    detectedFileName: fileName,
+    isDocument: mediaType === "document",
   });
 
   useEffect(() => {
@@ -94,23 +103,61 @@ export const SyncedMediaPreview = ({
       .getBotMediaPreview(botId, assetId)
       .then(async (blob) => {
         if (cancelled) return;
-        if (blob.type.startsWith("video/")) {
+        const detectedName = (blob as any).fileName || fileName;
+        const detectedMediaType = (blob as any).mediaType || mediaType;
+        const isDoc =
+          detectedMediaType === "document" ||
+          (!blob.type.startsWith("image/") && !blob.type.startsWith("video/"));
+
+        if (isDoc) {
+          setMediaState({
+            assetId,
+            url: null,
+            error: false,
+            mimeType: blob.type,
+            detectedFileName: detectedName,
+            isDocument: true,
+          });
+          return;
+        }
+
+        if (blob.type.startsWith("video/") || detectedMediaType === "video") {
           const tempUrl = URL.createObjectURL(blob);
           try {
             const frameUrl = await captureFirstFrame(tempUrl);
             URL.revokeObjectURL(tempUrl);
             if (!cancelled) {
-              setMediaState({ assetId, url: frameUrl, error: false });
+              setMediaState({
+                assetId,
+                url: frameUrl,
+                error: false,
+                mimeType: blob.type,
+                detectedFileName: detectedName,
+                isDocument: false,
+              });
             }
           } catch {
             URL.revokeObjectURL(tempUrl);
             if (!cancelled) {
-              setMediaState({ assetId, url: null, error: true });
+              setMediaState({
+                assetId,
+                url: null,
+                error: true,
+                mimeType: blob.type,
+                detectedFileName: detectedName,
+              });
             }
           }
         } else {
           objectUrl = URL.createObjectURL(blob);
-          setMediaState({ assetId, url: objectUrl, error: false });
+          setMediaState({
+            assetId,
+            url: objectUrl,
+            error: false,
+            mimeType: blob.type,
+            detectedFileName: detectedName,
+            isDocument: false,
+          });
         }
       })
       .catch(() => {
@@ -123,7 +170,20 @@ export const SyncedMediaPreview = ({
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [assetId, botId]);
+  }, [assetId, botId, fileName, mediaType]);
+
+  const isDoc = mediaType === "document" || mediaState.isDocument;
+  const currentFileName = fileName || mediaState.detectedFileName;
+
+  if (isDoc) {
+    return (
+      <DocumentThumbnail
+        fileName={currentFileName}
+        mimeType={mediaState.mimeType}
+        compact={compact}
+      />
+    );
+  }
 
   const previewUrl = mediaState.assetId === assetId ? mediaState.url : null;
   const previewError = mediaState.assetId === assetId ? mediaState.error : false;
@@ -143,6 +203,7 @@ export const SyncedMediaPreview = ({
           alt="Медиа"
           draggable={false}
           className="w-full h-full object-cover select-none pointer-events-none"
+          onError={() => setMediaState((prev) => ({ ...prev, isDocument: true }))}
         />
         {mediaType === "video" && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25">
@@ -168,8 +229,9 @@ export const SyncedMediaPreview = ({
     <div className="relative overflow-hidden rounded-lg bg-black/90 flex items-center justify-center select-none">
       <img
         src={previewUrl}
-        alt="Кадр видео"
+        alt="Медиа"
         className="max-h-44 w-full rounded-lg object-contain bg-black/50"
+        onError={() => setMediaState((prev) => ({ ...prev, isDocument: true }))}
       />
       {mediaType === "video" && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/20">
@@ -401,8 +463,17 @@ export const TelegramTextEditor = ({
   };
 
   const handlePaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
-    // 1. Проверяем вставку медиафайлов из буфера обмена (картинки, скриншоты, видео)
-    const mediaFiles = getMediaFilesFromClipboard(event);
+    // 1. Проверяем вставку медиафайлов из буфера обмена (картинки, видео, документы)
+    const rawFiles = getMediaFilesFromClipboard(event);
+    const mediaFiles: File[] = [];
+    for (const f of rawFiles) {
+      const val = validateMediaFile(f);
+      if (!val.valid) {
+        if (val.error) alert(val.error);
+        continue;
+      }
+      mediaFiles.push(f);
+    }
 
     if (mediaFiles.length > 0 && onUploadMedia) {
       event.preventDefault();
@@ -469,9 +540,16 @@ export const TelegramTextEditor = ({
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDraggingOver(false);
-    const files = Array.from(e.dataTransfer.files || []).filter(
-      (f) => f.type.startsWith("image/") || f.type.startsWith("video/")
-    );
+    const rawFiles = Array.from(e.dataTransfer.files || []);
+    const files: File[] = [];
+    for (const f of rawFiles) {
+      const val = validateMediaFile(f);
+      if (!val.valid) {
+        if (val.error) alert(val.error);
+        continue;
+      }
+      files.push(f);
+    }
     if (files.length > 0 && onUploadMedia) {
       setIsUploading(true);
       try {
@@ -811,9 +889,20 @@ export const TelegramTextEditor = ({
   const isEmpty = !value || charCount === 0;
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = Array.from(event.target.files || []);
+    const rawFiles = Array.from(event.target.files || []);
     event.target.value = "";
-    if (selectedFiles.length === 0 || !onUploadMedia) return;
+    if (rawFiles.length === 0 || !onUploadMedia) return;
+    const selectedFiles: File[] = [];
+    for (const f of rawFiles) {
+      const val = validateMediaFile(f);
+      if (!val.valid) {
+        if (val.error) alert(val.error);
+        continue;
+      }
+      selectedFiles.push(f);
+    }
+    if (selectedFiles.length === 0) return;
+
     setIsUploading(true);
     try {
       for (const selectedFile of selectedFiles) {
@@ -866,7 +955,7 @@ export const TelegramTextEditor = ({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+        accept={ALLOWED_MEDIA_ACCEPT}
         className="sr-only"
         onChange={handleFileChange}
       />
@@ -913,11 +1002,12 @@ export const TelegramTextEditor = ({
                         <SyncedMediaPreview
                           botId={botId}
                           assetId={asset.mediaAssetId}
-                          mediaType={asset.mediaType === "document" ? "photo" : asset.mediaType}
+                          mediaType={asset.mediaType}
+                          fileName={asset.fileName}
                           compact
                         />
                       ) : asset.mediaType === "document" ? (
-                        <FileText size={20} className="text-[var(--color-primary)]" />
+                        <DocumentThumbnail fileName={asset.fileName} compact />
                       ) : (
                         <ImageIcon size={18} className="text-[var(--color-foreground-tertiary)]" />
                       )}
@@ -953,7 +1043,7 @@ export const TelegramTextEditor = ({
                 onMouseDown={keepEditorSelection}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                title="Добавить фото или видео (или вставьте из буфера Ctrl+V)"
+                title="Добавить фото, видео или документ (или вставьте из буфера Ctrl+V)"
                 aria-label="Добавить медиафайл"
                 className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-xl border border-dashed border-[var(--color-border-strong)] text-[var(--color-foreground-tertiary)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:opacity-50 shrink-0"
               >
@@ -975,8 +1065,8 @@ export const TelegramTextEditor = ({
               : (allAssets.length > 1
                 ? "Перетаскивайте блоки вправо или влево для смены порядка · вставка Ctrl+V"
                 : allAssets.length === 1
-                ? "Медиа над текстом · до 10 файлов (фото и видео) · можно вставить Ctrl+V"
-                : "Фото или видео над текстом · до 10 файлов · можно вставить Ctrl+V")}
+                ? "Медиа над текстом · до 10 файлов (фото, видео, документы) · можно вставить Ctrl+V"
+                : "Фото, видео или документы над текстом · до 10 файлов · можно вставить Ctrl+V")}
           </p>
         </div>
       )}

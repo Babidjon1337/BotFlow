@@ -741,7 +741,20 @@ export const apiService = {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.detail || "Не удалось загрузить предпросмотр файла.");
     }
-    return response.blob();
+    const blob = await response.blob();
+    const rawHeader = response.headers.get("X-File-Name");
+    const rawMediaType = response.headers.get("X-Media-Type");
+    if (rawHeader) {
+      try {
+        (blob as any).fileName = decodeURIComponent(rawHeader);
+      } catch {
+        (blob as any).fileName = rawHeader;
+      }
+    }
+    if (rawMediaType) {
+      (blob as any).mediaType = rawMediaType;
+    }
+    return blob;
   },
 
   async createMediaUploadSession(botId: string | number, nodeId: string) {

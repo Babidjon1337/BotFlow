@@ -33,7 +33,7 @@ export interface TariffItem {
   description?: string;
   managerUrl?: string | null;
   buttonText?: string | null;
-  mediaType?: 'photo' | 'video' | null;
+  mediaType?: 'photo' | 'video' | 'document' | null;
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
   mediaUrl?: string | null;

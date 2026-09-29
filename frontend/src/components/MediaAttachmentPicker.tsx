@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { FileImage, ImagePlus, Trash2, Video } from "lucide-react";
 import { apiService } from "../services/api";
 import { getMediaFilesFromClipboard } from "../utils/clipboardMedia";
+import { DocumentThumbnail } from "./common/DocumentThumbnail";
+import { ALLOWED_MEDIA_ACCEPT, validateMediaFile } from "../utils/mediaValidation";
 
-type MediaType = "photo" | "video" | null | undefined;
+type MediaType = "photo" | "video" | "document" | null | undefined;
 
 interface MediaAttachmentPickerProps {
   botId?: string;
   assetId?: string | null;
   fileId?: string | null;
   mediaType?: MediaType;
+  fileName?: string;
   onUpload: (file: File) => Promise<void>;
   onRemove: () => void;
   label: string;
@@ -24,6 +27,7 @@ export function MediaAttachmentPicker({
   assetId,
   fileId,
   mediaType,
+  fileName,
   onUpload,
   onRemove,
   label,
@@ -62,6 +66,11 @@ export function MediaAttachmentPicker({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    const val = validateMediaFile(file);
+    if (!val.valid) {
+      if (val.error) alert(val.error);
+      return;
+    }
     setIsUploading(true);
     try {
       await onUpload(file);
@@ -75,6 +84,11 @@ export function MediaAttachmentPicker({
   const handlePaste = async (event: React.ClipboardEvent) => {
     const mediaFiles = getMediaFilesFromClipboard(event);
     if (mediaFiles.length > 0) {
+      const val = validateMediaFile(mediaFiles[0]);
+      if (!val.valid) {
+        if (val.error) alert(val.error);
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       setIsUploading(true);
@@ -92,12 +106,23 @@ export function MediaAttachmentPicker({
   const attachmentContent = hasMedia ? (
     <div className="flex items-center gap-3">
       <div className="size-[72px] shrink-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-        {previewUrl ? <img src={previewUrl} alt="Предпросмотр вложения" className="size-full object-cover" />
-          : mediaType === "video" ? <Video className="m-5 text-[var(--color-primary)]" size={28} />
-          : <FileImage className="m-5 text-[var(--color-primary)]" size={28} />}
+        {mediaType === "document" ? (
+          <DocumentThumbnail fileName={fileName} compact={true} />
+        ) : previewUrl ? (
+          <img src={previewUrl} alt="Предпросмотр вложения" className="size-full object-cover" />
+        ) : mediaType === "video" ? (
+          <Video className="m-5 text-[var(--color-primary)]" size={28} />
+        ) : (
+          <FileImage className="m-5 text-[var(--color-primary)]" size={28} />
+        )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-semibold text-[var(--color-foreground)]">{mediaType === "video" ? "Видео" : "Фото"}</p>
+        <p className="text-[13px] font-semibold text-[var(--color-foreground)]">
+          {mediaType === "video" ? "Видео" : mediaType === "document" ? "Документ" : "Фото"}
+        </p>
+        {fileName && (
+          <p className="truncate text-[11px] text-[var(--color-foreground-secondary)]">{fileName}</p>
+        )}
         {isUploading && <p className="mt-0.5 text-[11px] text-[var(--color-foreground-tertiary)]">Загружаем…</p>}
       </div>
       <button type="button" onClick={openPicker} disabled={isUploading} className="rounded-xl bg-[var(--color-primary)] px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50">Заменить</button>
@@ -107,7 +132,7 @@ export function MediaAttachmentPicker({
 
   return (
     <div onPaste={handlePaste} className={triggerOnly ? "contents" : embedded ? "border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2" : "rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"}>
-      <input ref={inputRef} type="file" accept="image/*,video/*" className="sr-only" onChange={handleChange} />
+      <input ref={inputRef} type="file" accept={ALLOWED_MEDIA_ACCEPT} className="sr-only" onChange={handleChange} />
       {hasMedia ? (
         attachmentContent
       ) : (

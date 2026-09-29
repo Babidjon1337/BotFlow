@@ -149,22 +149,21 @@ const MessageBubble = ({
     >
       {/* Медиа-группа: 2+ сетки подряд */}
       {mediaAssets.length > 1 && botId && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: text ? "8px" : "0" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: text ? "8px" : "0" }}>
           {mediaAssets.map((asset) => (
-            asset.mediaType !== "document" ? (
-              <div key={asset.mediaAssetId} style={{ overflow: "hidden", borderRadius: "10px" }}>
-                <SyncedMediaPreview
-                  botId={botId}
-                  assetId={asset.mediaAssetId}
-                  mediaType={asset.mediaType}
-                  compact={false}
-                />
-              </div>
-            ) : null
+            <div key={asset.mediaAssetId} style={{ overflow: "hidden", borderRadius: "10px" }}>
+              <SyncedMediaPreview
+                botId={botId}
+                assetId={asset.mediaAssetId}
+                mediaType={asset.mediaType}
+                fileName={asset.fileName}
+                compact={false}
+              />
+            </div>
           ))}
         </div>
       )}
-      {mediaAssetId && botId && (mediaType === "photo" || mediaType === "video") && mediaAssets.length <= 1 && (
+      {mediaAssetId && botId && mediaAssets.length <= 1 && (
         <div style={{ marginBottom: text ? "8px" : "0", overflow: "hidden", borderRadius: "12px" }}>
           <SyncedMediaPreview
             botId={botId}

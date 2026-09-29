@@ -3,7 +3,6 @@ import {
   Plus,
   Megaphone,
   Users,
-  FileText,
   Link2,
   Pencil,
   Trash2,
@@ -24,6 +23,7 @@ import {
   stripTelegramHtml,
   getPeriodSuffix,
 } from '../../utils/tariffMappers';
+import { getFileTypeInfo } from '../common/DocumentThumbnail';
 
 interface BotTariffsScreenProps {
   bot: BotConfig;
@@ -428,7 +428,14 @@ export function BotTariffsScreen({
                               <Users className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />
                             )}
                             {del.type === 'file' && (
-                              <FileText className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />
+                              (() => {
+                                const fileInfo = getFileTypeInfo(del.fileName || del.title);
+                                return (
+                                  <span className={`inline-flex items-center justify-center rounded px-1 py-0.5 text-[8px] font-bold shrink-0 ${fileInfo.badgeBg} ${fileInfo.badgeText}`}>
+                                    {fileInfo.extension}
+                                  </span>
+                                );
+                              })()
                             )}
                             {del.type === 'link' && (
                               <Link2 className="size-3.5 sm:size-4 shrink-0 text-fg-tertiary" />

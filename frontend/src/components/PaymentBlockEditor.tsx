@@ -6,7 +6,6 @@ import {
   Trash2,
   Megaphone,
   Users,
-  FileText,
   Link2,
   AlertCircle,
   Loader2,
@@ -19,6 +18,7 @@ import { useAlert } from './AlertProvider';
 import { InfoTooltip } from './InfoTooltip';
 import { TariffDescriptionEditor } from './TariffDescriptionEditor';
 import { TariffEditorModal } from './sheets/TariffEditorModal';
+import { getFileTypeInfo } from './common/DocumentThumbnail';
 import { apiService } from '../services/api';
 import type { FunnelNode, Tariff } from '../types';
 import type { TariffItem } from '../types/tariff';
@@ -600,7 +600,16 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                           <div key={del.id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
                             {del.type === 'channel' && <Megaphone className="size-3.5 shrink-0 text-emerald-500" />}
                             {del.type === 'group' && <Users className="size-3.5 shrink-0 text-sky-500" />}
-                            {del.type === 'file' && <FileText className="size-3.5 shrink-0 text-purple-500" />}
+                            {del.type === 'file' && (
+                              (() => {
+                                const fileInfo = getFileTypeInfo(del.fileName || del.title);
+                                return (
+                                  <span className={`inline-flex items-center justify-center rounded px-1 py-0.2 text-[8px] font-bold shrink-0 shadow-2xs ${fileInfo.badgeBg} ${fileInfo.badgeText}`}>
+                                    {fileInfo.extension}
+                                  </span>
+                                );
+                              })()
+                            )}
                             {del.type === 'link' && <Link2 className="size-3.5 shrink-0 text-amber-500" />}
                             <span className="truncate max-w-[220px] font-medium text-foreground">
                               {del.title || 'Доступ'}
@@ -741,7 +750,16 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
                             <div key={del.id} className="flex items-center gap-1.5 text-xs text-fg-secondary">
                               {del.type === 'channel' && <Megaphone className="size-3.5 shrink-0 text-emerald-500" />}
                               {del.type === 'group' && <Users className="size-3.5 shrink-0 text-sky-500" />}
-                              {del.type === 'file' && <FileText className="size-3.5 shrink-0 text-purple-500" />}
+                              {del.type === 'file' && (
+                                (() => {
+                                  const fileInfo = getFileTypeInfo(del.fileName || del.title);
+                                  return (
+                                    <span className={`inline-flex items-center justify-center rounded px-1 py-0.2 text-[8px] font-bold shrink-0 shadow-2xs ${fileInfo.badgeBg} ${fileInfo.badgeText}`}>
+                                      {fileInfo.extension}
+                                    </span>
+                                  );
+                                })()
+                              )}
                               {del.type === 'link' && <Link2 className="size-3.5 shrink-0 text-amber-500" />}
                               <span className="truncate max-w-[220px] font-medium text-foreground">
                                 {del.title || 'Доступ'}

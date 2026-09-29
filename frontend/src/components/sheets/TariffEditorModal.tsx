@@ -31,6 +31,8 @@ import {
   buildBillingPeriod,
 } from '../../utils/tariffMappers';
 import { getMediaFilesFromClipboard } from '../../utils/clipboardMedia';
+import { getFileTypeInfo } from '../common/DocumentThumbnail';
+import { ALLOWED_MEDIA_ACCEPT, validateMediaFile } from '../../utils/mediaValidation';
 
 interface ConnectedChat {
   id: string;
@@ -160,7 +162,7 @@ function TariffEditorForm({
   const [isActiveInFunnel, setIsActiveInFunnel] = useState(tariff?.isActiveInFunnel !== false);
   const [managerUrl, setManagerUrl] = useState<string>(tariff?.managerUrl || '');
   const [buttonText, setButtonText] = useState<string>(tariff?.buttonText || '');
-  const [mediaType, setMediaType] = useState<'photo' | 'video' | null>(tariff?.mediaType || null);
+  const [mediaType, setMediaType] = useState<'photo' | 'video' | 'document' | null>(tariff?.mediaType || null);
   const [mediaFileId, setMediaFileId] = useState<string | null>(tariff?.mediaFileId || null);
   const [mediaAssetId, setMediaAssetId] = useState<string | null>(tariff?.mediaAssetId || null);
   const [mediaAssets, setMediaAssets] = useState<NodeMediaAsset[]>(() => {
@@ -172,7 +174,7 @@ function TariffEditorForm({
         {
           mediaAssetId: tariff.mediaAssetId,
           mediaFileId: tariff.mediaFileId,
-          mediaType: tariff.mediaType === 'video' ? 'video' : 'photo',
+          mediaType: tariff.mediaType || 'photo',
         },
       ];
     }
@@ -209,7 +211,7 @@ function TariffEditorForm({
             {
               mediaAssetId: tariff.mediaAssetId,
               mediaFileId: tariff.mediaFileId,
-              mediaType: tariff.mediaType === 'video' ? 'video' : 'photo',
+              mediaType: tariff.mediaType || 'photo',
             },
           ]
         : [];
@@ -315,6 +317,13 @@ function TariffEditorForm({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const val = validateMediaFile(file);
+    if (!val.valid) {
+      setFormError(val.error || 'Недопустимый формат файла');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setIsUploadingFile(true);
     setFormError(null);
     try {
@@ -393,11 +402,11 @@ function TariffEditorForm({
             .map((a) => ({
               mediaAssetId: a.mediaAssetId,
               mediaFileId: a.mediaFileId,
-              mediaType: a.mediaType === 'video' ? 'video' : 'photo',
+              mediaType: a.mediaType,
             }));
           if (newItems.length > 0) {
             const merged = [...prev, ...newItems].slice(-10);
-            setMediaType(merged[0].mediaType === 'video' ? 'video' : 'photo');
+            setMediaType(merged[0].mediaType);
             setMediaFileId(merged[0].mediaFileId);
             setMediaAssetId(merged[0].mediaAssetId);
             return merged;
@@ -447,6 +456,11 @@ function TariffEditorForm({
 
   const handleUploadTariffMedia = useCallback(async (file: File) => {
     if (!botId) return;
+    const val = validateMediaFile(file);
+    if (!val.valid) {
+      setFormError(val.error || 'Недопустимый формат файла');
+      return;
+    }
     if (file.size > 50 * 1024 * 1024) {
       void handleUploadLargeMedia(file);
       return;
@@ -468,12 +482,13 @@ function TariffEditorForm({
                 {
                   mediaFileId: media.fileId,
                   mediaAssetId: media.id,
-                  mediaType: (media.mediaType as 'photo' | 'video') || 'photo',
+                  mediaType: (media.mediaType as 'photo' | 'video' | 'document') || val.mediaType,
+                  fileName: (media as any).fileName || file.name,
                 },
               ].slice(-10);
 
         if (newAssets.length > 0) {
-          setMediaType(newAssets[0].mediaType === 'video' ? 'video' : 'photo');
+          setMediaType(newAssets[0].mediaType);
           setMediaFileId(newAssets[0].mediaFileId);
           setMediaAssetId(newAssets[0].mediaAssetId);
         }
@@ -511,7 +526,7 @@ function TariffEditorForm({
       const remaining = mediaAssets.filter((a) => a.mediaAssetId !== assetIdToRemove);
       setMediaAssets(remaining);
       if (remaining.length > 0) {
-        setMediaType(remaining[0].mediaType === 'video' ? 'video' : 'photo');
+        setMediaType(remaining[0].mediaType);
         setMediaFileId(remaining[0].mediaFileId);
         setMediaAssetId(remaining[0].mediaAssetId);
         return;
@@ -526,7 +541,7 @@ function TariffEditorForm({
   const handleReorderMedia = (newAssets: NodeMediaAsset[]) => {
     setMediaAssets(newAssets);
     if (newAssets.length > 0) {
-      setMediaType(newAssets[0].mediaType === 'video' ? 'video' : 'photo');
+      setMediaType(newAssets[0].mediaType);
       setMediaFileId(newAssets[0].mediaFileId);
       setMediaAssetId(newAssets[0].mediaAssetId);
     }
@@ -574,7 +589,7 @@ function TariffEditorForm({
       isActiveInFunnel,
       managerUrl: managerUrl.trim() || null,
       buttonText: buttonText.trim() || null,
-      mediaType: mediaAssets.length > 0 ? (mediaAssets[0].mediaType as 'photo' | 'video') : mediaType,
+      mediaType: mediaAssets.length > 0 ? (mediaAssets[0].mediaType as 'photo' | 'video' | 'document') : mediaType,
       mediaFileId: mediaAssets.length > 0 ? mediaAssets[0].mediaFileId : mediaFileId,
       mediaAssetId: mediaAssets.length > 0 ? mediaAssets[0].mediaAssetId : mediaAssetId,
       mediaAssets,
@@ -982,6 +997,7 @@ function TariffEditorForm({
             <input
               ref={fileInputRef}
               type="file"
+              accept={ALLOWED_MEDIA_ACCEPT}
               className="hidden"
               onChange={handleFileChange}
             />
@@ -989,40 +1005,51 @@ function TariffEditorForm({
             {/* Existing Deliverables List */}
             {deliverables.length > 0 && (
               <div className="space-y-2">
-                {deliverables.map((del) => (
-                  <div
-                    key={del.id}
-                    className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-2xs"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        {del.type === 'channel' && <Megaphone className="size-4" />}
-                        {del.type === 'group' && <Users className="size-4" />}
-                        {del.type === 'file' && <FileText className="size-4" />}
-                        {del.type === 'link' && <Link2 className="size-4" />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">
-                          {del.title}
-                        </div>
-                        <div className="truncate text-xs text-fg-secondary">
-                          {del.type === 'channel' && 'Канал Telegram · персональная ссылка'}
-                          {del.type === 'group' && 'Чат / Группа Telegram · персональная ссылка'}
-                          {del.type === 'file' && `Файл ${del.fileSizeFormatted ? `· ${del.fileSizeFormatted}` : ''}`}
-                          {del.type === 'link' && (del.url || 'Внешняя ссылка')}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveDeliverable(del.id)}
-                      className="ml-2 flex size-7 shrink-0 items-center justify-center rounded-lg text-fg-tertiary transition-colors hover:bg-danger-soft hover:text-danger"
-                      title="Удалить выдачу"
+                {deliverables.map((del) => {
+                  const fileInfo = del.type === 'file' ? getFileTypeInfo(del.fileName || del.title) : null;
+
+                  return (
+                    <div
+                      key={del.id}
+                      className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-2xs"
                     >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex min-w-0 items-center gap-3">
+                        {del.type === 'file' && fileInfo ? (
+                          <div
+                            className={`flex size-8 shrink-0 items-center justify-center rounded-lg font-bold text-[9px] shadow-2xs ${fileInfo.badgeBg} ${fileInfo.badgeText}`}
+                          >
+                            {fileInfo.extension}
+                          </div>
+                        ) : (
+                          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                            {del.type === 'channel' && <Megaphone className="size-4" />}
+                            {del.type === 'group' && <Users className="size-4" />}
+                            {del.type === 'link' && <Link2 className="size-4" />}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {del.title}
+                          </div>
+                          <div className="truncate text-xs text-fg-secondary">
+                            {del.type === 'channel' && 'Канал Telegram · персональная ссылка'}
+                            {del.type === 'group' && 'Чат / Группа Telegram · персональная ссылка'}
+                            {del.type === 'file' && `${fileInfo?.label || 'Файл'} ${del.fileSizeFormatted ? `· ${del.fileSizeFormatted}` : ''}`}
+                            {del.type === 'link' && (del.url || 'Внешняя ссылка')}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveDeliverable(del.id)}
+                        className="ml-2 flex size-7 shrink-0 items-center justify-center rounded-lg text-fg-tertiary transition-colors hover:bg-danger-soft hover:text-danger"
+                        title="Удалить выдачу"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
             {deliverables.length === 0 && (

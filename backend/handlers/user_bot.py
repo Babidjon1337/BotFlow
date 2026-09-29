@@ -541,6 +541,7 @@ async def on_owner_media_message(message: Message):
         "mediaFileId": telegram_file_id,
         "mediaAssetId": str(asset.id),
         "mediaType": media_type,
+        "fileName": file_name,
     }
 
     if session.node_id.startswith("payment:tariff:") or session.node_id.startswith("tariff:"):

@@ -22,7 +22,7 @@ export interface Tariff {
   recurring_period?: string;
   mediaFileId?: string | null;
   mediaAssetId?: string | null;
-  mediaType?: 'photo' | 'video' | null;
+  mediaType?: 'photo' | 'video' | 'document' | null;
   mediaAssets?: NodeMediaAsset[] | null;
   deliverables?: import('./types/tariff').TariffDeliverable[];
 }

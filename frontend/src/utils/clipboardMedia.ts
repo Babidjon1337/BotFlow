@@ -6,35 +6,10 @@
  * - Copied media files from OS file managers (Windows Explorer, macOS Finder)
  */
 
-const MEDIA_EXTENSIONS = new Set([
-  'png',
-  'jpg',
-  'jpeg',
-  'gif',
-  'webp',
-  'svg',
-  'bmp',
-  'ico',
-  'heic',
-  'heif',
-  'avif',
-  'mp4',
-  'mov',
-  'webm',
-  'avi',
-  'mkv',
-  'm4v',
-  '3gp',
-]);
+import { validateMediaFile } from './mediaValidation';
 
 export function isMediaFile(file: File): boolean {
-  if (file.type) {
-    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
-      return true;
-    }
-  }
-  const ext = (file.name.split('.').pop() || '').toLowerCase();
-  return MEDIA_EXTENSIONS.has(ext);
+  return validateMediaFile(file).valid;
 }
 
 export function getMediaFilesFromClipboard(event: ClipboardEvent | React.ClipboardEvent): File[] {

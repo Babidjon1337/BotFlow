@@ -2129,6 +2129,18 @@ async def upload_bot_media(
             status_code=409,
             detail="Сначала нажмите /start в созданном боте для синхронизации.",
         )
+    filename = (file.filename or "").lower()
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
+    blocked_extensions = {
+        "exe", "bat", "cmd", "sh", "php", "js", "mjs", "py", "vbs", "msi",
+        "dll", "com", "scr", "jar", "apk", "bin", "iso", "dmg", "svg", "html", "htm",
+    }
+    if ext in blocked_extensions:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Загрузка файлов формата .{ext} запрещена в целях безопасности.",
+        )
+
     content_type = (file.content_type or "").lower()
     media_type = (
         "photo"
@@ -2167,11 +2179,6 @@ async def upload_bot_media(
 
     if not is_broadcast_media and target_node is None and target_tariff_id is None:
         raise HTTPException(status_code=404, detail="Блок воронки не найден")
-    if target_tariff_id is not None and media_type == "document":
-        raise HTTPException(
-            status_code=415,
-            detail="Для тарифа можно использовать только фото или видео.",
-        )
     payload = await file.read(50 * 1024 * 1024 + 1)
     if not payload or len(payload) > 50 * 1024 * 1024:
         raise HTTPException(
@@ -2344,6 +2351,7 @@ async def upload_bot_media(
                         "mediaFileId": telegram_file_id,
                         "mediaAssetId": str(asset.id),
                         "mediaType": media_type,
+                        "fileName": file.filename,
                     }
                     merged_assets = [a for a in existing_assets if isinstance(a, dict) and str(a.get("mediaAssetId")) != str(asset.id)]
                     merged_assets.append(new_asset_entry)
@@ -2362,11 +2370,13 @@ async def upload_bot_media(
             "nodeId": node_id,
             "mediaType": media_type,
             "fileId": telegram_file_id,
+            "fileName": file.filename,
             "mediaAssets": [
                 {
                     "mediaFileId": telegram_file_id,
                     "mediaAssetId": str(asset.id),
                     "mediaType": media_type,
+                    "fileName": file.filename,
                 }
             ],
         }
@@ -2404,6 +2414,7 @@ async def upload_bot_media(
             "mediaFileId": telegram_file_id,
             "mediaAssetId": str(asset.id),
             "mediaType": media_type,
+            "fileName": file.filename,
         }
     )
     media_target["mediaAssets"] = assets_list[-10:]
@@ -2558,6 +2569,18 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
             status_code=502, detail="Не удалось получить файл из Telegram."
         ) from exc
 
+    headers = {
+        "Cache-Control": "private, max-age=300",
+        "Access-Control-Expose-Headers": "X-File-Name, X-Media-Type, Content-Disposition",
+    }
+    if target_asset.file_name:
+        import urllib.parse
+        encoded_name = urllib.parse.quote(target_asset.file_name)
+        headers["Content-Disposition"] = f"inline; filename*=UTF-8''{encoded_name}"
+        headers["X-File-Name"] = encoded_name
+    if target_asset.media_type:
+        headers["X-Media-Type"] = target_asset.media_type
+
     return Response(
         content=payload.getvalue(),
         media_type=target_asset.mime_type
@@ -2566,7 +2589,7 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
             if thumb_asset
             else (asset.mime_type or "application/octet-stream")
         ),
-        headers={"Cache-Control": "private, max-age=300"},
+        headers=headers,
     )
 
 
