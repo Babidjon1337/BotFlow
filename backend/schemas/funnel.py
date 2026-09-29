@@ -87,6 +87,11 @@ class TariffSchema(BaseModel):
     id: str
     name: str
     price: float
+    old_price: Optional[float] = Field(
+        default=None,
+        validation_alias=AliasChoices("old_price", "oldPrice"),
+        serialization_alias="oldPrice",
+    )
     description: str = ""
     has_delivery: bool = Field(default=True, alias="hasDelivery")
     action_type: Literal["link", "group", "text", "file"] = Field(default="link", alias="actionType")

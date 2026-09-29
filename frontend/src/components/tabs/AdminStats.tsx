@@ -1280,8 +1280,8 @@ function UserProfileScreen({
           </div>
 
           {/* ── Bots ── */}
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3.5">
+          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]">
+            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-3.5 rounded-t-xl">
               <div>
                 <h3 className="text-[13px] font-bold text-[var(--color-foreground)]">
                   Боты пользователя · {bots.length}
@@ -1781,7 +1781,7 @@ function AdminBotRow({
     (sub?.status === "active" && (!sub?.ends_at || new Date(sub.ends_at) > new Date()));
 
   return (
-    <article className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-4 transition-all hover:bg-[var(--color-surface-2)]/70">
+    <article className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-4 transition-all hover:bg-[var(--color-surface-2)]/70 ${menuOpen ? "relative z-30" : ""}`}>
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0 xl:pr-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -1884,7 +1884,7 @@ function AdminBotRow({
           </button>
 
           {/* Кнопка [ ••• ] с выпадающими действиями */}
-          <div className="relative">
+          <div className={`relative ${menuOpen ? "z-50" : ""}`}>
             <button
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
@@ -1897,8 +1897,8 @@ function AdminBotRow({
             </button>
             {menuOpen && (
               <>
-                <div className="fixed inset-0 z-30" role="presentation" onClick={() => setMenuOpen(false)} />
-                <div className="absolute right-0 top-[calc(100%+6px)] z-40 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl">
+                <div className="fixed inset-0 z-40" role="presentation" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-56 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-xl">
                   {/* • Проверить готовность */}
                   <button
                     type="button"

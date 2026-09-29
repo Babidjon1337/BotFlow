@@ -129,12 +129,23 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
               const fresh = catalogMap.get(nt.id);
               if (fresh) {
                 const converted = tariffItemToTariff(fresh);
+                const desc1 = (nt.description || '').trim();
+                const desc2 = (converted.description || '').trim();
+                const oldP1 = nt.oldPrice == null ? null : Number(nt.oldPrice);
+                const oldP2 = converted.oldPrice == null ? null : Number(converted.oldPrice);
+                const name1 = (nt.name || '').trim();
+                const name2 = (converted.name || '').trim();
+                const price1 = Number(nt.price) || 0;
+                const price2 = Number(converted.price) || 0;
+                const sales1 = nt.salesMode || 'auto';
+                const sales2 = converted.salesMode || 'auto';
+
                 if (
-                  nt.name !== converted.name ||
-                  nt.price !== converted.price ||
-                  nt.description !== converted.description ||
-                  nt.salesMode !== converted.salesMode ||
-                  nt.oldPrice !== converted.oldPrice
+                  name1 !== name2 ||
+                  price1 !== price2 ||
+                  desc1 !== desc2 ||
+                  sales1 !== sales2 ||
+                  oldP1 !== oldP2
                 ) {
                   hasDrift = true;
                 }

@@ -309,7 +309,7 @@ export function tariffItemToTariff(item: TariffItem): Tariff {
     name: item.name,
     price: item.price,
     oldPrice: item.oldPrice,
-    description: item.description && item.description.trim() ? item.description : (d ? d.title : item.name),
+    description: item.description && item.description.trim() ? item.description : '',
     managerUrl: item.managerUrl || null,
     buttonText: item.buttonText || null,
     salesMode: item.salesMode,

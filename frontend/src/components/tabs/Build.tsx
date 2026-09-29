@@ -717,7 +717,6 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
       !!(t.name?.trim()) &&
       !isNaN(Number(t.price)) &&
       Number(t.price) >= 0 &&
-      !!(t.description?.trim()) &&
       (t.hasDelivery === false || paymentMode === "application"
         ? true
         : !!t.actionData?.trim() || (Array.isArray(t.deliverables) && t.deliverables.length > 0)),

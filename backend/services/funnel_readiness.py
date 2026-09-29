@@ -157,9 +157,7 @@ def evaluate_funnel_readiness(
                 price_is_valid = False
             if not price_is_valid:
                 reasons.append(f"Укажите корректную цену: {label}.")
-            if not _text(tariff.get("description")):
-                reasons.append(f"Добавьте описание: {label}.")
-            elif _visible_length(tariff.get("description")) > MAX_TARIFF_DESCRIPTION_CHARACTERS:
+            if _text(tariff.get("description")) and _visible_length(tariff.get("description")) > MAX_TARIFF_DESCRIPTION_CHARACTERS:
                 reasons.append(
                     f"Сократите описание: {label} до {MAX_TARIFF_DESCRIPTION_CHARACTERS} символов."
                 )
@@ -284,11 +282,8 @@ def evaluate_funnel_readiness(
                 except (TypeError, ValueError):
                     pass
 
-    if has_paid_tariffs and mode in {"auto", "hybrid"}:
-        if not has_payment_provider:
-            reasons.append("Подключите платёжную систему.")
-        elif not has_payment_credentials:
-            reasons.append("Сохраните рабочие реквизиты платёжной системы.")
+    # NOTE: Paid tariffs without connected payment provider do not block launch;
+    # they operate in demo mode with stub/dummy payment buttons.
 
     return FunnelReadiness(tuple(dict.fromkeys(reasons)))
 

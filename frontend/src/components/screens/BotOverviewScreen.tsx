@@ -266,35 +266,36 @@ function LaunchChecklist({
           {/* Разделы бота: Сценарий, Тарифы, Telegram + компактная плашка опциональной кассы */}
           <section className="flex flex-col gap-3">
             <Overline>Разделы бота</Overline>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
               {/* 1. Сценарий */}
               <button
                 type="button"
                 onClick={() => onNavigate('scenario')}
-                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring"
+                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring min-w-0 w-full"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       <FileText className="size-4" />
                     </span>
-                    <div>
-                      <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
-                        Сценарий
-                      </p>
-                      <p className="text-micro text-fg-tertiary">
-                        {bot.funnelComplete ? 'Воронка настроена' : 'Требует заполнения'}
-                      </p>
-                    </div>
+                    <StatusBadge
+                      className="shrink-0"
+                      tone={bot.funnelComplete ? 'success' : 'warning'}
+                      label={bot.funnelComplete ? 'Готов' : 'В процессе'}
+                    />
                   </div>
-                  <StatusBadge
-                    tone={bot.funnelComplete ? 'success' : 'warning'}
-                    label={bot.funnelComplete ? 'Готов' : 'В процессе'}
-                  />
+                  <div className="mt-2.5 min-w-0">
+                    <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary truncate">
+                      Сценарий
+                    </p>
+                    <p className="text-micro text-fg-tertiary truncate">
+                      {bot.funnelComplete ? 'Воронка настроена' : 'Требует заполнения'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
-                  <span>Старт, дожимы, кнопки</span>
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                  <span className="truncate">Старт, дожимы, кнопки</span>
+                  <ArrowRight className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
                 </div>
               </button>
 
@@ -302,30 +303,31 @@ function LaunchChecklist({
               <button
                 type="button"
                 onClick={() => onNavigate('tariffs')}
-                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring"
+                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring min-w-0 w-full"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                       <Layers className="size-4" />
                     </span>
-                    <div>
-                      <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
-                        Тарифы
-                      </p>
-                      <p className="text-micro text-fg-tertiary">
-                        {paymentDone ? 'Онлайн-оплата' : 'Заявки / автовыдача'}
-                      </p>
-                    </div>
+                    <StatusBadge
+                      className="shrink-0"
+                      tone="neutral"
+                      label={paymentDone ? 'С кассой' : 'Без кассы'}
+                    />
                   </div>
-                  <StatusBadge
-                    tone="neutral"
-                    label={paymentDone ? 'С кассой' : 'Без кассы'}
-                  />
+                  <div className="mt-2.5 min-w-0">
+                    <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary truncate">
+                      Тарифы
+                    </p>
+                    <p className="text-micro text-fg-tertiary truncate">
+                      {paymentDone ? 'Онлайн-оплата' : 'Заявки / автовыдача'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
-                  <span>Цены, выдача, менеджер</span>
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                  <span className="truncate">Цены, выдача, менеджер</span>
+                  <ArrowRight className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
                 </div>
               </button>
 
@@ -336,30 +338,31 @@ function LaunchChecklist({
                   setIntegrationTarget('platform');
                   onNavigate('integrations');
                 }}
-                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring"
+                className="group flex flex-col justify-between rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-ring min-w-0 w-full"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5">
+                <div>
+                  <div className="flex items-center justify-between gap-2">
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#229ED9]/10 text-[#229ED9]">
                       <Plug className="size-4" />
                     </span>
-                    <div>
-                      <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary">
-                        Telegram
-                      </p>
-                      <p className="text-micro text-fg-tertiary truncate max-w-[110px]">
-                        {platformDone ? (bot.username ? `@${bot.username.replace(/^@/, '')}` : 'Токен сохранён') : 'Токен не задан'}
-                      </p>
-                    </div>
+                    <StatusBadge
+                      className="shrink-0"
+                      tone={platformDone ? 'success' : 'neutral'}
+                      label={platformDone ? 'Подключён' : 'Ожидает'}
+                    />
                   </div>
-                  <StatusBadge
-                    tone={platformDone ? 'success' : 'neutral'}
-                    label={platformDone ? 'Подключён' : 'Ожидает'}
-                  />
+                  <div className="mt-2.5 min-w-0">
+                    <p className="text-body-sm font-bold text-fg-primary group-hover:text-primary truncate">
+                      Telegram
+                    </p>
+                    <p className="text-micro text-fg-tertiary truncate">
+                      {platformDone ? (bot.username ? `@${bot.username.replace(/^@/, '')}` : 'Токен сохранён') : 'Токен не задан'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between border-t border-border/60 pt-2.5 text-micro text-fg-secondary">
-                  <span>Связка через @BotFather</span>
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />
+                  <span className="truncate">Связка через @BotFather</span>
+                  <ArrowRight className="size-3.5 shrink-0 transition-transform group-hover:translate-x-0.5" />
                 </div>
               </button>
             </div>

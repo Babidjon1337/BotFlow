@@ -635,6 +635,7 @@ export const apiService = {
       botStatus: "active" | "draft";
       webhookUrl?: string;
       botUrl?: string;
+      warning?: string | null;
     }>(`/api/bots/${botId}/toggle`, {
       method: "POST",
       body: JSON.stringify({ action }),

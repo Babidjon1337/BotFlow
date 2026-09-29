@@ -825,34 +825,33 @@ async def _send_tariff_invoice(
         )
         return
 
-    # 3. Auto / Hybrid mode: requires payment link
+    # 3. Auto / Hybrid mode: requires payment link (or demo button if provider not connected)
     if not bot_config.payment_provider or not bot_config.payment_creds_enc:
+        demo_btn_label = getattr(tariff, "button_text", None) or f"💳 Оплатить {amount:,.0f} ₽".replace(",", " ")
+        if not demo_btn_label.endswith("(демо)"):
+            demo_btn_label = f"{demo_btn_label} (демо)"
+        demo_button = InlineKeyboardButton(
+            text=demo_btn_label[:64],
+            callback_data=f"dummy_pay:{tariff_id}",
+        )
+        rows = [[demo_button]]
         if mode == "hybrid":
-            rows = [[manager_button]]
-            if has_multiple:
-                rows.append(
-                    [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
-                )
-            pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
-            if edit_message:
-                await _remove_callback_message(callback)
-            await _send_payment_message(
-                callback,
-                message_text,
-                pay_keyboard,
-                media_type=getattr(tariff, "media_type", None),
-                file_id=getattr(tariff, "media_file_id", None),
-                media_assets=tariff_media_assets,
+            rows.append([manager_button])
+        if has_multiple:
+            rows.append(
+                [InlineKeyboardButton(text="← Назад к тарифам", callback_data="payment_tariffs_back")]
             )
-            return
-
-        try:
-            await callback.answer(
-                "Платёжная система бота временно не настроена. Обратитесь к администратору.",
-                show_alert=True,
-            )
-        except Exception:
-            pass
+        pay_keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+        if edit_message:
+            await _remove_callback_message(callback)
+        await _send_payment_message(
+            callback,
+            message_text,
+            pay_keyboard,
+            media_type=getattr(tariff, "media_type", None),
+            file_id=getattr(tariff, "media_file_id", None),
+            media_assets=tariff_media_assets,
+        )
         return
 
     try:
@@ -1137,6 +1136,14 @@ async def return_to_tariff_choices(callback: CallbackQuery):
     await _send_tariff_selection_message(callback, node_checkout, tariffs)
 
 
+@user_bot_router.callback_query(F.data.startswith("dummy_pay:"))
+async def process_dummy_pay(callback: CallbackQuery):
+    await callback.answer(
+        "💳 Демо-режим: касса не подключена владельцем бота. Оплата работает в тестовом режиме.",
+        show_alert=True,
+    )
+
+
 @user_bot_router.callback_query(F.data.startswith("claim_free_tariff:"))
 async def process_free_tariff_claim(callback: CallbackQuery):
     """Deliver free tariff access immediately without payment provider."""
@@ -1261,9 +1268,6 @@ async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
         except (ValueError, TypeError):
             return True
 
-    has_paid = any(_is_paid_tariff(t) for t in selected)
-    if has_paid and (not bot_config.payment_provider or not bot_config.payment_creds_enc):
-        return None
     return bot_config, funnel, node_checkout, selected
 
 

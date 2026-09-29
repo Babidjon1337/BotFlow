@@ -116,9 +116,9 @@ def hydrate_funnel_tariffs(
 
             node["tariffs"] = hydrated
         elif (not current_tariffs) and node_id == "payment" and db_tariffs:
-            # If payment node had no tariffs selected yet, check if there are active db tariffs
-            # Keep as empty list so user can configure in editor, or leave as is
-            pass
+            active_tariffs = [t for t in db_tariffs if t.is_active]
+            if active_tariffs:
+                node["tariffs"] = [_extract_tariff_dict(t) for t in active_tariffs]
 
     if isinstance(nodes, list):
         for n in nodes:

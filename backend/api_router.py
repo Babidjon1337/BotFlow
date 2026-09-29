@@ -313,22 +313,18 @@ async def _toggle_client_bot(
         await get_bot_subscription(bot.id) if new_status == "active" else None
     )
 
+    has_unconfigured_payments = False
     if new_status == "active":
         bot_tariffs = await _tariffs_for_bot(bot)
-        auto_tariffs = [
-            t for t in bot_tariffs if t.is_active and t.sales_mode in {"auto", "hybrid"}
+        auto_paid_tariffs = [
+            t
+            for t in bot_tariffs
+            if t.is_active
+            and t.sales_mode in {"auto", "hybrid"}
+            and float(getattr(t, "price", 0) or 0) > 0
         ]
-        if auto_tariffs:
-            if not bot.payment_provider:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Нельзя запустить бота: Подключите платёжную систему.",
-                )
-            if not bot.payment_creds_enc:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Нельзя запустить бота: Сохраните рабочие реквизиты платёжной системы.",
-                )
+        if auto_paid_tariffs and (not bot.payment_provider or not bot.payment_creds_enc):
+            has_unconfigured_payments = True
 
         is_vip = is_pro_active(bot.owner)
         if is_vip or allow_admin_entitlement_bypass:
@@ -409,12 +405,16 @@ async def _toggle_client_bot(
         logger.warning("SSE: ошибка отправки статуса бота: %s", exc)
     bot_url = f"https://t.me/{updated_bot.username}" if updated_bot.username else None
     webhook_url = f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{updated_bot.id}"
+    warning = None
+    if new_status == "active" and has_unconfigured_payments:
+        warning = "Касса не подключена: платные тарифы работают в демо-режиме (кнопки оплаты будут тестовыми заглушками)."
     return {
         "status": "ok",
         "message": f"Бот {'запущен' if new_status == 'active' else 'остановлен'}",
         "botStatus": new_status,
         "webhookUrl": webhook_url if new_status == "active" else None,
         "botUrl": bot_url,
+        "warning": warning,
     }
 
 

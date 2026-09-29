@@ -62,8 +62,19 @@ export const useBotToggle = () => {
         };
       });
 
-      setToastType('success');
-      setToastMessage(newStatus === 'active' ? 'Бот успешно запущен' : 'Бот остановлен');
+      if (result.warning) {
+        showAlert({
+          title: 'Бот запущен в тестовом режиме',
+          message: result.warning,
+          type: 'warning',
+          confirmText: 'Понятно',
+        });
+        setToastType('success');
+        setToastMessage('Бот запущен (демо-режим оплаты)');
+      } else {
+        setToastType('success');
+        setToastMessage(newStatus === 'active' ? 'Бот успешно запущен' : 'Бот остановлен');
+      }
     } catch (error: unknown) {
       setToastType('error');
       const errorMsg = error instanceof Error
