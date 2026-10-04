@@ -106,13 +106,38 @@ async def _deliver_media_then_text(
                     await bot.send_photo(chat_id=telegram_id, photo=asset.telegram_file_id)
             else:
                 # aiogram принимает file_id строкой как InputMedia-источник.
-                media_group = [
-                    InputMediaVideo(media=a.telegram_file_id)
-                    if a.media_type == "video"
-                    else InputMediaPhoto(media=a.telegram_file_id)
-                    for a in media_assets
-                ]
-                await bot.send_media_group(chat_id=telegram_id, media=media_group)
+                try:
+                    media_group = [
+                        InputMediaVideo(media=a.telegram_file_id, supports_streaming=True)
+                        if a.media_type == "video"
+                        else InputMediaPhoto(media=a.telegram_file_id)
+                        for a in media_assets
+                    ]
+                    await bot.send_media_group(chat_id=telegram_id, media=media_group)
+                except Exception as album_err:
+                    logger.warning(
+                        "send_media_group в рассылке не удался (%s), отправляем раздельно...",
+                        album_err,
+                    )
+                    for a in media_assets:
+                        try:
+                            if a.media_type == "video":
+                                await bot.send_video(
+                                    chat_id=telegram_id,
+                                    video=a.telegram_file_id,
+                                    supports_streaming=True,
+                                )
+                            else:
+                                await bot.send_photo(
+                                    chat_id=telegram_id,
+                                    photo=a.telegram_file_id,
+                                )
+                        except Exception as single_err:
+                            logger.error(
+                                "Ошибка отправки медиа %s в рассылке: %s",
+                                a.telegram_file_id,
+                                single_err,
+                            )
             break
         except TelegramRetryAfter as exc:
             flood_waits += 1

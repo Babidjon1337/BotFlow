@@ -293,20 +293,220 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
         caption_fits = len(text) <= MAX_CAPTION_LEN if text else True
         media_caption = text if caption_fits else None
 
-        async def _send_single_visual(fid: str, mtype: str, caption_str: str | None, markup=None):
+        async def _send_single_visual_safe(
+            fid: str,
+            mtype: str,
+            caption_str: str | None = None,
+            markup=None,
+        ) -> bool:
             source = _resolve_media_source(fid)
             if mtype == "video":
-                await bot.send_video(
+                try:
+                    await bot.send_video(
+                        chat_id=chat_id,
+                        video=source,
+                        caption=caption_str,
+                        reply_markup=markup,
+                        supports_streaming=True,
+                    )
+                    return True
+                except Exception as vid_err:
+                    logger.warning(
+                        "send_video не удался для %s (%s). Пробуем отправить как документ...",
+                        fid,
+                        vid_err,
+                    )
+                    try:
+                        kwargs = {
+                            "chat_id": chat_id,
+                            "document": source,
+                            "caption": caption_str,
+                        }
+                        if markup is not None:
+                            kwargs["reply_markup"] = markup
+                        await bot.send_document(**kwargs)
+                        return True
+                    except Exception as doc_err:
+                        logger.error(
+                            "Не удалось отправить медиа %s ни как видео, ни как документ: %s",
+                            fid,
+                            doc_err,
+                        )
+                        return False
+            else:
+                try:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=source,
+                        caption=caption_str,
+                        reply_markup=markup,
+                    )
+                    return True
+                except Exception as photo_err:
+                    logger.warning(
+                        "send_photo не удался для %s (%s). Пробуем отправить как документ...",
+                        fid,
+                        photo_err,
+                    )
+                    try:
+                        kwargs = {
+                            "chat_id": chat_id,
+                            "document": source,
+                            "caption": caption_str,
+                        }
+                        if markup is not None:
+                            kwargs["reply_markup"] = markup
+                        await bot.send_document(**kwargs)
+                        return True
+                    except Exception as doc_err:
+                        logger.error(
+                            "Не удалось отправить фото %s ни как фото, ни как документ: %s",
+                            fid,
+                            doc_err,
+                        )
+                        return False
+
+        async def _send_visual_assets(
+            assets: list[tuple[str, str]],
+            caption_str: str | None = None,
+            markup=None,
+        ) -> None:
+            if not assets:
+                return
+
+            if len(assets) == 1:
+                fid, mtype = assets[0]
+                if caption_fits:
+                    ok = await _send_single_visual_safe(fid, mtype, caption_str, markup)
+                    if not ok and (text or markup):
+                        await bot.send_message(chat_id=chat_id, text=text or "👋", reply_markup=markup)
+                else:
+                    await _send_single_visual_safe(fid, mtype, None, None)
+                    await bot.send_message(chat_id=chat_id, text=text or "👋", reply_markup=markup)
+                return
+
+            # Multiple visual assets: attempt send_media_group first
+            album_sent = False
+            try:
+                visual_group = []
+                for i, (fid, mtype) in enumerate(assets):
+                    source = _resolve_media_source(fid)
+                    c = caption_str if (i == 0 and not markup and caption_fits) else None
+                    pm = "HTML" if c else None
+                    if mtype == "video":
+                        visual_group.append(
+                            InputMediaVideo(
+                                media=source,
+                                caption=c,
+                                parse_mode=pm,
+                                supports_streaming=True,
+                            )
+                        )
+                    else:
+                        visual_group.append(
+                            InputMediaPhoto(media=source, caption=c, parse_mode=pm)
+                        )
+                await bot.send_media_group(chat_id=chat_id, media=visual_group)
+                album_sent = True
+            except Exception as album_err:
+                logger.warning(
+                    "send_media_group не удался для пользователя %s (%s). Отправляем файлы по отдельности...",
+                    chat_id,
+                    album_err,
+                )
+
+            if album_sent:
+                if markup or (not (caption_fits and not markup) and text):
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=text or "👇",
+                        reply_markup=markup,
+                    )
+                return
+
+            # Fallback if album failed (e.g. MEDIA_INVALID): send items individually
+            for i, (fid, mtype) in enumerate(assets):
+                await _send_single_visual_safe(fid, mtype, None, None)
+
+            if text or markup:
+                await bot.send_message(
                     chat_id=chat_id,
-                    video=source,
-                    caption=caption_str,
+                    text=text or "👇",
                     reply_markup=markup,
                 )
-            else:
-                await bot.send_photo(
+
+        async def _send_doc_assets(
+            assets: list[tuple[str, str]],
+            caption_str: str | None = None,
+            markup=None,
+        ) -> None:
+            if not assets:
+                return
+
+            if len(assets) == 1:
+                fid, _ = assets[0]
+                doc_source = _resolve_media_source(fid)
+                if caption_fits:
+                    try:
+                        kwargs = {
+                            "chat_id": chat_id,
+                            "document": doc_source,
+                            "caption": caption_str,
+                        }
+                        if markup is not None:
+                            kwargs["reply_markup"] = markup
+                        await bot.send_document(**kwargs)
+                        return
+                    except Exception as err:
+                        logger.warning("Не удалось отправить документ %s: %s", fid, err)
+                        if text or markup:
+                            await bot.send_message(chat_id=chat_id, text=text or "Материалы для скачивания:", reply_markup=markup)
+                        return
+                else:
+                    try:
+                        await bot.send_document(chat_id=chat_id, document=doc_source)
+                    except Exception as err:
+                        logger.warning("Не удалось отправить документ %s: %s", fid, err)
+                    if text or markup:
+                        await bot.send_message(chat_id=chat_id, text=text, reply_markup=markup)
+                    return
+
+            # Multiple documents: try album first
+            album_sent = False
+            try:
+                doc_group = [
+                    InputMediaDocument(
+                        media=_resolve_media_source(fid),
+                        caption=caption_str if (i == 0 and not markup and caption_fits) else None,
+                        parse_mode="HTML" if (i == 0 and not markup and caption_fits and caption_str) else None,
+                    )
+                    for i, (fid, _) in enumerate(assets)
+                ]
+                await bot.send_media_group(chat_id=chat_id, media=doc_group)
+                album_sent = True
+            except Exception as album_err:
+                logger.warning("send_media_group для документов не удался (%s). Отправляем по отдельности...", album_err)
+
+            if album_sent:
+                if markup or (not (caption_fits and not markup) and text):
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=text or "Материалы для скачивания:",
+                        reply_markup=markup,
+                    )
+                return
+
+            # Fallback for documents: send individually
+            for fid, _ in assets:
+                try:
+                    await bot.send_document(chat_id=chat_id, document=_resolve_media_source(fid))
+                except Exception as doc_err:
+                    logger.error("Не удалось отправить документ %s: %s", fid, doc_err)
+
+            if text or markup:
+                await bot.send_message(
                     chat_id=chat_id,
-                    photo=source,
-                    caption=caption_str,
+                    text=text or "Материалы для скачивания:",
                     reply_markup=markup,
                 )
 
@@ -316,40 +516,8 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
         # Then the photo/video + text are sent below with the button attached.
         # -------------------------------------------------------------
         if doc_assets and visual_assets:
-            # 1. Send all non-photo/non-video files first
-            if len(doc_assets) == 1:
-                doc_source = _resolve_media_source(doc_assets[0][0])
-                await bot.send_document(chat_id=chat_id, document=doc_source, caption=None)
-            else:
-                doc_group = [
-                    InputMediaDocument(media=_resolve_media_source(fid))
-                    for fid, _ in doc_assets
-                ]
-                await bot.send_media_group(chat_id=chat_id, media=doc_group)
-
-            # 2. Send visual assets below with text and button attached
-            if len(visual_assets) == 1:
-                fid, mtype = visual_assets[0]
-                if caption_fits:
-                    await _send_single_visual(fid, mtype, media_caption, reply_markup)
-                else:
-                    await _send_single_visual(fid, mtype, None, None)
-                    await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
-            else:
-                visual_group = []
-                for fid, mtype in visual_assets:
-                    source = _resolve_media_source(fid)
-                    if mtype == "video":
-                        visual_group.append(InputMediaVideo(media=source))
-                    else:
-                        visual_group.append(InputMediaPhoto(media=source))
-                await bot.send_media_group(chat_id=chat_id, media=visual_group)
-                if text or reply_markup:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=text or "👇",
-                        reply_markup=reply_markup,
-                    )
+            await _send_doc_assets(doc_assets, None, None)
+            await _send_visual_assets(visual_assets, media_caption, reply_markup)
             return
 
         # -------------------------------------------------------------
@@ -358,76 +526,14 @@ async def send_funnel_node_message(bot: Bot, chat_id: int, node, reply_markup=No
         # and the button attached directly to it without "👇".
         # -------------------------------------------------------------
         if doc_assets and not visual_assets:
-            if len(doc_assets) == 1:
-                fid, _ = doc_assets[0]
-                doc_source = _resolve_media_source(fid)
-                if caption_fits:
-                    await bot.send_document(
-                        chat_id=chat_id,
-                        document=doc_source,
-                        caption=media_caption,
-                        reply_markup=reply_markup,
-                    )
-                else:
-                    await bot.send_document(chat_id=chat_id, document=doc_source)
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=text,
-                        reply_markup=reply_markup,
-                    )
-            else:
-                doc_group = [
-                    InputMediaDocument(media=_resolve_media_source(fid))
-                    for fid, _ in doc_assets
-                ]
-                await bot.send_media_group(chat_id=chat_id, media=doc_group)
-                if text or reply_markup:
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=text or "Материалы для скачивания:",
-                        reply_markup=reply_markup,
-                    )
+            await _send_doc_assets(doc_assets, media_caption, reply_markup)
             return
 
         # -------------------------------------------------------------
         # Case 3: Only visual assets (photos and videos)
         # -------------------------------------------------------------
         if visual_assets and not doc_assets:
-            if len(visual_assets) == 1:
-                fid, mtype = visual_assets[0]
-                if caption_fits:
-                    await _send_single_visual(fid, mtype, media_caption, reply_markup)
-                else:
-                    await _send_single_visual(fid, mtype, None, None)
-                    await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
-            else:
-                if reply_markup:
-                    visual_group = []
-                    for fid, mtype in visual_assets:
-                        source = _resolve_media_source(fid)
-                        if mtype == "video":
-                            visual_group.append(InputMediaVideo(media=source))
-                        else:
-                            visual_group.append(InputMediaPhoto(media=source))
-                    await bot.send_media_group(chat_id=chat_id, media=visual_group)
-                    await bot.send_message(
-                        chat_id=chat_id,
-                        text=text or "👇",
-                        reply_markup=reply_markup,
-                    )
-                else:
-                    visual_group = []
-                    for i, (fid, mtype) in enumerate(visual_assets):
-                        c = media_caption if i == 0 else None
-                        pm = "HTML" if c else None
-                        source = _resolve_media_source(fid)
-                        if mtype == "video":
-                            visual_group.append(InputMediaVideo(media=source, caption=c, parse_mode=pm))
-                        else:
-                            visual_group.append(InputMediaPhoto(media=source, caption=c, parse_mode=pm))
-                    await bot.send_media_group(chat_id=chat_id, media=visual_group)
-                    if not caption_fits and text:
-                        await bot.send_message(chat_id=chat_id, text=text)
+            await _send_visual_assets(visual_assets, media_caption, reply_markup)
             return
 
     except Exception as e:

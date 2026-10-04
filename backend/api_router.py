@@ -2142,15 +2142,14 @@ async def upload_bot_media(
         )
 
     content_type = (file.content_type or "").lower()
-    media_type = (
-        "photo"
-        if content_type.startswith("image/")
-        else (
-            "video"
-            if content_type.startswith("video/")
-            else "document" if content_type else None
-        )
-    )
+    is_video_ext = ext in {"mp4", "mov", "webm", "avi", "mkv"}
+    is_photo_ext = ext in {"jpg", "jpeg", "png", "webp", "gif", "heic"}
+    if content_type.startswith("image/") or is_photo_ext:
+        media_type = "photo"
+    elif content_type.startswith("video/") or is_video_ext:
+        media_type = "video"
+    else:
+        media_type = "document" if (content_type or ext) else None
     if not media_type:
         raise HTTPException(status_code=415, detail="Не удалось определить тип файла.")
     # Медиа рассылки не принадлежит узлу воронки: это самостоятельный ассет бота,
@@ -2220,12 +2219,25 @@ async def upload_bot_media(
                     )
                     telegram_file_id = sent_message.photo[-1].file_id
                 elif media_type == "video":
-                    sent_message = await telegram_bot.send_video(
-                        chat_id, upload, disable_notification=True
-                    )
-                    telegram_file_id = sent_message.video.file_id
-                    if sent_message.video and sent_message.video.thumbnail:
-                        thumbnail_file_id = sent_message.video.thumbnail.file_id
+                    try:
+                        sent_message = await telegram_bot.send_video(
+                            chat_id, upload, disable_notification=True, supports_streaming=True
+                        )
+                        telegram_file_id = sent_message.video.file_id
+                        if sent_message.video and sent_message.video.thumbnail:
+                            thumbnail_file_id = sent_message.video.thumbnail.file_id
+                    except Exception as vid_err:
+                        logger.warning(
+                            "send_video не удался (%s), загружаем как документ...", vid_err
+                        )
+                        upload = BufferedInputFile(
+                            payload, filename=file.filename or f"{node_id}.mp4"
+                        )
+                        sent_message = await telegram_bot.send_document(
+                            chat_id, upload, disable_notification=True
+                        )
+                        telegram_file_id = sent_message.document.file_id
+                        media_type = "document"
                 else:
                     sent_message = await telegram_bot.send_document(
                         chat_id, upload, disable_notification=True
