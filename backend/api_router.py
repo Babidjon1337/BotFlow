@@ -2340,7 +2340,7 @@ async def upload_bot_media(
         }
 
     media_target = current_tariff if current_tariff is not None else current_node
-    if is_tariff_media and media_target is None:
+    if is_tariff_media:
         if target_tariff_id:
             try:
                 from database.requests.tariff_rq import get_tariff_by_id, update_tariff
@@ -2365,21 +2365,22 @@ async def upload_bot_media(
             except Exception as e:
                 logger.debug("Could not link media to db tariff: %s", e)
 
-        return {
-            "id": str(asset.id),
-            "nodeId": node_id,
-            "mediaType": media_type,
-            "fileId": telegram_file_id,
-            "fileName": file.filename,
-            "mediaAssets": [
-                {
-                    "mediaFileId": telegram_file_id,
-                    "mediaAssetId": str(asset.id),
-                    "mediaType": media_type,
-                    "fileName": file.filename,
-                }
-            ],
-        }
+        if media_target is None:
+            return {
+                "id": str(asset.id),
+                "nodeId": node_id,
+                "mediaType": media_type,
+                "fileId": telegram_file_id,
+                "fileName": file.filename,
+                "mediaAssets": merged_assets[-10:] if 'merged_assets' in locals() and merged_assets else [
+                    {
+                        "mediaFileId": telegram_file_id,
+                        "mediaAssetId": str(asset.id),
+                        "mediaType": media_type,
+                        "fileName": file.filename,
+                    }
+                ],
+            }
 
     assert media_target is not None
 

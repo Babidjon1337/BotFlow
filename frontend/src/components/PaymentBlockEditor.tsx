@@ -43,7 +43,8 @@ interface PaymentBlockEditorProps {
   onManagerTextChange: (v: string) => void;
   onUploadPaymentMedia: (file: File) => Promise<void>;
   onUploadLargePaymentMedia?: (file?: File) => void;
-  onRemovePaymentMedia: () => void;
+  onRemovePaymentMedia: (assetId?: string) => void;
+  onReorderPaymentMedia?: (newAssets: import('../types').NodeMediaAsset[]) => void;
   onUploadTariffMedia?: (tariffId: string, file: File) => Promise<void>;
   onUploadLargeTariffMedia?: (tariffId: string, file?: File) => void;
   onRemoveTariffMedia?: (tariffId: string) => void;
@@ -71,6 +72,7 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
   onUploadPaymentMedia,
   onUploadLargePaymentMedia,
   onRemovePaymentMedia,
+  onReorderPaymentMedia,
   onNavigateToCreateTariff,
 }) => {
   const { showConfirm } = useAlert();
@@ -383,15 +385,13 @@ export const PaymentBlockEditor: React.FC<PaymentBlockEditorProps> = ({
               botId={botId}
               mediaFileId={node?.mediaFileId}
               mediaAssetId={node?.mediaAssetId}
-              mediaType={
-                node?.mediaType === 'photo' || node?.mediaType === 'video'
-                  ? node.mediaType
-                  : null
-              }
+              mediaType={node?.mediaType || null}
+              mediaAssets={node?.mediaAssets ?? []}
               onUploadMedia={onUploadPaymentMedia}
               onUploadLargeMedia={onUploadLargePaymentMedia}
               onRemoveMedia={onRemovePaymentMedia}
-              mediaHint="Фото или видео над текстом выбора тарифа"
+              onReorderMedia={onReorderPaymentMedia}
+              mediaHint="Фото, видео или документы над текстом выбора тарифа"
             />
           </motion.div>
         )}

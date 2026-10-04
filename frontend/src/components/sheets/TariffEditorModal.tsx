@@ -473,19 +473,25 @@ function TariffEditorForm({
         file
       );
       setMediaAssets((prev) => {
-        const existing = [...prev];
-        const newAssets: NodeMediaAsset[] =
-          media.mediaAssets && media.mediaAssets.length > 0
-            ? (media.mediaAssets as NodeMediaAsset[])
-            : [
-                ...existing.filter((a) => a.mediaAssetId !== media.id),
-                {
-                  mediaFileId: media.fileId,
-                  mediaAssetId: media.id,
-                  mediaType: (media.mediaType as 'photo' | 'video' | 'document') || val.mediaType,
-                  fileName: (media as any).fileName || file.name,
-                },
-              ].slice(-10);
+        const uploadedItem: NodeMediaAsset = {
+          mediaFileId: media.fileId,
+          mediaAssetId: media.id,
+          mediaType: (media.mediaType as 'photo' | 'video' | 'document') || val.mediaType,
+          fileName: (media as any).fileName || file.name,
+        };
+
+        const combined = [
+          ...prev.filter((a) => a.mediaAssetId !== media.id),
+          uploadedItem,
+        ];
+        if (media.mediaAssets && media.mediaAssets.length > 0) {
+          for (const sAsset of media.mediaAssets as NodeMediaAsset[]) {
+            if (!combined.some((a) => a.mediaAssetId === sAsset.mediaAssetId)) {
+              combined.unshift(sAsset);
+            }
+          }
+        }
+        const newAssets = combined.slice(-10);
 
         if (newAssets.length > 0) {
           setMediaType(newAssets[0].mediaType);

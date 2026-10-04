@@ -272,7 +272,7 @@ export function mapBackendTariff(raw: Record<string, unknown>, idx = 0): TariffI
     description: typeof raw.description === 'string' ? raw.description : undefined,
     managerUrl: (raw.manager_url as string) || (raw.managerUrl as string) || null,
     buttonText: (raw.button_text as string) || (raw.buttonText as string) || null,
-    mediaType: (raw.media_type as 'photo' | 'video') || (raw.mediaType as 'photo' | 'video') || null,
+    mediaType: (raw.media_type as 'photo' | 'video' | 'document') || (raw.mediaType as 'photo' | 'video' | 'document') || null,
     mediaFileId: (raw.media_file_id as string) || (raw.mediaFileId as string) || null,
     mediaAssetId: (raw.media_asset_id as string) || (raw.mediaAssetId as string) || null,
     mediaAssets: (raw.media_assets as import('../types').NodeMediaAsset[]) || (raw.mediaAssets as import('../types').NodeMediaAsset[]) || undefined,

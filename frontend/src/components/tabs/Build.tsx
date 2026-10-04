@@ -323,9 +323,25 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
         ? [{ mediaAssetId: node.mediaAssetId, mediaFileId: node.mediaFileId, mediaType: node.mediaType === 'video' || node.mediaType === 'document' ? node.mediaType : 'photo' }]
         : [];
 
-      const newAssets = media.mediaAssets && media.mediaAssets.length > 0
-        ? media.mediaAssets
-        : [...existingAssets.filter(a => a.mediaAssetId !== media.id), { mediaFileId: media.fileId, mediaAssetId: media.id, mediaType: media.mediaType }].slice(-10);
+      const uploadedItem: NodeMediaAsset = {
+        mediaFileId: media.fileId,
+        mediaAssetId: media.id,
+        mediaType: media.mediaType,
+        fileName: (media as any).fileName || file.name,
+      };
+
+      const combined = [
+        ...existingAssets.filter((a) => a.mediaAssetId !== media.id),
+        uploadedItem,
+      ];
+      if (media.mediaAssets && media.mediaAssets.length > 0) {
+        for (const sAsset of media.mediaAssets) {
+          if (!combined.some((a) => a.mediaAssetId === sAsset.mediaAssetId)) {
+            combined.unshift(sAsset);
+          }
+        }
+      }
+      const newAssets = combined.slice(-10);
 
       updateBlockFields(nodeId, {
         media: true,
@@ -619,9 +635,39 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     try {
       const { apiService } = await import("../../services/api");
       const media = await apiService.uploadBotMedia(appState.activeBot.id, `payment:tariff:${tariffId}`, file);
-      const tariffs = (getBlock("payment")?.tariffs || []).map((tariff) => tariff.id === tariffId
-        ? { ...tariff, mediaFileId: media.fileId, mediaAssetId: media.id, mediaType: media.mediaType as "photo" | "video" }
-        : tariff);
+      const tariffs = (getBlock("payment")?.tariffs || []).map((tariff) => {
+        if (tariff.id !== tariffId) return tariff;
+        const existingAssets: NodeMediaAsset[] = Array.isArray(tariff.mediaAssets) && tariff.mediaAssets.length > 0
+          ? [...tariff.mediaAssets]
+          : (tariff.mediaAssetId && tariff.mediaFileId)
+          ? [{ mediaAssetId: tariff.mediaAssetId, mediaFileId: tariff.mediaFileId, mediaType: (tariff.mediaType as any) || 'photo' }]
+          : [];
+        const uploadedItem: NodeMediaAsset = {
+          mediaFileId: media.fileId,
+          mediaAssetId: media.id,
+          mediaType: media.mediaType as any,
+          fileName: (media as any).fileName || file.name,
+        };
+        const combined = [
+          ...existingAssets.filter((a) => a.mediaAssetId !== media.id),
+          uploadedItem,
+        ];
+        if (media.mediaAssets && media.mediaAssets.length > 0) {
+          for (const sAsset of media.mediaAssets) {
+            if (!combined.some((a) => a.mediaAssetId === sAsset.mediaAssetId)) {
+              combined.unshift(sAsset);
+            }
+          }
+        }
+        const newAssets = combined.slice(-10);
+        return {
+          ...tariff,
+          mediaFileId: newAssets[0].mediaFileId,
+          mediaAssetId: newAssets[0].mediaAssetId,
+          mediaType: newAssets[0].mediaType as "photo" | "video" | "document",
+          mediaAssets: newAssets,
+        };
+      });
       updateBlock("payment", "tariffs", tariffs);
       setToastType("success");
       setToastMessage("Файл синхронизирован с Telegram");
@@ -641,10 +687,28 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
     }
   };
 
-  const removeTariffMedia = (tariffId: string) => {
-    const tariffs = (getBlock("payment")?.tariffs || []).map((tariff) => tariff.id === tariffId
-      ? { ...tariff, mediaFileId: null, mediaAssetId: null, mediaType: null }
-      : tariff);
+  const removeTariffMedia = (tariffId: string, assetIdToRemove?: string) => {
+    const tariffs = (getBlock("payment")?.tariffs || []).map((tariff) => {
+      if (tariff.id !== tariffId) return tariff;
+      const existingAssets: NodeMediaAsset[] = Array.isArray(tariff.mediaAssets) && tariff.mediaAssets.length > 0
+        ? [...tariff.mediaAssets]
+        : (tariff.mediaAssetId && tariff.mediaFileId)
+        ? [{ mediaAssetId: tariff.mediaAssetId, mediaFileId: tariff.mediaFileId, mediaType: (tariff.mediaType as any) || 'photo' }]
+        : [];
+      if (assetIdToRemove && existingAssets.length > 0) {
+        const remaining = existingAssets.filter((a) => a.mediaAssetId !== assetIdToRemove);
+        if (remaining.length > 0) {
+          return {
+            ...tariff,
+            mediaFileId: remaining[0].mediaFileId,
+            mediaAssetId: remaining[0].mediaAssetId,
+            mediaType: remaining[0].mediaType,
+            mediaAssets: remaining,
+          };
+        }
+      }
+      return { ...tariff, mediaFileId: null, mediaAssetId: null, mediaType: null, mediaAssets: [] };
+    });
     updateBlock("payment", "tariffs", tariffs);
   };
 
@@ -1213,7 +1277,8 @@ export const Build = ({ onNavigateToCreateTariff }: BuildProps = {}) => {
                   onManagerTextChange={(v) => updateBlock("payment", "managerText", v)}
                   onUploadPaymentMedia={(file) => handleMediaUpload("payment", file)}
                   onUploadLargePaymentMedia={(file) => handleLargeFileDetected("payment", file)}
-                  onRemovePaymentMedia={() => removeMedia("payment")}
+                  onRemovePaymentMedia={(assetId) => removeMedia("payment", assetId)}
+                  onReorderPaymentMedia={(newAssets) => handleReorderMedia("payment", newAssets)}
                   onUploadTariffMedia={handleTariffMediaUpload}
                   onUploadLargeTariffMedia={(tariffId, file) => handleLargeFileDetected(`payment:tariff:${tariffId}`, file)}
                   onRemoveTariffMedia={removeTariffMedia}

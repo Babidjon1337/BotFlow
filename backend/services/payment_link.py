@@ -653,15 +653,19 @@ async def send_success_message(
                                 buttons.append([InlineKeyboardButton(text=btn_text, url=l_url)])
 
                         # 3. Process Files
+                        delivery_doc_assets: list[dict[str, Any]] = []
                         for d in file_items:
                             f_path = (d.get("filePath") or d.get("file_path") or d.get("url") or d.get("fileId") or "").strip()
                             if f_path:
                                 if f_path.startswith(("http://", "https://")):
                                     f_title = (d.get("title") or "Скачать файл").strip()
                                     buttons.append([InlineKeyboardButton(text=f"📥 {f_title}", url=f_path)])
-                                elif not media_file_id:
-                                    media_file_id = f_path
-                                    media_type = "document"
+                                else:
+                                    delivery_doc_assets.append({
+                                        "mediaFileId": f_path,
+                                        "mediaType": "document",
+                                        "fileName": d.get("fileName") or d.get("title") or "document",
+                                    })
 
                         title = str(tariff.get("name") or tariff.get("title") or "Тариф")
                         content_lines = [f"{header_text}\n\nДоступ к «{title}» активирован."]
@@ -680,16 +684,23 @@ async def send_success_message(
                         if text_items:
                             content_lines.append("\n" + "\n".join(str(t.get("content", "")) for t in text_items if t.get("content")))
 
-                        tariff_media_assets = tariff.get("media_assets") or tariff.get("mediaAssets") or []
-                        if not media_file_id and tariff.get("media_file_id"):
-                            media_file_id = tariff.get("media_file_id")
-                            media_type = tariff.get("media_type") or "photo"
+                        raw_tariff_assets = list(tariff.get("media_assets") or tariff.get("mediaAssets") or [])
+                        if not raw_tariff_assets and tariff.get("media_file_id"):
+                            raw_tariff_assets.append({
+                                "mediaFileId": tariff.get("media_file_id"),
+                                "mediaType": tariff.get("media_type") or "photo",
+                            })
+
+                        # Delivery documents are sent first, followed by tariff description media (photo/video)
+                        combined_delivery_assets = delivery_doc_assets + raw_tariff_assets
+                        primary_file_id = combined_delivery_assets[0]["mediaFileId"] if combined_delivery_assets else None
+                        primary_media_type = combined_delivery_assets[0]["mediaType"] if combined_delivery_assets else None
 
                         node_success = {
                             "content": "\n".join(content_lines),
-                            "media_file_id": media_file_id,
-                            "media_type": media_type,
-                            "media_assets": tariff_media_assets,
+                            "media_file_id": primary_file_id,
+                            "media_type": primary_media_type,
+                            "media_assets": combined_delivery_assets,
                             "reply_markup": InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None,
                         }
                 if not node_success:

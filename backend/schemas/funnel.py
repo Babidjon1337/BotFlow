@@ -105,7 +105,7 @@ class TariffSchema(BaseModel):
     )
     media_file_id: Optional[str] = Field(default=None, alias="mediaFileId")
     media_asset_id: Optional[str] = Field(default=None, alias="mediaAssetId")
-    media_type: Optional[Literal["photo", "video"]] = Field(default=None, alias="mediaType")
+    media_type: Optional[Literal["photo", "video", "document"]] = Field(default=None, alias="mediaType")
     media_assets: list[FunnelMediaAssetSchema] = Field(
         default_factory=list,
         validation_alias=AliasChoices("mediaAssets", "media_assets"),
@@ -148,6 +148,25 @@ class TariffSchema(BaseModel):
         if isinstance(v, list):
             return [item for item in v if item]
         return []
+
+    @model_validator(mode="after")
+    def sync_primary_media_fields(self):
+        if self.media_assets and len(self.media_assets) > 0:
+            if not self.media_file_id:
+                self.media_file_id = self.media_assets[0].media_file_id
+            if not self.media_asset_id:
+                self.media_asset_id = self.media_assets[0].media_asset_id
+            if not self.media_type:
+                self.media_type = self.media_assets[0].media_type
+        elif self.media_file_id and self.media_asset_id and not self.media_assets:
+            self.media_assets = [
+                FunnelMediaAssetSchema(
+                    mediaFileId=self.media_file_id,
+                    mediaAssetId=self.media_asset_id,
+                    mediaType=self.media_type or "photo",
+                )
+            ]
+        return self
 
 
 class FunnelNodeSchema(BaseModel):

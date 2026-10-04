@@ -782,6 +782,18 @@ async def _send_tariff_invoice(
         or getattr(tariff, "mediaAssets", None)
         or []
     )
+    tariff_media_type = getattr(tariff, "media_type", None) or getattr(tariff, "mediaType", None)
+    tariff_media_file_id = getattr(tariff, "media_file_id", None) or getattr(tariff, "mediaFileId", None)
+
+    # Fallback to checkout block media if the tariff has no media of its own
+    if not tariff_media_assets and not tariff_media_file_id and node_checkout:
+        tariff_media_assets = (
+            getattr(node_checkout, "media_assets", None)
+            or getattr(node_checkout, "mediaAssets", None)
+            or []
+        )
+        tariff_media_type = getattr(node_checkout, "media_type", None) or getattr(node_checkout, "mediaType", None)
+        tariff_media_file_id = getattr(node_checkout, "media_file_id", None) or getattr(node_checkout, "mediaFileId", None)
 
     # 1. Application mode: only manager button
     if mode == "application":
@@ -797,8 +809,8 @@ async def _send_tariff_invoice(
             callback,
             message_text,
             pay_keyboard,
-            media_type=getattr(tariff, "media_type", None),
-            file_id=getattr(tariff, "media_file_id", None),
+            media_type=tariff_media_type,
+            file_id=tariff_media_file_id,
             media_assets=tariff_media_assets,
         )
         return
@@ -820,8 +832,8 @@ async def _send_tariff_invoice(
             callback,
             message_text,
             pay_keyboard,
-            media_type=getattr(tariff, "media_type", None),
-            file_id=getattr(tariff, "media_file_id", None),
+            media_type=tariff_media_type,
+            file_id=tariff_media_file_id,
             media_assets=tariff_media_assets,
         )
         return
@@ -849,8 +861,8 @@ async def _send_tariff_invoice(
             callback,
             message_text,
             pay_keyboard,
-            media_type=getattr(tariff, "media_type", None),
-            file_id=getattr(tariff, "media_file_id", None),
+            media_type=tariff_media_type,
+            file_id=tariff_media_file_id,
             media_assets=tariff_media_assets,
         )
         return
@@ -944,8 +956,8 @@ async def _send_tariff_invoice(
         callback,
         message_text,
         pay_keyboard,
-        media_type=getattr(tariff, "media_type", None),
-        file_id=getattr(tariff, "media_file_id", None),
+        media_type=tariff_media_type,
+        file_id=tariff_media_file_id,
         media_assets=tariff_media_assets,
     )
 
@@ -991,12 +1003,18 @@ async def _send_tariff_selection_message(callback: CallbackQuery, node_checkout,
         getattr(node_checkout, "tariff_selection_text", "")
         or "Выберите подходящий тариф:"
     )
+    checkout_media_assets = (
+        getattr(node_checkout, "media_assets", None)
+        or getattr(node_checkout, "mediaAssets", None)
+        or []
+    )
     await _send_payment_message(
         callback,
         selection_text,
         user_tariff_keyboard(tariffs),
         media_type=getattr(node_checkout, "media_type", None),
         file_id=getattr(node_checkout, "media_file_id", None),
+        media_assets=checkout_media_assets,
     )
 
 
