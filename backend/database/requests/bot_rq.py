@@ -303,7 +303,7 @@ async def update_bot_config(bot_id: int, **kwargs: Any) -> BotConfig | None:
         if not bot:
             return None
         for key, val in kwargs.items():
-            if hasattr(bot, key) and val is not None:
+            if hasattr(bot, key):
                 setattr(bot, key, val)
         await session.commit()
         await session.refresh(bot)
