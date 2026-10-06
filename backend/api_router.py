@@ -2720,6 +2720,7 @@ async def delete_offer_file(bot_id: int, request: Request):
 
 
 @api_router.get("/legal/{slug}")
+@api_router.get("/api/legal/{slug}")
 async def get_public_offer(slug: str, request: Request):
     """Публичная оферта бота: slug случайный и привязан к одному боту."""
     from aiogram import Bot
