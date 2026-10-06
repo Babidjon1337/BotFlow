@@ -733,6 +733,16 @@ export const apiService = {
     );
   },
 
+  async uploadOfferFile(botId: string | number, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return fetchApi<ApiBot>(`/api/bots/${botId}/offer-file`, { method: "POST", body: formData });
+  },
+
+  async deleteOfferFile(botId: string | number) {
+    return fetchApi<ApiBot>(`/api/bots/${botId}/offer-file`, { method: "DELETE" });
+  },
+
   async getBotMediaPreview(botId: string | number, assetId: string) {
     const response = await fetch(`${BASE_URL}/api/bots/${botId}/media/${assetId}/preview`, {
       headers: { "X-Telegram-Init-Data": getInitData() },

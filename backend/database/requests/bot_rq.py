@@ -18,6 +18,12 @@ async def get_bot_by_id(id: int) -> BotConfig | None:
         )
 
 
+async def get_bot_by_offer_slug(slug: str) -> BotConfig | None:
+    """Бот по публичному slug оферты-файла."""
+    async with async_session() as session:
+        return await session.scalar(select(BotConfig).where(BotConfig.offer_slug == slug))
+
+
 async def get_bot_by_tg_id(tg_bot_id: int) -> BotConfig | None:
     """Запрашивает конфигурацию бота по его Telegram ID вместе с владельцем."""
     async with async_session() as session:

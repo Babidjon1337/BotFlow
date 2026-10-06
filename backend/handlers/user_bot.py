@@ -21,7 +21,7 @@ from services.media_upload_session import (
 )
 
 
-from config import MAIN_BOT_TG_ID
+from config import MAIN_BOT_TG_ID, WEBHOOK_URL
 from database.requests import *
 from keyboard.user_kb import *
 from loggers import logger
@@ -262,6 +262,9 @@ async def start_command_handler(message: Message, command: CommandObject | None 
 
     # Логика наличия ссылок (в V2 ссылки на оферту в bot_config, в V1 в funnel.global_settings)
     offer_url = getattr(bot_config, "offer_url", None)
+    # Оферта-файл имеет приоритет над внешней ссылкой.
+    if getattr(bot_config, "offer_slug", None) and WEBHOOK_URL:
+        offer_url = f"{WEBHOOK_URL.rstrip('/')}/legal/{bot_config.offer_slug}"
     privacy_url = None
     if hasattr(funnel, "global_settings"):
         offer_url = offer_url or getattr(

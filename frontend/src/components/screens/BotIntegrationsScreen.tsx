@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, RefreshCw, Send, Settings2 } from 'lucide-react';
+import { BadgeCheck, Check, Copy, ExternalLink, FileText, KeyRound, RefreshCw, Send, Settings2, Trash2, Upload } from 'lucide-react';
 import type { BotConfig, PaymentProvider } from '../../types';
 import { Button } from '../ui/button';
 import { PageHeader } from '../common/PageHeader';
@@ -114,6 +114,8 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
   const [isSavingOffer, setIsSavingOffer] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
   const [offerSaved, setOfferSaved] = useState(false);
+  const [isUploadingOfferFile, setIsUploadingOfferFile] = useState(false);
+  const offerFileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setOfferUrl(bot.offerUrl ?? '');
@@ -284,6 +286,57 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
       setOfferError(error instanceof Error ? error.message : 'Не удалось сохранить ссылку.');
     } finally {
       setIsSavingOffer(false);
+    }
+  };
+
+  const applyOfferBot = (updatedApiBot: Parameters<typeof mapApiBot>[0]) => {
+    const mapped = mapApiBot(updatedApiBot);
+    setAppState((prev) => ({
+      ...prev,
+      bots: prev.bots.map((b) => (b.id === mapped.id ? mapped : b)),
+      activeBot: prev.activeBot?.id === mapped.id ? mapped : prev.activeBot,
+    }));
+  };
+
+  const uploadOfferFile = async (file: File) => {
+    if (isUploadingOfferFile) return;
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (ext !== 'pdf' && ext !== 'docx') {
+      setOfferError('Загрузите оферту в формате PDF или DOCX.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      setOfferError('Размер файла не должен превышать 20 МБ.');
+      return;
+    }
+    setIsUploadingOfferFile(true);
+    setOfferError(null);
+    try {
+      const { apiService: api } = await import('../../services/api');
+      applyOfferBot(await api.uploadOfferFile(bot.id, file));
+      setToastType('success');
+      setToastMessage('Файл оферты загружен');
+    } catch (error) {
+      setOfferError(error instanceof Error ? error.message : 'Не удалось загрузить файл.');
+    } finally {
+      setIsUploadingOfferFile(false);
+      if (offerFileInputRef.current) offerFileInputRef.current.value = '';
+    }
+  };
+
+  const removeOfferFile = async () => {
+    if (isUploadingOfferFile) return;
+    setIsUploadingOfferFile(true);
+    setOfferError(null);
+    try {
+      const { apiService: api } = await import('../../services/api');
+      applyOfferBot(await api.deleteOfferFile(bot.id));
+      setToastType('success');
+      setToastMessage('Файл оферты удалён');
+    } catch (error) {
+      setOfferError(error instanceof Error ? error.message : 'Не удалось удалить файл.');
+    } finally {
+      setIsUploadingOfferFile(false);
     }
   };
 
@@ -710,7 +763,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                 <p className="text-meta text-fg-tertiary">Клиент принимает условия перед покупкой</p>
               </div>
             </div>
-            {bot.offerUrl ? (
+            {bot.offerUrl || bot.offerFileUrl ? (
               <StatusBadge tone="success" label="Указана" />
             ) : (
               <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-medium text-fg-tertiary">Не указана</span>
@@ -747,6 +800,65 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           <p className="mt-2 text-meta text-fg-tertiary">
             Ссылка на документ с условиями. Оставьте пустым — согласие спрашиваться не будет.
           </p>
+
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="text-body-sm font-semibold">Или загрузите файл</p>
+            <p className="mt-0.5 text-meta text-fg-tertiary">
+              PDF или DOCX до 20 МБ. Файл хранится в Telegram, клиенты откроют его по ссылке. Если загружен файл, он используется вместо ссылки.
+            </p>
+            <input
+              ref={offerFileInputRef}
+              type="file"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void uploadOfferFile(file);
+              }}
+            />
+            {bot.offerFileName ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-[var(--color-surface-2)] px-3 py-2">
+                <FileText className="size-4 shrink-0 text-fg-secondary" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate text-body-sm font-medium">{bot.offerFileName}</span>
+                {bot.offerFileUrl && (
+                  <a href={bot.offerFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-body-sm font-semibold text-primary">
+                    <ExternalLink className="size-3.5" aria-hidden="true" /> Открыть
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => offerFileInputRef.current?.click()}
+                  disabled={isUploadingOfferFile}
+                  className="text-body-sm font-semibold text-fg-secondary hover:text-fg-primary disabled:opacity-50"
+                >
+                  Заменить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void removeOfferFile()}
+                  disabled={isUploadingOfferFile}
+                  aria-label="Удалить файл оферты"
+                  className="text-danger disabled:opacity-50"
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            ) : (
+              <Button
+                size="md"
+                variant="outline"
+                disabled={isUploadingOfferFile || !bot.mediaSyncDone}
+                onClick={() => offerFileInputRef.current?.click()}
+                className="mt-3"
+              >
+                <Upload className="size-4" data-icon="inline-start" aria-hidden />
+                {isUploadingOfferFile ? 'Загружаем…' : 'Загрузить PDF / DOCX'}
+              </Button>
+            )}
+            {!bot.mediaSyncDone && !bot.offerFileName && (
+              <p className="mt-2 text-meta text-fg-tertiary">Сначала подключите бота и нажмите START — тогда загрузка файла станет доступна.</p>
+            )}
+          </div>
         </div>
       </section>
     </div>

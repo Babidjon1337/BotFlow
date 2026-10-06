@@ -89,6 +89,8 @@ export interface BotConfig {
   paymentCredentialsPreview?: Record<string, string>;
   paymentWebhookUrl?: string;
   offerUrl?: string;
+  offerFileName?: string;
+  offerFileUrl?: string;
   offerInstallments?: boolean;
   funnelComplete: boolean;
   mediaSyncDone?: boolean;

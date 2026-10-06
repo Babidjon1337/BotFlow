@@ -1560,6 +1560,10 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
             update_data["pause_reason"] = bot.pause_reason
         # Telegram file_id values belong to a particular bot token.  Never let
         # a new token reuse files uploaded through the previous bot.
+        update_data["offer_file_id"] = None
+        update_data["offer_file_name"] = None
+        update_data["offer_file_mime"] = None
+        update_data["offer_slug"] = None
         schema = dict(bot.funnel_schema or {})
         for node in schema.get("nodes") or []:
             if node.get("mediaFileId") or node.get("mediaAssets"):
@@ -2604,6 +2608,162 @@ async def get_bot_media_preview(bot_id: int, asset_id: UUID, request: Request):
         ),
         headers=headers,
     )
+
+
+@api_router.post("/api/bots/{bot_id}/offer-file")
+async def upload_offer_file(
+    bot_id: int, request: Request, file: UploadFile = File(...)
+):
+    """Сохраняет file_id оферты (PDF/DOCX). Сам файл на сервере не хранится."""
+    import secrets
+
+    from aiogram import Bot
+    from aiogram.types import BufferedInputFile
+    from services import offer_document as offer_doc
+
+    bot = await get_owned_bot(bot_id, request)
+    if not bot.media_sync_done:
+        raise HTTPException(
+            status_code=409,
+            detail="Сначала нажмите /start в созданном боте для синхронизации.",
+        )
+    kind = offer_doc.detect_offer_kind(file.filename, file.content_type)
+    if not kind:
+        raise HTTPException(
+            status_code=415, detail="Оферту можно загрузить только в формате PDF или DOCX."
+        )
+    payload = await file.read(offer_doc.MAX_OFFER_BYTES + 1)
+    if not payload or len(payload) > offer_doc.MAX_OFFER_BYTES:
+        raise HTTPException(status_code=413, detail="Размер файла не должен превышать 20 МБ.")
+    magic_ok = payload.startswith(b"%PDF") if kind == "pdf" else payload.startswith(b"PK")
+    if not magic_ok:
+        raise HTTPException(status_code=415, detail="Файл повреждён или имеет неверный формат.")
+    if kind == "docx":
+        try:
+            import mammoth
+
+            mammoth.convert_to_html(io.BytesIO(payload))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=415, detail="Не удалось прочитать DOCX. Сохраните документ заново."
+            ) from exc
+
+    telegram_bot = Bot(
+        token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session
+    )
+    current_user = getattr(request.state, "user", None)
+    candidates: list[int] = []
+    for tg_id in (
+        getattr(current_user, "telegram_id", None),
+        getattr(getattr(bot, "owner", None), "telegram_id", None),
+    ):
+        if tg_id and tg_id not in candidates:
+            candidates.append(tg_id)
+
+    filename = (file.filename or f"offer.{kind}")[:255]
+    sent = None
+    chat_id_used = None
+    for chat_id in candidates:
+        try:
+            sent = await telegram_bot.send_document(
+                chat_id,
+                BufferedInputFile(payload, filename=filename),
+                disable_notification=True,
+            )
+            chat_id_used = chat_id
+            break
+        except Exception as exc:
+            logger.info("Оферта: отправка в chat_id=%s не удалась: %s", chat_id, exc)
+    if sent is None or not sent.document:
+        raise HTTPException(
+            status_code=502,
+            detail="Telegram не принял файл. Убедитесь, что вы нажали /start в боте.",
+        )
+    file_id = sent.document.file_id
+    try:
+        await telegram_bot.delete_message(chat_id_used, sent.message_id)
+    except Exception as exc:
+        logger.info("Оферта: не удалось удалить временное сообщение: %s", exc)
+
+    current = await get_bot_by_id(bot.id)
+    if current is None or current.bot_token_enc != bot.bot_token_enc:
+        raise HTTPException(
+            status_code=409, detail="Токен бота изменился во время загрузки. Повторите."
+        )
+    offer_doc.cache_drop(bot.offer_slug or "")
+    updated = await update_bot_config(
+        bot.id,
+        offer_file_id=file_id,
+        offer_file_name=filename,
+        offer_file_mime=offer_doc.PDF_MIME if kind == "pdf" else offer_doc.DOCX_MIME,
+        offer_slug=bot.offer_slug or secrets.token_urlsafe(18),
+    )
+    resp = BotApiResponse.from_orm_bot(updated or bot, TG_WEBHOOK_URL, WEBHOOK_URL)
+    return resp.model_dump(by_alias=True)
+
+
+@api_router.delete("/api/bots/{bot_id}/offer-file")
+async def delete_offer_file(bot_id: int, request: Request):
+    from services import offer_document as offer_doc
+
+    bot = await get_owned_bot(bot_id, request)
+    offer_doc.cache_drop(bot.offer_slug or "")
+    updated = await update_bot_config(
+        bot.id,
+        offer_file_id=None,
+        offer_file_name=None,
+        offer_file_mime=None,
+        offer_slug=None,
+    )
+    resp = BotApiResponse.from_orm_bot(updated or bot, TG_WEBHOOK_URL, WEBHOOK_URL)
+    return resp.model_dump(by_alias=True)
+
+
+@api_router.get("/legal/{slug}")
+async def get_public_offer(slug: str, request: Request):
+    """Публичная оферта бота: slug случайный и привязан к одному боту."""
+    from aiogram import Bot
+    from services import offer_document as offer_doc
+    from database.requests.bot_rq import get_bot_by_offer_slug
+
+    not_found = HTTPException(status_code=404, detail="Документ не найден")
+    if not slug or len(slug) > 64:
+        raise not_found
+    bot = await get_bot_by_offer_slug(slug)
+    if not bot or not bot.offer_file_id or not bot.bot_token_enc:
+        raise not_found
+
+    data = offer_doc.cache_get(slug)
+    if data is None:
+        try:
+            telegram_bot = Bot(
+                token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session
+            )
+            tg_file = await telegram_bot.get_file(bot.offer_file_id)
+            buf = io.BytesIO()
+            await telegram_bot.download_file(tg_file.file_path, destination=buf)
+            data = buf.getvalue()
+        except Exception as exc:
+            logger.warning("Оферта бота %s: не удалось получить файл: %s", bot.id, exc)
+            raise HTTPException(status_code=502, detail="Документ временно недоступен") from exc
+        offer_doc.cache_put(slug, data)
+
+    headers = {
+        "Cache-Control": "public, max-age=300",
+        "X-Robots-Tag": "noindex",
+        "X-Content-Type-Options": "nosniff",
+    }
+    if bot.offer_file_mime == offer_doc.DOCX_MIME:
+        try:
+            page = offer_doc.docx_to_html_page(data, bot.display_name)
+        except Exception as exc:
+            logger.warning("Оферта бота %s: ошибка конвертации DOCX: %s", bot.id, exc)
+            raise HTTPException(status_code=502, detail="Документ временно недоступен") from exc
+        headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+        return Response(content=page, media_type="text/html; charset=utf-8", headers=headers)
+
+    headers["Content-Disposition"] = "inline; filename=\"offer.pdf\""
+    return Response(content=data, media_type="application/pdf", headers=headers)
 
 
 @api_router.delete("/api/bots/{bot_id}/leads")

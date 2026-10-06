@@ -140,6 +140,13 @@ class BotConfig(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="Мой бот")
     offer_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     offer_installments: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Оферта-файл: хранится только Telegram file_id (привязан к токену бота).
+    offer_file_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    offer_file_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    offer_file_mime: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    offer_slug: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
     funnel_complete: Mapped[bool] = mapped_column(Boolean, default=False)
     media_sync_done: Mapped[bool] = mapped_column(Boolean, default=False)
 

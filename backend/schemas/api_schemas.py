@@ -177,6 +177,8 @@ class BotApiResponse(BaseModel):
     users_count: int = Field(default=0, alias="usersCount")
     offer_url: Optional[str] = Field(None, alias="offerUrl")
     offer_installments: bool = Field(default=False, alias="offerInstallments")
+    offer_file_name: Optional[str] = Field(None, alias="offerFileName")
+    offer_file_url: Optional[str] = Field(None, alias="offerFileUrl")
     funnel_complete: bool = Field(default=False, alias="funnelComplete")
     media_sync_done: bool = Field(default=False, alias="mediaSyncDone")
     is_token_locked: bool = Field(default=False, alias="isTokenLocked")
@@ -237,6 +239,12 @@ class BotApiResponse(BaseModel):
             users_count=bot.users_count,
             offer_url=getattr(bot, "offer_url", None),
             offer_installments=getattr(bot, "offer_installments", False),
+            offer_file_name=getattr(bot, "offer_file_name", None),
+            offer_file_url=(
+                f"{payment_webhook_base_url.rstrip('/')}/legal/{bot.offer_slug}"
+                if payment_webhook_base_url and getattr(bot, "offer_slug", None)
+                else None
+            ),
             funnel_complete=getattr(bot, "funnel_complete", False),
             media_sync_done=getattr(bot, "media_sync_done", False),
             is_token_locked=getattr(bot, "is_token_locked", False),

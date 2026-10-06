@@ -20,6 +20,8 @@ export interface ApiBot {
   paymentCredentialsPreview?: Record<string, string>;
   paymentWebhookUrl?: string;
   offerUrl?: string;
+  offerFileName?: string | null;
+  offerFileUrl?: string | null;
   offerInstallments?: boolean;
   funnelComplete?: boolean;
   mediaSyncDone?: boolean;
@@ -49,6 +51,8 @@ export function mapApiBot(bot: ApiBot): BotConfig {
     paymentCredentialsPreview: bot.paymentCredentialsPreview,
     paymentWebhookUrl: bot.paymentWebhookUrl,
     offerUrl: bot.offerUrl,
+    offerFileName: bot.offerFileName ?? undefined,
+    offerFileUrl: bot.offerFileUrl ?? undefined,
     offerInstallments: bot.offerInstallments === true,
     funnelComplete: bot.funnelComplete === true,
     mediaSyncDone: bot.mediaSyncDone === true,
