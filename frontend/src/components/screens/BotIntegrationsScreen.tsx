@@ -114,6 +114,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
   const [isSavingOffer, setIsSavingOffer] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
   const [offerSaved, setOfferSaved] = useState(false);
+  const [offerMode, setOfferMode] = useState<'file' | 'url'>('file');
   const [isUploadingOfferFile, setIsUploadingOfferFile] = useState(false);
   const offerFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -272,12 +273,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     try {
       const { apiService: api } = await import('../../services/api');
       const updatedApiBot = await api.updateBot(bot.id, { offerUrl: value });
-      const mapped = mapApiBot(updatedApiBot);
-      setAppState((prev) => ({
-        ...prev,
-        bots: prev.bots.map((b) => (b.id === mapped.id ? mapped : b)),
-        activeBot: prev.activeBot?.id === mapped.id ? mapped : prev.activeBot,
-      }));
+      applyOfferBot(updatedApiBot);
       setOfferSaved(true);
       setToastType('success');
       setToastMessage('Ссылка на оферту сохранена');
@@ -313,7 +309,9 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     setOfferError(null);
     try {
       const { apiService: api } = await import('../../services/api');
-      applyOfferBot(await api.uploadOfferFile(bot.id, file));
+      const updatedApiBot = await api.uploadOfferFile(bot.id, file);
+      applyOfferBot(updatedApiBot);
+      setOfferUrl('');
       setToastType('success');
       setToastMessage('Файл оферты загружен');
     } catch (error) {
@@ -324,17 +322,18 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     }
   };
 
-  const removeOfferFile = async () => {
-    if (isUploadingOfferFile) return;
+  const removeOffer = async () => {
+    if (isUploadingOfferFile || isSavingOffer) return;
     setIsUploadingOfferFile(true);
     setOfferError(null);
     try {
       const { apiService: api } = await import('../../services/api');
       applyOfferBot(await api.deleteOfferFile(bot.id));
+      setOfferUrl('');
       setToastType('success');
-      setToastMessage('Файл оферты удалён');
+      setToastMessage('Оферта удалена');
     } catch (error) {
-      setOfferError(error instanceof Error ? error.message : 'Не удалось удалить файл.');
+      setOfferError(error instanceof Error ? error.message : 'Не удалось удалить оферту.');
     } finally {
       setIsUploadingOfferFile(false);
     }
@@ -750,7 +749,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
         )}
       </section>
 
-      {/* ── 3. Оферта: инлайн-поле ссылки, без модала ── */}
+      {/* ── 3. Оферта: компактный блок, либо файл либо ссылка ── */}
       <section className="flex flex-col gap-3" aria-label="Оферта">
         <div className="rounded-[16px] border border-border bg-card p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -763,102 +762,155 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                 <p className="text-meta text-fg-tertiary">Клиент принимает условия перед покупкой</p>
               </div>
             </div>
-            {bot.offerUrl || bot.offerFileUrl ? (
+            {bot.offerFileName || bot.offerFileUrl || bot.offerUrl ? (
               <StatusBadge tone="success" label="Указана" />
             ) : (
               <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-medium text-fg-tertiary">Не указана</span>
             )}
           </div>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <input
-              type="url"
-              value={offerUrl}
-              onChange={(event) => { setOfferUrl(event.target.value); setOfferError(null); setOfferSaved(false); }}
-              placeholder="https://example.com/oferta"
-              className="input w-full flex-1"
-              aria-label="Ссылка на оферту"
-            />
-            <Button
-              size="md"
-              disabled={isSavingOffer || offerUrl.trim() === (bot.offerUrl ?? '').trim()}
-              onClick={() => void saveOffer()}
-              className="shrink-0"
-            >
-              {isSavingOffer ? (
-                <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
-              ) : offerSaved ? (
-                <Check className="size-4" data-icon="inline-start" aria-hidden />
-              ) : null}
-              {isSavingOffer ? 'Сохраняем…' : offerSaved ? 'Сохранено' : 'Сохранить'}
-            </Button>
-          </div>
+
+          {/* Если оферта уже есть: показываем только компактную строку с кнопками Открыть и Удалить */}
+          {bot.offerFileName || bot.offerFileUrl || bot.offerUrl ? (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-[var(--color-surface-2)] p-3">
+              <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <FileText className="size-4 shrink-0 text-primary" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-body-sm font-medium text-fg-primary">
+                    {bot.offerFileName || bot.offerUrl}
+                  </p>
+                  <p className="text-micro text-fg-tertiary">
+                    {bot.offerFileName || bot.offerFileUrl ? 'Документ (файл оферты)' : 'Внешняя ссылка'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {(bot.offerFileUrl || bot.offerUrl) && (
+                  <a
+                    href={bot.offerFileUrl || bot.offerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-body-sm font-semibold text-primary transition hover:bg-primary/20"
+                  >
+                    <ExternalLink className="size-3.5" aria-hidden="true" />
+                    <span>Открыть</span>
+                  </a>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void removeOffer()}
+                  disabled={isUploadingOfferFile || isSavingOffer}
+                  className="text-danger hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
+                >
+                  <Trash2 className="size-3.5" data-icon="inline-start" aria-hidden="true" />
+                  <span>Удалить оферту</span>
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Если оферты нет: выбор режима (что-то одно — Файл или Ссылка) */
+            <div className="mt-3">
+              <div className="flex items-center gap-1.5 rounded-xl bg-[var(--color-surface-2)] p-1 w-fit">
+                <button
+                  type="button"
+                  onClick={() => { setOfferMode('file'); setOfferError(null); }}
+                  className={`rounded-lg px-3 py-1 text-body-sm font-semibold transition ${
+                    offerMode === 'file'
+                      ? 'bg-card text-fg-primary shadow-sm'
+                      : 'text-fg-tertiary hover:text-fg-secondary'
+                  }`}
+                >
+                  📄 Загрузить файл
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOfferMode('url'); setOfferError(null); }}
+                  className={`rounded-lg px-3 py-1 text-body-sm font-semibold transition ${
+                    offerMode === 'url'
+                      ? 'bg-card text-fg-primary shadow-sm'
+                      : 'text-fg-tertiary hover:text-fg-secondary'
+                  }`}
+                >
+                  🔗 Указать ссылку
+                </button>
+              </div>
+
+              {offerMode === 'file' ? (
+                <div className="mt-3">
+                  <input
+                    ref={offerFileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="hidden"
+                    onClick={(e) => {
+                      e.currentTarget.value = '';
+                    }}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadOfferFile(file);
+                    }}
+                  />
+                  <Button
+                    size="md"
+                    variant="outline"
+                    disabled={isUploadingOfferFile || !bot.mediaSyncDone}
+                    onClick={() => offerFileInputRef.current?.click()}
+                  >
+                    <Upload className="size-4" data-icon="inline-start" aria-hidden />
+                    {isUploadingOfferFile ? 'Загружаем…' : 'Выбрать PDF или DOCX'}
+                  </Button>
+                  <p className="mt-2 text-meta text-fg-tertiary">
+                    Файл хранится в Telegram (до 20 МБ) и открывается клиентами по защищённой ссылке.
+                  </p>
+                  {!bot.mediaSyncDone && (
+                    <p className="mt-1 text-meta text-warning">
+                      Сначала нажмите START в созданном боте, чтобы активировать загрузку.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="url"
+                      value={offerUrl}
+                      onChange={(event) => {
+                        setOfferUrl(event.target.value);
+                        setOfferError(null);
+                        setOfferSaved(false);
+                      }}
+                      placeholder="https://example.com/oferta"
+                      className="input w-full flex-1"
+                      aria-label="Ссылка на оферту"
+                    />
+                    <Button
+                      size="md"
+                      disabled={isSavingOffer || !offerUrl.trim()}
+                      onClick={() => void saveOffer()}
+                      className="shrink-0"
+                    >
+                      {isSavingOffer ? (
+                        <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground" aria-hidden />
+                      ) : offerSaved ? (
+                        <Check className="size-4" data-icon="inline-start" aria-hidden />
+                      ) : null}
+                      {isSavingOffer ? 'Сохраняем…' : offerSaved ? 'Сохранено' : 'Сохранить'}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-meta text-fg-tertiary">
+                    Прямая ссылка на страницу с вашими условиями или договором оферты.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {offerError && (
             <p className="mt-2 rounded-lg border border-danger/30 bg-danger-soft px-3 py-2 text-meta text-danger">
               {offerError}
             </p>
           )}
-          <p className="mt-2 text-meta text-fg-tertiary">
-            Ссылка на документ с условиями. Оставьте пустым — согласие спрашиваться не будет.
-          </p>
-
-          <div className="mt-4 border-t border-border pt-4">
-            <p className="text-body-sm font-semibold">Или загрузите файл</p>
-            <p className="mt-0.5 text-meta text-fg-tertiary">
-              PDF или DOCX до 20 МБ. Файл хранится в Telegram, клиенты откроют его по ссылке. Если загружен файл, он используется вместо ссылки.
-            </p>
-            <input
-              ref={offerFileInputRef}
-              type="file"
-              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void uploadOfferFile(file);
-              }}
-            />
-            {bot.offerFileName ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-[var(--color-surface-2)] px-3 py-2">
-                <FileText className="size-4 shrink-0 text-fg-secondary" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate text-body-sm font-medium">{bot.offerFileName}</span>
-                {bot.offerFileUrl && (
-                  <a href={bot.offerFileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-body-sm font-semibold text-primary">
-                    <ExternalLink className="size-3.5" aria-hidden="true" /> Открыть
-                  </a>
-                )}
-                <button
-                  type="button"
-                  onClick={() => offerFileInputRef.current?.click()}
-                  disabled={isUploadingOfferFile}
-                  className="text-body-sm font-semibold text-fg-secondary hover:text-fg-primary disabled:opacity-50"
-                >
-                  Заменить
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void removeOfferFile()}
-                  disabled={isUploadingOfferFile}
-                  aria-label="Удалить файл оферты"
-                  className="text-danger disabled:opacity-50"
-                >
-                  <Trash2 className="size-4" aria-hidden="true" />
-                </button>
-              </div>
-            ) : (
-              <Button
-                size="md"
-                variant="outline"
-                disabled={isUploadingOfferFile || !bot.mediaSyncDone}
-                onClick={() => offerFileInputRef.current?.click()}
-                className="mt-3"
-              >
-                <Upload className="size-4" data-icon="inline-start" aria-hidden />
-                {isUploadingOfferFile ? 'Загружаем…' : 'Загрузить PDF / DOCX'}
-              </Button>
-            )}
-            {!bot.mediaSyncDone && !bot.offerFileName && (
-              <p className="mt-2 text-meta text-fg-tertiary">Сначала подключите бота и нажмите START — тогда загрузка файла станет доступна.</p>
-            )}
-          </div>
         </div>
       </section>
     </div>

@@ -1502,6 +1502,14 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         update_data["display_name"] = body.display_name
     if body.offer_url is not None:
         update_data["offer_url"] = body.offer_url
+        if body.offer_url:
+            if bot.offer_slug:
+                from services import offer_document as offer_doc
+                offer_doc.cache_drop(bot.offer_slug)
+            update_data["offer_file_id"] = None
+            update_data["offer_file_name"] = None
+            update_data["offer_file_mime"] = None
+            update_data["offer_slug"] = None
     if body.offer_installments is not None:
         update_data["offer_installments"] = body.offer_installments
     if body.payment_provider is not None:
@@ -2690,26 +2698,34 @@ async def upload_offer_file(
         raise HTTPException(
             status_code=409, detail="Токен бота изменился во время загрузки. Повторите."
         )
-    offer_doc.cache_drop(bot.offer_slug or "")
+    if bot.offer_slug:
+        offer_doc.cache_drop(bot.offer_slug)
+    # При каждой загрузке генерируем НОВЫЙ slug:
+    # это гарантирует сброс кэша браузера и мгновенную смену документа у клиентов.
+    new_slug = secrets.token_urlsafe(18)
     updated = await update_bot_config(
         bot.id,
+        offer_url=None,  # Выбирается что-то одно: сбрасываем ссылку
         offer_file_id=file_id,
         offer_file_name=filename,
         offer_file_mime=offer_doc.PDF_MIME if kind == "pdf" else offer_doc.DOCX_MIME,
-        offer_slug=bot.offer_slug or secrets.token_urlsafe(18),
+        offer_slug=new_slug,
     )
     resp = BotApiResponse.from_orm_bot(updated or bot, TG_WEBHOOK_URL, WEBHOOK_URL)
     return resp.model_dump(by_alias=True)
 
 
+@api_router.delete("/api/bots/{bot_id}/offer")
 @api_router.delete("/api/bots/{bot_id}/offer-file")
 async def delete_offer_file(bot_id: int, request: Request):
     from services import offer_document as offer_doc
 
     bot = await get_owned_bot(bot_id, request)
-    offer_doc.cache_drop(bot.offer_slug or "")
+    if bot.offer_slug:
+        offer_doc.cache_drop(bot.offer_slug)
     updated = await update_bot_config(
         bot.id,
+        offer_url=None,
         offer_file_id=None,
         offer_file_name=None,
         offer_file_mime=None,
@@ -2750,7 +2766,9 @@ async def get_public_offer(slug: str, request: Request):
         offer_doc.cache_put(slug, data)
 
     headers = {
-        "Cache-Control": "public, max-age=300",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
         "X-Robots-Tag": "noindex",
         "X-Content-Type-Options": "nosniff",
     }
