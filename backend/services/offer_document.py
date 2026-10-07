@@ -15,11 +15,6 @@ ALLOWED_EXTENSIONS = {"pdf", "docx"}
 PDF_MIME = "application/pdf"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-_CACHE_TTL = 600
-_CACHE_MAX_ITEMS = 32
-_cache: "OrderedDict[str, tuple[float, bytes]]" = OrderedDict()
-
-
 def detect_offer_kind(filename: str | None, content_type: str | None) -> str | None:
     ext = (filename or "").lower().rsplit(".", 1)[-1] if "." in (filename or "") else ""
     if ext == "pdf":
@@ -29,26 +24,17 @@ def detect_offer_kind(filename: str | None, content_type: str | None) -> str | N
     return None
 
 
+# Кэш в памяти отключен: оферта всегда отдаётся свежей напрямую из Telegram.
 def cache_get(key: str) -> bytes | None:
-    item = _cache.get(key)
-    if not item:
-        return None
-    if time.monotonic() - item[0] > _CACHE_TTL:
-        _cache.pop(key, None)
-        return None
-    _cache.move_to_end(key)
-    return item[1]
+    return None
 
 
 def cache_put(key: str, data: bytes) -> None:
-    _cache[key] = (time.monotonic(), data)
-    _cache.move_to_end(key)
-    while len(_cache) > _CACHE_MAX_ITEMS:
-        _cache.popitem(last=False)
+    pass
 
 
 def cache_drop(key: str) -> None:
-    _cache.pop(key, None)
+    pass
 
 
 def docx_to_html_page(data: bytes, title: str) -> str:

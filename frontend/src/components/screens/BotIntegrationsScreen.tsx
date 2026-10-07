@@ -326,10 +326,26 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
     if (isUploadingOfferFile || isSavingOffer) return;
     setIsUploadingOfferFile(true);
     setOfferError(null);
+
+    // Оптимистично сразу очищаем оферту в интерфейсе
+    setAppState((prev) => ({
+      ...prev,
+      bots: prev.bots.map((b) =>
+        b.id === bot.id
+          ? { ...b, offerFileName: undefined, offerFileUrl: undefined, offerUrl: '' }
+          : b
+      ),
+      activeBot:
+        prev.activeBot?.id === bot.id
+          ? { ...prev.activeBot, offerFileName: undefined, offerFileUrl: undefined, offerUrl: '' }
+          : prev.activeBot,
+    }));
+    setOfferUrl('');
+
     try {
       const { apiService: api } = await import('../../services/api');
-      applyOfferBot(await api.deleteOfferFile(bot.id));
-      setOfferUrl('');
+      const updatedApiBot = await api.deleteOfferFile(bot.id);
+      applyOfferBot(updatedApiBot);
       setToastType('success');
       setToastMessage('Оферта удалена');
     } catch (error) {
@@ -769,7 +785,22 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
             )}
           </div>
 
-          {/* Если оферта уже есть: показываем только компактную строку с кнопками Открыть и Удалить */}
+          {/* Скрытый инпут файла доступен всегда для первоначальной загрузки и быстрой замены */}
+          <input
+            ref={offerFileInputRef}
+            type="file"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="hidden"
+            onClick={(e) => {
+              e.currentTarget.value = '';
+            }}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void uploadOfferFile(file);
+            }}
+          />
+
+          {/* Если оферта уже есть: показываем компактную строку с кнопками Открыть, Заменить (для файла) и Удалить */}
           {bot.offerFileName || bot.offerFileUrl || bot.offerUrl ? (
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-[var(--color-surface-2)] p-3">
               <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -796,6 +827,18 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                     <span>Открыть</span>
                   </a>
                 )}
+                {Boolean(bot.offerFileName || bot.offerFileUrl) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => offerFileInputRef.current?.click()}
+                    disabled={isUploadingOfferFile}
+                    className="text-fg-secondary hover:text-fg-primary"
+                  >
+                    <Upload className="size-3.5" data-icon="inline-start" aria-hidden />
+                    <span>{isUploadingOfferFile ? 'Загрузка…' : 'Заменить'}</span>
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -803,7 +846,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                   disabled={isUploadingOfferFile || isSavingOffer}
                   className="text-danger hover:border-danger/40 hover:bg-danger-soft hover:text-danger"
                 >
-                  <Trash2 className="size-3.5" data-icon="inline-start" aria-hidden="true" />
+                  <Trash2 className="size-3.5" data-icon="inline-start" aria-hidden />
                   <span>Удалить оферту</span>
                 </Button>
               </div>
@@ -838,19 +881,6 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
 
               {offerMode === 'file' ? (
                 <div className="mt-3">
-                  <input
-                    ref={offerFileInputRef}
-                    type="file"
-                    accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    className="hidden"
-                    onClick={(e) => {
-                      e.currentTarget.value = '';
-                    }}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void uploadOfferFile(file);
-                    }}
-                  />
                   <Button
                     size="md"
                     variant="outline"

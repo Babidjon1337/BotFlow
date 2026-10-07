@@ -25,10 +25,10 @@ export function LegalViewer() {
         setError(null);
 
         // Сначала пробуем /api/legal/{slug}, так как /api гарантированно проксируется Nginx
-        let res = await fetch(`/api/legal/${encodeURIComponent(slug)}`);
+        let res = await fetch(`/api/legal/${encodeURIComponent(slug)}`, { cache: 'no-store' });
         if (!res.ok && res.status !== 404) {
           // Запасной вариант — прямой /legal/{slug}
-          res = await fetch(`/legal/${encodeURIComponent(slug)}`);
+          res = await fetch(`/legal/${encodeURIComponent(slug)}`, { cache: 'no-store' });
         }
 
         if (!res.ok) {
