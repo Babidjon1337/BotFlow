@@ -2638,23 +2638,16 @@ async def upload_offer_file(
     kind = offer_doc.detect_offer_kind(file.filename, file.content_type)
     if not kind:
         raise HTTPException(
-            status_code=415, detail="Оферту можно загрузить только в формате PDF или DOCX."
+            status_code=415,
+            detail="Оферту можно загрузить в формате PDF, DOCX, DOC, RTF, ODT или TXT.",
         )
     payload = await file.read(offer_doc.MAX_OFFER_BYTES + 1)
     if not payload or len(payload) > offer_doc.MAX_OFFER_BYTES:
         raise HTTPException(status_code=413, detail="Размер файла не должен превышать 20 МБ.")
-    magic_ok = payload.startswith(b"%PDF") if kind == "pdf" else payload.startswith(b"PK")
-    if not magic_ok:
-        raise HTTPException(status_code=415, detail="Файл повреждён или имеет неверный формат.")
-    if kind == "docx":
-        try:
-            import mammoth
-
-            mammoth.convert_to_html(io.BytesIO(payload))
-        except Exception as exc:
-            raise HTTPException(
-                status_code=415, detail="Не удалось прочитать DOCX. Сохраните документ заново."
-            ) from exc
+    try:
+        offer_doc.validate_offer_payload(kind, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=415, detail=str(exc))
 
     telegram_bot = Bot(
         token=crypto.decrypt(bot.bot_token_enc), session=request.app.state.session
@@ -2708,7 +2701,7 @@ async def upload_offer_file(
         offer_url=None,  # Выбирается что-то одно: сбрасываем ссылку
         offer_file_id=file_id,
         offer_file_name=filename,
-        offer_file_mime=offer_doc.PDF_MIME if kind == "pdf" else offer_doc.DOCX_MIME,
+        offer_file_mime=offer_doc.get_mime_for_kind(kind),
         offer_slug=new_slug,
     )
     resp = BotApiResponse.from_orm_bot(updated or bot, TG_WEBHOOK_URL, WEBHOOK_URL)
@@ -2772,17 +2765,28 @@ async def get_public_offer(slug: str, request: Request):
         "X-Robots-Tag": "noindex",
         "X-Content-Type-Options": "nosniff",
     }
-    if bot.offer_file_mime == offer_doc.DOCX_MIME:
-        try:
-            page = offer_doc.docx_to_html_page(data, bot.display_name)
-        except Exception as exc:
-            logger.warning("Оферта бота %s: ошибка конвертации DOCX: %s", bot.id, exc)
-            raise HTTPException(status_code=502, detail="Документ временно недоступен") from exc
-        headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
-        return Response(content=page, media_type="text/html; charset=utf-8", headers=headers)
+    file_kind = offer_doc.detect_offer_kind(bot.offer_file_name, bot.offer_file_mime)
+    if not file_kind:
+        if data.startswith(b"%PDF"):
+            file_kind = "pdf"
+        elif data.startswith(b"PK"):
+            file_kind = "docx"
+        else:
+            file_kind = "doc"
 
-    headers["Content-Disposition"] = "inline; filename=\"offer.pdf\""
-    return Response(content=data, media_type="application/pdf", headers=headers)
+    if file_kind == "pdf" or bot.offer_file_mime == offer_doc.PDF_MIME:
+        headers["Content-Disposition"] = f'inline; filename="{bot.offer_file_name or "offer.pdf"}"'
+        return Response(content=data, media_type="application/pdf", headers=headers)
+
+    try:
+        page = offer_doc.document_to_html_page(data, file_kind, bot.display_name)
+    except Exception as exc:
+        logger.warning(
+            "Оферта бота %s: ошибка конвертации документа (%s): %s", bot.id, file_kind, exc
+        )
+        raise HTTPException(status_code=502, detail="Документ временно недоступен") from exc
+    headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
+    return Response(content=page, media_type="text/html; charset=utf-8", headers=headers)
 
 
 @api_router.delete("/api/bots/{bot_id}/leads")

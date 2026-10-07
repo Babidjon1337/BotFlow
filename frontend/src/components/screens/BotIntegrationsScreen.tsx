@@ -789,7 +789,7 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
           <input
             ref={offerFileInputRef}
             type="file"
-            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            accept=".pdf,.docx,.doc,.rtf,.odt,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/rtf,text/rtf,application/vnd.oasis.opendocument.text,text/plain"
             className="hidden"
             onClick={(e) => {
               e.currentTarget.value = '';
@@ -888,10 +888,10 @@ export function BotIntegrationsScreen({ bot }: BotIntegrationsScreenProps) {
                     onClick={() => offerFileInputRef.current?.click()}
                   >
                     <Upload className="size-4" data-icon="inline-start" aria-hidden />
-                    {isUploadingOfferFile ? 'Загружаем…' : 'Выбрать PDF или DOCX'}
+                    {isUploadingOfferFile ? 'Загружаем…' : 'Выбрать файл оферты'}
                   </Button>
                   <p className="mt-2 text-meta text-fg-tertiary">
-                    Файл хранится в Telegram (до 20 МБ) и открывается клиентами по защищённой ссылке.
+                    Поддерживаются PDF, DOC, DOCX, RTF, ODT, TXT (до 20 МБ). Файл хранится в Telegram и открывается по защищённой ссылке.
                   </p>
                   {!bot.mediaSyncDone && (
                     <p className="mt-1 text-meta text-warning">
