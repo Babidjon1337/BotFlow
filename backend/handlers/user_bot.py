@@ -713,16 +713,41 @@ async def _send_tariff_invoice(
         mode = tariff_sales_mode
     else:
         mode = _payment_mode(funnel)
-    tariff_name = str(getattr(tariff, "name", "Доступ") or "Доступ").strip()
-    tariff_description = getattr(tariff, "description", "") or ""
-    amount = float(getattr(tariff, "price", 0) or 0)
+    tariff_name = str(
+        (tariff.get("name") if isinstance(tariff, dict) else getattr(tariff, "name", "Доступ"))
+        or "Доступ"
+    ).strip()
+    tariff_description = (
+        tariff.get("description") if isinstance(tariff, dict) else getattr(tariff, "description", "")
+    ) or ""
+    amount = float(
+        (tariff.get("price") if isinstance(tariff, dict) else getattr(tariff, "price", 0))
+        or 0
+    )
     old_price = 0.0
     try:
-        raw_old = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
+        raw_old = (
+            tariff.get("old_price") or tariff.get("oldPrice")
+            if isinstance(tariff, dict)
+            else (getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None))
+        )
         if raw_old:
             old_price = float(raw_old)
     except (ValueError, TypeError):
         old_price = 0.0
+
+    raw_tid = tariff.get("id") if isinstance(tariff, dict) else getattr(tariff, "id", None)
+    tariff_id = str(raw_tid or "")
+    if old_price <= 0 and tariff_id:
+        from database.requests.tariff_rq import get_tariff_by_id
+
+        db_t = await get_tariff_by_id(tariff_id)
+        if db_t and db_t.old_price is not None:
+            try:
+                old_price = float(db_t.old_price)
+            except (ValueError, TypeError):
+                pass
+
     message_text = _get_node_text(node_checkout) if node_checkout else ""
 
     is_sub = (
@@ -1287,27 +1312,22 @@ async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
 
 
 def _broadcast_tariff_selection_keyboard(bid: str, tariffs) -> InlineKeyboardMarkup:
-    from keyboard.user_kb import format_strikethrough
-
     rows = []
     for idx, tariff in enumerate(tariffs):
-        title = (getattr(tariff, "name", "Тариф") or "Тариф").strip()
-        price = getattr(tariff, "price", 0)
-        old_price = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
+        title = (
+            (tariff.get("name") if isinstance(tariff, dict) else getattr(tariff, "name", "Тариф"))
+            or "Тариф"
+        ).strip()
+        price = tariff.get("price") if isinstance(tariff, dict) else getattr(tariff, "price", 0)
         try:
             num_price = float(price or 0)
         except (ValueError, TypeError):
             num_price = 0
-        try:
-            num_old = float(old_price or 0)
-        except (ValueError, TypeError):
-            num_old = 0
         price_str = f"{num_price:,.0f} ₽".replace(",", " ")
-        if num_old > 0:
-            old_str = format_strikethrough(f"{num_old:,.0f} ₽".replace(",", " "))
-            label = f"{title} · {old_str} {price_str}"
-        else:
+        if num_price > 0:
             label = f"{title} · {price_str}"
+        else:
+            label = f"{title} · Бесплатно"
         if len(label) > 64:
             label = label[:63] + "…"
         rows.append([InlineKeyboardButton(text=label, callback_data=f"bc_tariff:{bid}:{idx}")])
@@ -1320,9 +1340,18 @@ def _broadcast_tariff_selection_text(node_checkout, tariffs) -> str:
     )
     blocks = [header] if header else ["Выберите подходящий тариф:"]
     for tariff in tariffs:
-        name = escape(str(getattr(tariff, "name", "Тариф") or "Тариф"))
-        price = getattr(tariff, "price", 0)
-        old_price = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
+        name = escape(
+            str(
+                (tariff.get("name") if isinstance(tariff, dict) else getattr(tariff, "name", "Тариф"))
+                or "Тариф"
+            )
+        )
+        price = tariff.get("price") if isinstance(tariff, dict) else getattr(tariff, "price", 0)
+        old_price = (
+            tariff.get("old_price") or tariff.get("oldPrice")
+            if isinstance(tariff, dict)
+            else (getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None))
+        )
         try:
             num_price = float(price or 0)
         except (ValueError, TypeError):
@@ -1337,7 +1366,10 @@ def _broadcast_tariff_selection_text(node_checkout, tariffs) -> str:
             line = f"<b>{name}</b> — <s>{old_str}</s> {price_str}"
         else:
             line = f"<b>{name}</b> — {price_str}"
-        description = to_telegram_html(getattr(tariff, "description", "") or "")
+        description = to_telegram_html(
+            (tariff.get("description") if isinstance(tariff, dict) else getattr(tariff, "description", ""))
+            or ""
+        )
         if description:
             line += f"\n{description}"
         blocks.append(line)
