@@ -115,6 +115,29 @@ class YooKassaProvider(PaymentProvider):
             )
 
         if resp.status_code != 200:
+            if resp.status_code == 400 and "receipt" in resp.text.lower():
+                logger.warning("ЮKassa требует receipt. Повторяем с фискальным чеком...")
+                from services.payment_link import _build_yookassa_receipt
+
+                creds = bot_config.payment_credentials or {}
+                payload_with_receipt = dict(payload)
+                payload_with_receipt["receipt"] = _build_yookassa_receipt(
+                    description=description,
+                    amount=float(amount),
+                    telegram_id=telegram_id,
+                    bot_config=bot_config,
+                    creds=creds,
+                )
+                headers["Idempotence-Key"] = str(uuid.uuid4())
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        f"{self.BASE_URL}/payments",
+                        json=payload_with_receipt,
+                        headers=headers,
+                        auth=(shop_id, secret_key),
+                    )
+
+        if resp.status_code != 200:
             logger.error("YooKassa API error %s: %s", resp.status_code, resp.text)
             return PaymentInitResult(confirmation_url=None, raw_response={"error": resp.text})
 
@@ -192,6 +215,32 @@ class YooKassaProvider(PaymentProvider):
                 error_code="network_error",
                 error_message=str(exc),
             )
+
+        if resp.status_code != 200:
+            if resp.status_code == 400 and "receipt" in resp.text.lower():
+                logger.warning("ЮKassa требует receipt при рекуррентном списании. Повторяем с чеком...")
+                from services.payment_link import _build_yookassa_receipt
+
+                creds = bot_config.payment_credentials or {}
+                payload_with_receipt = dict(payload)
+                payload_with_receipt["receipt"] = _build_yookassa_receipt(
+                    description=f"Продление подписки: {tariff_name}",
+                    amount=float(attempt.amount),
+                    telegram_id=int(subscription.user_id or 0),
+                    bot_config=bot_config,
+                    creds=creds,
+                )
+                headers["Idempotence-Key"] = f"{attempt.idempotency_key}_rcpt"
+                try:
+                    async with httpx.AsyncClient(timeout=20.0) as client:
+                        resp = await client.post(
+                            f"{self.BASE_URL}/payments",
+                            json=payload_with_receipt,
+                            headers=headers,
+                            auth=(shop_id, secret_key),
+                        )
+                except Exception as exc:
+                    logger.exception("Сетевая ошибка при повторном списании YooKassa с чеком: %s", exc)
 
         if resp.status_code != 200:
             logger.error("YooKassa charge error %s: %s", resp.status_code, resp.text)
