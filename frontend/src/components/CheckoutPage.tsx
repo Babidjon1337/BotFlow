@@ -28,6 +28,7 @@ export function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isPaid, setIsPaid] = useState(false);
+  const [agreedToOffer, setAgreedToOffer] = useState(false);
 
   const paymentId = window.location.pathname.replace(/^\/checkout\/?/, "").split("/")[0] || "";
 
@@ -83,9 +84,10 @@ export function CheckoutPage() {
 
   const cleanEmail = email.trim();
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail);
+  const canPay = isValidEmail && agreedToOffer && !isSubmitting;
 
   async function handlePay() {
-    if (!isValidEmail || isSubmitting) return;
+    if (!isValidEmail || !agreedToOffer || isSubmitting) return;
 
     try {
       setIsSubmitting(true);
@@ -265,13 +267,45 @@ export function CheckoutPage() {
             </div>
           )}
 
+          {/* Отдельная галочка согласия с договором оферты */}
+          <div className="pt-1 pb-1">
+            <label
+              htmlFor="offer-consent"
+              className="flex items-start gap-2.5 cursor-pointer select-none group"
+            >
+              <input
+                type="checkbox"
+                id="offer-consent"
+                checked={agreedToOffer}
+                onChange={(e) => setAgreedToOffer(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 shrink-0"
+              />
+              <span className="text-xs text-slate-600 leading-snug group-hover:text-slate-800 transition-colors">
+                Я согласен с условиями{" "}
+                {data.offer_url ? (
+                  <a
+                    href={data.offer_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-medium"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    договора оферты
+                  </a>
+                ) : (
+                  <span className="font-medium text-slate-700">договора оферты</span>
+                )}
+              </span>
+            </label>
+          </div>
+
           {/* Кнопка оплаты */}
           <button
             type="button"
-            disabled={!isValidEmail || isSubmitting}
+            disabled={!canPay}
             onClick={handlePay}
             className={`w-full py-3.5 px-6 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 ${
-              isValidEmail && !isSubmitting
+              canPay
                 ? "bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white cursor-pointer shadow-md shadow-blue-500/20"
                 : "bg-slate-200 text-slate-400 cursor-not-allowed"
             }`}
@@ -287,21 +321,6 @@ export function CheckoutPage() {
               </span>
             )}
           </button>
-
-          {/* Ссылка на оферту */}
-          {data.offer_url && (
-            <p className="text-center text-xs text-slate-400 pt-1">
-              Нажимая кнопку, вы соглашаетесь с условиями{" "}
-              <a
-                href={data.offer_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline font-medium"
-              >
-                договора оферты
-              </a>
-            </p>
-          )}
         </div>
       </div>
 
