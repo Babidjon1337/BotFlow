@@ -7,6 +7,7 @@ import { AppStateProvider } from "./providers/AppStateProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 
 import { LegalViewer } from "./components/LegalViewer";
+import { CheckoutPage } from "./components/CheckoutPage";
 
 // Если динамический import() не может найти чанк (устаревший index.html
 // после нового деплоя фронтенда) — Vite эмитит это событие вместо того,
@@ -17,12 +18,15 @@ window.addEventListener("vite:preloadError", () => {
 });
 
 const isLegalRoute = window.location.pathname.startsWith("/legal/");
+const isCheckoutRoute = window.location.pathname.startsWith("/checkout/");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       {isLegalRoute ? (
         <LegalViewer />
+      ) : isCheckoutRoute ? (
+        <CheckoutPage />
       ) : (
         <AlertProvider>
           <AppStateProvider>

@@ -73,12 +73,18 @@ def format_period_suffix(period: str | None) -> str:
     return "/ мес"
 
 
+def format_strikethrough(text: str) -> str:
+    """Return text with combining strikethrough characters for Telegram button labels."""
+    return "".join(c + "\u0336" for c in text)
+
+
 def user_tariff_keyboard(tariffs, *, include_back: bool = False):
     """Build tariff choices for a V2 payment node."""
     rows = []
     for tariff in tariffs:
         title = (getattr(tariff, "name", "Тариф") or "Тариф").strip()
         price = getattr(tariff, "price", 0)
+        old_price = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
         tariff_id = getattr(tariff, "id", None)
         if not tariff_id:
             continue
@@ -86,6 +92,10 @@ def user_tariff_keyboard(tariffs, *, include_back: bool = False):
             num_price = float(price or 0)
         except (ValueError, TypeError):
             num_price = 0
+        try:
+            num_old_price = float(old_price or 0)
+        except (ValueError, TypeError):
+            num_old_price = 0
 
         is_sub = (
             getattr(tariff, "installments", False)
@@ -99,10 +109,21 @@ def user_tariff_keyboard(tariffs, *, include_back: bool = False):
         sub_suffix = f" {format_period_suffix(period)}" if is_sub else ""
 
         if num_price > 0:
-            label = f"{title} · {num_price:,.0f} ₽{sub_suffix}".replace(",", " ")
+            price_str = f"{num_price:,.0f} ₽{sub_suffix}".replace(",", " ")
+            if num_old_price > 0:
+                old_str = format_strikethrough(f"{num_old_price:,.0f} ₽".replace(",", " "))
+                label = f"{title} · {old_str} {price_str}"
+            else:
+                label = f"{title} · {price_str}"
         else:
-            label = f"{title} · Бесплатно"
-        rows.append([InlineKeyboardButton(text=label[:64], callback_data=f"payment_tariff:{tariff_id}")])
+            if num_old_price > 0:
+                old_str = format_strikethrough(f"{num_old_price:,.0f} ₽".replace(",", " "))
+                label = f"{title} · {old_str} Бесплатно"
+            else:
+                label = f"{title} · Бесплатно"
+        if len(label) > 64:
+            label = label[:63] + "…"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"payment_tariff:{tariff_id}")])
     if include_back:
         rows.append([InlineKeyboardButton(text="← Назад", callback_data="payment_tariffs_back")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

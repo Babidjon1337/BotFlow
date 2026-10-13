@@ -716,6 +716,13 @@ async def _send_tariff_invoice(
     tariff_name = str(getattr(tariff, "name", "Доступ") or "Доступ").strip()
     tariff_description = getattr(tariff, "description", "") or ""
     amount = float(getattr(tariff, "price", 0) or 0)
+    old_price = 0.0
+    try:
+        raw_old = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
+        if raw_old:
+            old_price = float(raw_old)
+    except (ValueError, TypeError):
+        old_price = 0.0
     message_text = _get_node_text(node_checkout) if node_checkout else ""
 
     is_sub = (
@@ -732,13 +739,24 @@ async def _send_tariff_invoice(
     if tariff_description:
         tariff_details += f"\n\n{to_telegram_html(tariff_description)}"
     if amount > 0:
+        price_str = f"{amount:,.0f} ₽".replace(",", " ")
+        if old_price > 0:
+            old_str = f"{old_price:,.0f} ₽".replace(",", " ")
+            cost_part = f"<s>{old_str}</s> {price_str}"
+        else:
+            cost_part = price_str
+
         if is_sub:
             from keyboard.user_kb import format_period_suffix
-            tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽ {format_period_suffix(period)}</b> <i>(подписка)</i>".replace(",", " ")
+            tariff_details += f"\n\n💳 <b>Стоимость: {cost_part} {format_period_suffix(period)}</b> <i>(подписка)</i>"
         else:
-            tariff_details += f"\n\n💳 <b>Стоимость: {amount:,.0f} ₽</b>".replace(",", " ")
+            tariff_details += f"\n\n💳 <b>Стоимость: {cost_part}</b>"
     else:
-        tariff_details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
+        if old_price > 0:
+            old_str = f"{old_price:,.0f} ₽".replace(",", " ")
+            tariff_details += f"\n\n🎁 <b>Стоимость: <s>{old_str}</s> Бесплатно</b>"
+        else:
+            tariff_details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
     message_text = to_telegram_html(message_text)
     if message_text:
         message_text = f"{message_text}\n\n{tariff_details}"
@@ -905,14 +923,18 @@ async def _send_tariff_invoice(
         provider=bot_config.payment_provider,
         tariff=tariff_snapshot,
     )
-    payment_url = await generate_payment_link(
-        bot_config=bot_config,
-        amount=amount,
-        description=f"{tariff_name}: {tariff_description}".strip(": "),
-        lead_telegram_id=callback.from_user.id,
-        client_payment=client_payment,
-        installments=tariff_snapshot.get("installments", False),
-    )
+    if (bot_config.payment_provider or "").lower() == "yookassa":
+        from services.payment_link import get_checkout_page_url
+        payment_url = get_checkout_page_url(client_payment.id)
+    else:
+        payment_url = await generate_payment_link(
+            bot_config=bot_config,
+            amount=amount,
+            description=f"{tariff_name}: {tariff_description}".strip(": "),
+            lead_telegram_id=callback.from_user.id,
+            client_payment=client_payment,
+            installments=tariff_snapshot.get("installments", False),
+        )
     if not payment_url:
         error_text = "Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку."
         try:
@@ -1265,12 +1287,30 @@ async def _broadcast_payment_context(callback: CallbackQuery, bid: str):
 
 
 def _broadcast_tariff_selection_keyboard(bid: str, tariffs) -> InlineKeyboardMarkup:
+    from keyboard.user_kb import format_strikethrough
+
     rows = []
     for idx, tariff in enumerate(tariffs):
         title = (getattr(tariff, "name", "Тариф") or "Тариф").strip()
         price = getattr(tariff, "price", 0)
-        label = f"{title} · {price:,.0f} ₽".replace(",", " ")
-        rows.append([InlineKeyboardButton(text=label[:64], callback_data=f"bc_tariff:{bid}:{idx}")])
+        old_price = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
+        try:
+            num_price = float(price or 0)
+        except (ValueError, TypeError):
+            num_price = 0
+        try:
+            num_old = float(old_price or 0)
+        except (ValueError, TypeError):
+            num_old = 0
+        price_str = f"{num_price:,.0f} ₽".replace(",", " ")
+        if num_old > 0:
+            old_str = format_strikethrough(f"{num_old:,.0f} ₽".replace(",", " "))
+            label = f"{title} · {old_str} {price_str}"
+        else:
+            label = f"{title} · {price_str}"
+        if len(label) > 64:
+            label = label[:63] + "…"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"bc_tariff:{bid}:{idx}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -1282,7 +1322,21 @@ def _broadcast_tariff_selection_text(node_checkout, tariffs) -> str:
     for tariff in tariffs:
         name = escape(str(getattr(tariff, "name", "Тариф") or "Тариф"))
         price = getattr(tariff, "price", 0)
-        line = f"<b>{name}</b> — {price:,.0f} ₽".replace(",", " ")
+        old_price = getattr(tariff, "old_price", None) or getattr(tariff, "oldPrice", None)
+        try:
+            num_price = float(price or 0)
+        except (ValueError, TypeError):
+            num_price = 0
+        try:
+            num_old = float(old_price or 0)
+        except (ValueError, TypeError):
+            num_old = 0
+        price_str = f"{num_price:,.0f} ₽".replace(",", " ")
+        if num_old > 0:
+            old_str = f"{num_old:,.0f} ₽".replace(",", " ")
+            line = f"<b>{name}</b> — <s>{old_str}</s> {price_str}"
+        else:
+            line = f"<b>{name}</b> — {price_str}"
         description = to_telegram_html(getattr(tariff, "description", "") or "")
         if description:
             line += f"\n{description}"
@@ -1351,25 +1405,42 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
             "Этот счёт больше недоступен. Попросите владельца выставить новый."
         )
         return
-    tariff = payment.tariff_snapshot
+    tariff = payment.tariff_snapshot or {}
     amount = float(payment.amount)
+    old_price = 0.0
+    try:
+        raw_old = tariff.get("old_price") or tariff.get("oldPrice")
+        if raw_old:
+            old_price = float(raw_old)
+    except (ValueError, TypeError):
+        old_price = 0.0
+
     details = f"<b>{escape(str(tariff.get('name', 'Тариф')))}</b>"
     description = to_telegram_html(tariff.get("description", ""))
     if description:
         details += f"\n\n{description}"
 
     if amount <= 0:
-        details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
+        if old_price > 0:
+            old_str = f"{old_price:,.0f} ₽".replace(",", " ")
+            details += f"\n\n🎁 <b>Стоимость: <s>{old_str}</s> Бесплатно</b>"
+        else:
+            details += "\n\n🎁 <b>Стоимость: Бесплатно</b>"
         btn_text = tariff.get("button_text") or "🎁 Получить доступ"
         rows = [[InlineKeyboardButton(text=btn_text, callback_data=f"claim_free_tariff:{payment.tariff_id}")]]
     else:
-        url = await generate_payment_link(
-            payment.bot,
-            amount,
-            f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
-            callback.from_user.id,
-            client_payment=payment,
-        )
+        if (payment.provider or "").lower() == "yookassa":
+            from services.payment_link import get_checkout_page_url
+
+            url = get_checkout_page_url(payment.id)
+        else:
+            url = await generate_payment_link(
+                payment.bot,
+                amount,
+                f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
+                callback.from_user.id,
+                client_payment=payment,
+            )
         if not url:
             await _remove_callback_message(callback)
             await _send_payment_message(
@@ -1378,7 +1449,12 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
                 InlineKeyboardMarkup(inline_keyboard=[]),
             )
             return
-        details += f"\n\n💳 <b>Стоимость: {payment.amount:,.0f} ₽</b>".replace(",", " ")
+        price_str = f"{payment.amount:,.0f} ₽".replace(",", " ")
+        if old_price > 0:
+            old_str = f"{old_price:,.0f} ₽".replace(",", " ")
+            details += f"\n\n💳 <b>Стоимость: <s>{old_str}</s> {price_str}</b>"
+        else:
+            details += f"\n\n💳 <b>Стоимость: {price_str}</b>"
         rows = [[InlineKeyboardButton(text="Оплатить", url=url)]]
     if payment.invoice_batch_id:
         rows.append(

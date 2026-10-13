@@ -43,6 +43,15 @@ async def get_lead(bot_id: int, telegram_id: int) -> Lead | None:
         )
 
 
+async def update_lead_email(lead_id: int, email: str) -> None:
+    """Сохраняет email для конкретного лида бота."""
+    async with async_session() as session:
+        lead = await session.get(Lead, lead_id)
+        if lead:
+            lead.email = email.strip()
+            await session.commit()
+
+
 async def archive_leads_by_bot_id(bot_id: int) -> int:
     """Hide active leads and cancel their drips without deleting payment history."""
     async with async_session() as session:

@@ -193,6 +193,7 @@ class Lead(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, index=True)
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     # Состояние в воронке
     current_step_id: Mapped[str] = mapped_column(String(255), default="node_start")
@@ -768,6 +769,7 @@ async def init_models():
             await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS manager_url VARCHAR(512)"))
             await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS button_text VARCHAR(255)"))
             await conn.execute(sa_text("ALTER TABLE tariffs ADD COLUMN IF NOT EXISTS media_assets JSONB DEFAULT '[]'::jsonb"))
+            await conn.execute(sa_text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS email VARCHAR(255)"))
         except Exception as exc:
             logger.debug("Схема уже актуальна или alter не требуется: %s", exc)
 

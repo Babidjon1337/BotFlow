@@ -129,6 +129,13 @@ async def validate_payment_credentials(
     return False, "Этот платёжный провайдер не поддерживается."
 
 
+def get_checkout_page_url(payment_id: uuid.UUID | str) -> str:
+    """Return checkout web page URL for the given payment."""
+    from config import WEBAPP_URL, WEBHOOK_URL
+    base = (WEBAPP_URL or WEBHOOK_URL or "https://botflow.malinaezo.ru").rstrip("/")
+    return f"{base}/checkout/{payment_id}"
+
+
 async def generate_payment_link(
     bot_config: BotConfig,
     amount: float,
@@ -137,6 +144,7 @@ async def generate_payment_link(
     *,
     client_payment: ClientPayment | None = None,
     installments: bool = False,
+    customer_email: str | None = None,
 ) -> Optional[str]:
     """
     Универсальная функция генерации платежной ссылки.
@@ -164,6 +172,7 @@ async def generate_payment_link(
             bot_config,
             client_payment,
             installments,
+            customer_email=customer_email,
         )
     elif provider == "robokassa":
         return await _create_robokassa_link(
@@ -187,16 +196,18 @@ def _build_yookassa_receipt(
     telegram_id: int,
     bot_config: Any,
     creds: dict | None = None,
+    customer_email: str | None = None,
 ) -> dict[str, Any]:
     credentials = creds or {}
-    customer_email = (
-        credentials.get("receipt_email")
+    email_to_use = (
+        customer_email
+        or credentials.get("receipt_email")
         or credentials.get("customer_email")
         or f"tg_{telegram_id}@{getattr(bot_config, 'username', None) or 'buyer'}.t.me"
     )
     vat_code = int(credentials.get("vat_code") or 1)
     return {
-        "customer": {"email": customer_email},
+        "customer": {"email": email_to_use},
         "items": [
             {
                 "description": _clean_payment_description(description, max_length=128),
@@ -218,6 +229,7 @@ async def _create_yookassa_link(
     bot_config: BotConfig,
     client_payment: ClientPayment | None,
     installments: bool = False,
+    customer_email: str | None = None,
 ) -> Optional[str]:
     shop_id, api_key = _yookassa_credentials(creds)
 
@@ -287,6 +299,11 @@ async def _create_yookassa_link(
         )
     # We don't force 'sber_bnpl' anymore. Users can choose it on the YooKassa checkout page natively.
 
+    if customer_email:
+        payload["receipt"] = _build_yookassa_receipt(
+            description, amount, telegram_id, bot_config, creds, customer_email=customer_email
+        )
+
     try:
         response = await _safe_http_request(
             "post", url, json=payload, headers=headers, auth=(str(shop_id), str(api_key))
@@ -314,7 +331,7 @@ async def _create_yookassa_link(
                 )
                 receipt_payload = dict(payload)
                 receipt_payload["receipt"] = _build_yookassa_receipt(
-                    description, amount, telegram_id, bot_config, creds
+                    description, amount, telegram_id, bot_config, creds, customer_email=customer_email
                 )
                 receipt_headers = dict(headers)
                 receipt_headers["Idempotence-Key"] = str(uuid.uuid4())
@@ -376,7 +393,7 @@ async def _create_yookassa_link(
                     return data["confirmation"]["confirmation_url"]
                 if fallback_resp.status_code == 400 and "receipt" in fallback_resp.text.lower():
                     fallback_payload["receipt"] = _build_yookassa_receipt(
-                        description, amount, telegram_id, bot_config, creds
+                        description, amount, telegram_id, bot_config, creds, customer_email=customer_email
                     )
                     fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
                     retry_resp = await _safe_http_request(

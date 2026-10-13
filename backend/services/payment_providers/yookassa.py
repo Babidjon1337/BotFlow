@@ -199,6 +199,20 @@ class YooKassaProvider(PaymentProvider):
             },
         }
 
+        lead_email = getattr(getattr(subscription, "lead", None), "email", None)
+        if lead_email:
+            from services.payment_link import _build_yookassa_receipt
+
+            creds = bot_config.payment_credentials or {}
+            payload["receipt"] = _build_yookassa_receipt(
+                description=f"Продление подписки: {tariff_name}",
+                amount=float(attempt.amount),
+                telegram_id=int(subscription.user_id or 0),
+                bot_config=bot_config,
+                creds=creds,
+                customer_email=lead_email,
+            )
+
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.post(
@@ -229,6 +243,7 @@ class YooKassaProvider(PaymentProvider):
                     telegram_id=int(subscription.user_id or 0),
                     bot_config=bot_config,
                     creds=creds,
+                    customer_email=lead_email,
                 )
                 headers["Idempotence-Key"] = f"{attempt.idempotency_key}_rcpt"
                 try:

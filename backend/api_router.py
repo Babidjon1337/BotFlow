@@ -11,6 +11,7 @@ from html import escape
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
+from pydantic import BaseModel
 from loggers import logger
 from config import (
     ADMIN_TELEGRAM_IDS,
@@ -2787,6 +2788,213 @@ async def get_public_offer(slug: str, request: Request):
         raise HTTPException(status_code=502, detail="Документ временно недоступен") from exc
     headers["Content-Security-Policy"] = "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
     return Response(content=page, media_type="text/html; charset=utf-8", headers=headers)
+
+
+# ==========================================
+# CHECKOUT API (ЮKassa 54-ФЗ и оплата тарифов)
+# ==========================================
+_checkout_media_cache: dict[str, bytes] = {}
+
+
+def _extract_tariff_photo_file_id(tariff: dict, funnel: object | None = None) -> tuple[str | None, str | None]:
+    assets = tariff.get("media_assets") or tariff.get("mediaAssets") or []
+    if isinstance(assets, list):
+        for item in assets:
+            if isinstance(item, dict):
+                m_type = item.get("media_type") or item.get("mediaType") or "photo"
+                fid = item.get("telegram_file_id") or item.get("file_id") or item.get("fileId")
+                if fid and m_type == "photo":
+                    return fid, item.get("mime_type") or "image/jpeg"
+                elif fid and not m_type:
+                    return fid, "image/jpeg"
+
+    tariff_fid = tariff.get("media_file_id") or tariff.get("mediaFileId")
+    tariff_type = tariff.get("media_type") or tariff.get("mediaType") or "photo"
+    if tariff_fid and tariff_type == "photo":
+        return tariff_fid, "image/jpeg"
+
+    if funnel:
+        from handlers.user_bot import _get_payment_node
+
+        node_checkout = _get_payment_node(funnel)
+        if node_checkout:
+            checkout_assets = (
+                getattr(node_checkout, "media_assets", None)
+                or getattr(node_checkout, "mediaAssets", None)
+                or []
+            )
+            if isinstance(checkout_assets, list):
+                for item in checkout_assets:
+                    if isinstance(item, dict):
+                        m_type = item.get("media_type") or item.get("mediaType") or "photo"
+                        fid = item.get("telegram_file_id") or item.get("file_id") or item.get("fileId")
+                        if fid and m_type == "photo":
+                            return fid, item.get("mime_type") or "image/jpeg"
+            n_fid = getattr(node_checkout, "media_file_id", None) or getattr(node_checkout, "mediaFileId", None)
+            n_type = getattr(node_checkout, "media_type", None) or getattr(node_checkout, "mediaType", None) or "photo"
+            if n_fid and n_type == "photo":
+                return n_fid, "image/jpeg"
+
+    return None, None
+
+
+class CheckoutPayRequest(BaseModel):
+    email: str
+
+
+@api_router.get("/api/checkout/{payment_id}")
+async def get_checkout_info(payment_id: str):
+    from database.requests.client_payment_rq import get_client_payment
+    from services.funnel_message import to_telegram_html
+    from database.requests.user_rq import get_funnel_by_bot_id
+
+    payment = await get_client_payment(payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Платёж не найден")
+
+    tariff = payment.tariff_snapshot or {}
+    funnel = await get_funnel_by_bot_id(payment.bot.tg_bot_id) if payment.bot else None
+    photo_fid, _ = _extract_tariff_photo_file_id(tariff, funnel)
+
+    tariff_name = str(tariff.get("name") or "Доступ").strip()
+    tariff_desc = str(tariff.get("description") or "").strip()
+    old_p = 0.0
+    try:
+        raw_old = tariff.get("old_price") or tariff.get("oldPrice")
+        if raw_old:
+            old_p = float(raw_old)
+    except (ValueError, TypeError):
+        old_p = 0.0
+
+    is_sub = bool(
+        tariff.get("installments")
+        or tariff.get("payment_type") == "recurring"
+        or tariff.get("paymentType") == "recurring"
+    )
+    period = tariff.get("recurring_period") or tariff.get("recurringPeriod")
+
+    offer_url = None
+    if payment.bot:
+        if payment.bot.offer_slug:
+            offer_url = f"/legal/{payment.bot.offer_slug}"
+        elif payment.bot.offer_url:
+            offer_url = payment.bot.offer_url
+
+    return {
+        "payment_id": str(payment.id),
+        "bot_name": payment.bot.display_name if payment.bot else "Магазин",
+        "bot_username": payment.bot.username if payment.bot else None,
+        "tariff_name": tariff_name,
+        "tariff_description": tariff_desc,
+        "tariff_description_html": to_telegram_html(tariff_desc) if tariff_desc else "",
+        "price": float(payment.amount),
+        "old_price": old_p,
+        "is_subscription": is_sub,
+        "recurring_period": period,
+        "button_text": tariff.get("button_text") or ("Оформить подписку" if is_sub else "Оплатить"),
+        "has_media": bool(photo_fid),
+        "media_url": f"/api/checkout/{payment.id}/media" if photo_fid else None,
+        "lead_email": getattr(payment.lead, "email", None),
+        "status": payment.status,
+        "offer_url": offer_url,
+    }
+
+
+@api_router.get("/api/checkout/{payment_id}/media")
+async def get_checkout_media(payment_id: str, request: Request):
+    from database.requests.client_payment_rq import get_client_payment
+    from database.requests.user_rq import get_funnel_by_bot_id
+    from aiogram import Bot
+
+    payment = await get_client_payment(payment_id)
+    if not payment or not payment.bot or not payment.bot.bot_token_enc:
+        raise HTTPException(status_code=404, detail="Медиа не найдено")
+
+    tariff = payment.tariff_snapshot or {}
+    funnel = await get_funnel_by_bot_id(payment.bot.tg_bot_id)
+    photo_fid, mime = _extract_tariff_photo_file_id(tariff, funnel)
+    if not photo_fid:
+        raise HTTPException(status_code=404, detail="Изображение для тарифа не найдено")
+
+    cached = _checkout_media_cache.get(photo_fid)
+    if cached is None:
+        try:
+            telegram_bot = Bot(
+                token=crypto.decrypt(payment.bot.bot_token_enc),
+                session=request.app.state.session,
+            )
+            tg_file = await telegram_bot.get_file(photo_fid)
+            buf = io.BytesIO()
+            await telegram_bot.download_file(tg_file.file_path, destination=buf)
+            cached = buf.getvalue()
+            if len(_checkout_media_cache) > 200:
+                _checkout_media_cache.clear()
+            _checkout_media_cache[photo_fid] = cached
+        except Exception as exc:
+            logger.warning("Не удалось загрузить фото тарифа %s: %s", photo_fid, exc)
+            raise HTTPException(status_code=502, detail="Медиа временно недоступно") from exc
+
+    return Response(
+        content=cached,
+        media_type=mime or "image/jpeg",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@api_router.post("/api/checkout/{payment_id}/pay")
+async def submit_checkout_payment(payment_id: str, body: CheckoutPayRequest):
+    import re
+    from database.requests.client_payment_rq import get_client_payment
+    from database.requests.user_rq import update_lead_email
+    from services.payment_link import generate_payment_link
+
+    clean_email = (body.email or "").strip().lower()
+    if not clean_email or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean_email):
+        raise HTTPException(status_code=422, detail="Укажите корректный email для отправки чека")
+
+    payment = await get_client_payment(payment_id)
+    if not payment:
+        raise HTTPException(status_code=404, detail="Платёж не найден")
+
+    if payment.status == "succeeded":
+        return {
+            "status": "already_paid",
+            "message": "Этот счёт уже успешно оплачен.",
+            "return_url": f"https://t.me/{payment.bot.username}" if payment.bot and payment.bot.username else None,
+        }
+
+    # Сохраняем email для лида конкретного бота
+    if payment.lead_id:
+        try:
+            await update_lead_email(payment.lead_id, clean_email)
+            logger.info("Email %s сохранён для лида %s бота %s", clean_email, payment.lead_id, payment.bot_id)
+        except Exception as e:
+            logger.warning("Не удалось сохранить email для лида: %s", e)
+
+    tariff = payment.tariff_snapshot or {}
+    tariff_name = str(tariff.get("name") or "Доступ").strip()
+    tariff_desc = str(tariff.get("description") or "").strip()
+    description = f"{tariff_name}: {tariff_desc}".strip(": ") or "Оплата доступа"
+    lead_tg_id = payment.lead.telegram_id if payment.lead else 0
+
+    payment_url = await generate_payment_link(
+        bot_config=payment.bot,
+        amount=float(payment.amount),
+        description=description,
+        lead_telegram_id=lead_tg_id,
+        client_payment=payment,
+        installments=tariff.get("installments", False),
+        customer_email=clean_email,
+    )
+
+    if not payment_url:
+        logger.error("Не удалось сформировать ссылку ЮKassa для платежа %s с email %s", payment.id, clean_email)
+        raise HTTPException(
+            status_code=502,
+            detail="Не удалось сформировать счёт в ЮKassa. Пожалуйста, проверьте настройки кассы бота или попробуйте позже.",
+        )
+
+    return {"confirmation_url": payment_url}
 
 
 @api_router.delete("/api/bots/{bot_id}/leads")
