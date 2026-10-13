@@ -33,6 +33,24 @@ export function CheckoutPage() {
   const paymentId = window.location.pathname.replace(/^\/checkout\/?/, "").split("/")[0] || "";
 
   useEffect(() => {
+    // Включаем нативный мобильный скролл
+    document.documentElement.classList.add("checkout-scroll-enabled");
+    document.body.classList.add("checkout-scroll-enabled");
+    const rootEl = document.getElementById("root");
+    if (rootEl) {
+      rootEl.classList.add("checkout-scroll-enabled");
+    }
+
+    return () => {
+      document.documentElement.classList.remove("checkout-scroll-enabled");
+      document.body.classList.remove("checkout-scroll-enabled");
+      if (rootEl) {
+        rootEl.classList.remove("checkout-scroll-enabled");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!paymentId) {
       setError("Ссылка на оплату некорректна или устарела.");
       setLoading(false);
@@ -173,7 +191,7 @@ export function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between py-8 px-4 sm:px-6">
+    <div className="min-h-screen min-h-[100dvh] w-full bg-slate-50 text-slate-800 flex flex-col justify-between py-6 pb-16 px-4 sm:px-6 overflow-y-auto overscroll-y-contain">
       <div className="max-w-md w-full mx-auto bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100 overflow-hidden">
         {/* Картинка тарифа */}
         {data.has_media && data.media_url && (
@@ -249,6 +267,11 @@ export function CheckoutPage() {
                 onChange={(e) => {
                   setEmail(e.target.value);
                   if (submitError) setSubmitError(null);
+                }}
+                onFocus={(e) => {
+                  setTimeout(() => {
+                    e.target.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }, 250);
                 }}
                 placeholder="name@example.com"
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
@@ -335,6 +358,19 @@ export function CheckoutPage() {
 
       {/* Стили для Telegram HTML внутри описания */}
       <style>{`
+        html,
+        body,
+        #root {
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          position: static !important;
+          height: auto !important;
+          min-height: 100% !important;
+          min-height: 100dvh !important;
+          -webkit-overflow-scrolling: touch !important;
+          overscroll-behavior-y: auto !important;
+        }
+
         .checkout-html-content b,
         .checkout-html-content strong {
           font-weight: 700;
