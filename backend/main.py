@@ -427,6 +427,19 @@ async def universal_payment_webhook(
         except ClientPaymentInvariantError as exc:
             raise PaymentWebhookError(str(exc)) from exc
 
+        if verified_payment.customer_email and payment.lead_id:
+            try:
+                from database.requests.user_rq import update_lead_email
+                await update_lead_email(payment.lead_id, verified_payment.customer_email)
+                logger.info(
+                    "Сохранён email %s для лида %s из вебхука %s",
+                    verified_payment.customer_email,
+                    payment.lead_id,
+                    verified_payment.provider,
+                )
+            except Exception as e:
+                logger.warning("Не удалось сохранить email лида из вебхука: %s", e)
+
         fulfillment = await process_client_payment_fulfillment(
             payment.id, getattr(request.app.state, "session", None)
         )

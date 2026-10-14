@@ -2377,6 +2377,7 @@ async def upload_bot_media(
                         "mediaAssetId": str(asset.id),
                         "mediaType": media_type,
                         "fileName": file.filename,
+                        **({"thumbnailFileId": thumbnail_file_id} if thumbnail_file_id else {}),
                     }
                     merged_assets = [a for a in existing_assets if isinstance(a, dict) and str(a.get("mediaAssetId")) != str(asset.id)]
                     merged_assets.append(new_asset_entry)
@@ -2403,6 +2404,7 @@ async def upload_bot_media(
                         "mediaAssetId": str(asset.id),
                         "mediaType": media_type,
                         "fileName": file.filename,
+                        **({"thumbnailFileId": thumbnail_file_id} if thumbnail_file_id else {}),
                     }
                 ],
             }
@@ -2441,6 +2443,7 @@ async def upload_bot_media(
             "mediaAssetId": str(asset.id),
             "mediaType": media_type,
             "fileName": file.filename,
+            **({"thumbnailFileId": thumbnail_file_id} if thumbnail_file_id else {}),
         }
     )
     media_target["mediaAssets"] = assets_list[-10:]
@@ -2796,7 +2799,11 @@ async def get_public_offer(slug: str, request: Request):
 _checkout_media_cache: dict[str, bytes] = {}
 
 
-def _extract_tariff_photo_file_id(tariff: dict, funnel: object | None = None) -> tuple[str | None, str | None]:
+async def _extract_tariff_photo_file_id(
+    tariff: dict, funnel: object | None = None, bot_id: int | None = None
+) -> tuple[str | None, str | None]:
+    from database.requests.media_rq import find_thumbnail_file_id
+
     assets = tariff.get("media_assets") or tariff.get("mediaAssets") or []
     if isinstance(assets, list):
         for item in assets:
@@ -2805,13 +2812,32 @@ def _extract_tariff_photo_file_id(tariff: dict, funnel: object | None = None) ->
                 fid = item.get("telegram_file_id") or item.get("file_id") or item.get("fileId")
                 if fid and m_type == "photo":
                     return fid, item.get("mime_type") or "image/jpeg"
+                elif fid and m_type == "video":
+                    thumb_fid = item.get("thumbnailFileId") or item.get("thumbnail_file_id") or item.get("thumb_file_id")
+                    if not thumb_fid and bot_id:
+                        thumb_fid = await find_thumbnail_file_id(
+                            bot_id,
+                            asset_id=item.get("mediaAssetId") or item.get("media_asset_id"),
+                            file_id=fid,
+                        )
+                    if thumb_fid:
+                        return thumb_fid, "image/jpeg"
+                    return fid, item.get("mime_type") or "video/mp4"
                 elif fid and not m_type:
                     return fid, "image/jpeg"
 
     tariff_fid = tariff.get("media_file_id") or tariff.get("mediaFileId")
     tariff_type = tariff.get("media_type") or tariff.get("mediaType") or "photo"
-    if tariff_fid and tariff_type == "photo":
-        return tariff_fid, "image/jpeg"
+    if tariff_fid:
+        if tariff_type == "photo":
+            return tariff_fid, "image/jpeg"
+        elif tariff_type == "video":
+            thumb_fid = tariff.get("thumbnailFileId") or tariff.get("thumbnail_file_id")
+            if not thumb_fid and bot_id:
+                thumb_fid = await find_thumbnail_file_id(bot_id, file_id=tariff_fid)
+            if thumb_fid:
+                return thumb_fid, "image/jpeg"
+            return tariff_fid, "video/mp4"
 
     if funnel:
         from handlers.user_bot import _get_payment_node
@@ -2830,10 +2856,29 @@ def _extract_tariff_photo_file_id(tariff: dict, funnel: object | None = None) ->
                         fid = item.get("telegram_file_id") or item.get("file_id") or item.get("fileId")
                         if fid and m_type == "photo":
                             return fid, item.get("mime_type") or "image/jpeg"
+                        elif fid and m_type == "video":
+                            thumb_fid = item.get("thumbnailFileId") or item.get("thumbnail_file_id")
+                            if not thumb_fid and bot_id:
+                                thumb_fid = await find_thumbnail_file_id(
+                                    bot_id,
+                                    asset_id=item.get("mediaAssetId") or item.get("media_asset_id"),
+                                    file_id=fid,
+                                )
+                            if thumb_fid:
+                                return thumb_fid, "image/jpeg"
+                            return fid, item.get("mime_type") or "video/mp4"
             n_fid = getattr(node_checkout, "media_file_id", None) or getattr(node_checkout, "mediaFileId", None)
             n_type = getattr(node_checkout, "media_type", None) or getattr(node_checkout, "mediaType", None) or "photo"
-            if n_fid and n_type == "photo":
-                return n_fid, "image/jpeg"
+            if n_fid:
+                if n_type == "photo":
+                    return n_fid, "image/jpeg"
+                elif n_type == "video":
+                    thumb_fid = getattr(node_checkout, "thumbnail_file_id", None)
+                    if not thumb_fid and bot_id:
+                        thumb_fid = await find_thumbnail_file_id(bot_id, file_id=n_fid)
+                    if thumb_fid:
+                        return thumb_fid, "image/jpeg"
+                    return n_fid, "video/mp4"
 
     return None, None
 
@@ -2854,7 +2899,9 @@ async def get_checkout_info(payment_id: str):
 
     tariff = payment.tariff_snapshot or {}
     funnel = await get_funnel_by_bot_id(payment.bot.tg_bot_id) if payment.bot else None
-    photo_fid, _ = _extract_tariff_photo_file_id(tariff, funnel)
+    photo_fid, _ = await _extract_tariff_photo_file_id(
+        tariff, funnel, bot_id=payment.bot.id if payment.bot else None
+    )
 
     tariff_name = str(tariff.get("name") or "Доступ").strip()
     tariff_desc = str(tariff.get("description") or "").strip()
@@ -2912,7 +2959,9 @@ async def get_checkout_media(payment_id: str, request: Request):
 
     tariff = payment.tariff_snapshot or {}
     funnel = await get_funnel_by_bot_id(payment.bot.tg_bot_id)
-    photo_fid, mime = _extract_tariff_photo_file_id(tariff, funnel)
+    photo_fid, mime = await _extract_tariff_photo_file_id(
+        tariff, funnel, bot_id=payment.bot.id if payment.bot else None
+    )
     if not photo_fid:
         raise HTTPException(status_code=404, detail="Изображение для тарифа не найдено")
 
@@ -2926,7 +2975,37 @@ async def get_checkout_media(payment_id: str, request: Request):
             tg_file = await telegram_bot.get_file(photo_fid)
             buf = io.BytesIO()
             await telegram_bot.download_file(tg_file.file_path, destination=buf)
-            cached = buf.getvalue()
+            raw_bytes = buf.getvalue()
+
+            if mime and mime.startswith("video/"):
+                import tempfile
+                import cv2
+                import os
+
+                with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tf:
+                    tf.write(raw_bytes)
+                    tmp_path = tf.name
+                try:
+                    cap = cv2.VideoCapture(tmp_path)
+                    success, frame = cap.read()
+                    cap.release()
+                    if success and frame is not None:
+                        _, encoded = cv2.imencode(".jpg", frame)
+                        cached = encoded.tobytes()
+                        mime = "image/jpeg"
+                    else:
+                        cached = raw_bytes
+                except Exception as vid_exc:
+                    logger.warning("Не удалось извлечь первый кадр из видео %s: %s", photo_fid, vid_exc)
+                    cached = raw_bytes
+                finally:
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+            else:
+                cached = raw_bytes
+
             if len(_checkout_media_cache) > 200:
                 _checkout_media_cache.clear()
             _checkout_media_cache[photo_fid] = cached

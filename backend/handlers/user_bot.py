@@ -545,6 +545,7 @@ async def on_owner_media_message(message: Message):
         "mediaAssetId": str(asset.id),
         "mediaType": media_type,
         "fileName": file_name,
+        **({"thumbnailFileId": thumbnail_file_id} if thumbnail_file_id else {}),
     }
 
     if session.node_id.startswith("payment:tariff:") or session.node_id.startswith("tariff:"):

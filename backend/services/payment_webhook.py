@@ -46,6 +46,7 @@ class VerifiedPayment:
     client_payment_id: uuid.UUID | None = None
     amount: Decimal | None = None
     currency: str | None = None
+    customer_email: str | None = None
 
 
 def _get_credentials(bot_config: Any) -> dict[str, Any]:
@@ -460,7 +461,23 @@ async def _verify_yookassa(
     if str(payment_bot_id) != str(bot_config.id):
         raise PaymentWebhookError("YooKassa payment belongs to another bot")
 
-    return VerifiedPayment("yookassa", str(payment_id), telegram_id, client_payment_id, amount, currency)
+    # Извлекаем email покупателя для 54-ФЗ
+    receipt_data = verified_payment.get("receipt")
+    customer_data = receipt_data.get("customer") if isinstance(receipt_data, dict) else {}
+    raw_yk_email = (
+        customer_data.get("email") if isinstance(customer_data, dict) else None
+    ) or metadata.get("customer_email")
+    yk_email = str(raw_yk_email).strip().lower() if raw_yk_email and "@" in str(raw_yk_email) else None
+
+    return VerifiedPayment(
+        "yookassa",
+        str(payment_id),
+        telegram_id,
+        client_payment_id,
+        amount,
+        currency,
+        customer_email=yk_email,
+    )
 
 
 def _verify_robokassa(
@@ -490,8 +507,12 @@ def _verify_robokassa(
     telegram_id = _value(payload, "shp_telegram_id")
     client_payment_id = _value(payload, "shp_client_payment_id")
     payment_bot_id = _value(payload, "shp_bot_id")
+
+    raw_rk_email = _value(payload, "EMail", "Email", "email", "shp_email")
+    rk_email = str(raw_rk_email).strip().lower() if raw_rk_email and "@" in str(raw_rk_email) else None
+
     if bot_config is None:
-        return VerifiedPayment("robokassa", invoice_id, int(telegram_id or ""))
+        return VerifiedPayment("robokassa", invoice_id, int(telegram_id or ""), customer_email=rk_email)
     if payment_bot_id != str(bot_config.id):
         raise PaymentWebhookError("Robokassa payment belongs to another bot")
     try:
@@ -502,6 +523,7 @@ def _verify_robokassa(
             uuid.UUID(client_payment_id or ""),
             Decimal(out_sum),
             "RUB",
+            customer_email=rk_email,
         )
     except (ValueError, InvalidOperation) as exc:
         raise PaymentWebhookError("Robokassa payment metadata is invalid") from exc
@@ -624,6 +646,13 @@ def _verify_prodamus(
                 except (ValueError, TypeError):
                     pass
 
+    raw_prod_email = (
+        _value(parsed_payload, "customer_email", "email")
+        or _value(payload if isinstance(payload, Mapping) else {}, "customer_email", "email")
+        or (_value(raw_data, "customer_email", "email") if raw_data else None)
+    )
+    prod_email = str(raw_prod_email).strip().lower() if raw_prod_email and "@" in str(raw_prod_email) else None
+
     if bot_config is not None:
         try:
             sum_val = (
@@ -644,11 +673,12 @@ def _verify_prodamus(
                 client_uuid_final,
                 amount,
                 "RUB",
+                customer_email=prod_email,
             )
         except (ValueError, InvalidOperation) as exc:
             raise PaymentWebhookError("Prodamus payment metadata is invalid") from exc
 
-    return VerifiedPayment("prodamus", order_id, telegram_id)
+    return VerifiedPayment("prodamus", order_id, telegram_id, customer_email=prod_email)
 
 
 async def extend_subscription_access(payment_id: uuid.UUID | str):

@@ -193,13 +193,21 @@ export function CheckoutPage() {
   return (
     <div className="min-h-screen min-h-[100dvh] w-full bg-slate-50 text-slate-800 flex flex-col justify-between py-6 pb-16 px-4 sm:px-6 overflow-y-auto overscroll-y-contain">
       <div className="max-w-md w-full mx-auto bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100 overflow-hidden">
-        {/* Картинка тарифа */}
+        {/* Картинка / первый кадр тарифа */}
         {data.has_media && data.media_url && (
-          <div className="relative w-full aspect-[16/9] bg-slate-100 overflow-hidden border-b border-slate-100">
+          <div className="relative w-full bg-slate-900/[0.03] overflow-hidden border-b border-slate-100 flex items-center justify-center min-h-[160px] max-h-[340px]">
+            {/* Размытый фон под цвет изображения для гармоничного заполнения полей без обрезки */}
+            <img
+              src={data.media_url}
+              alt=""
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full object-cover blur-xl scale-125 opacity-30 select-none pointer-events-none"
+            />
+            {/* Основное изображение - без обрезки, с сохранением оригинальных пропорций */}
             <img
               src={data.media_url}
               alt={data.tariff_name}
-              className="w-full h-full object-cover"
+              className="relative z-10 w-full h-auto max-h-[340px] object-contain mx-auto"
               onError={(e) => {
                 // Если картинка не загрузилась, скрываем блок
                 (e.target as HTMLElement).parentElement?.classList.add("hidden");
