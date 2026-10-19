@@ -8,21 +8,25 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>BotFlow</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script defer src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
       (function() {
-        try {
-          var tg = window.Telegram && window.Telegram.WebApp;
-          if (tg) {
-            var platform = String(tg.platform || '').toLowerCase();
-            var isDesktop = ['tdesktop', 'macos', 'windows', 'web', 'weba', 'webk'].indexOf(platform) !== -1 || window.innerWidth >= 1024;
-            var inset = tg.contentSafeAreaInset || tg.safeAreaInset;
-            var top = isDesktop ? 0 : (inset && inset.top ? inset.top : 0);
-            var right = Math.max(inset && inset.right ? inset.right : 0, isDesktop ? 116 : 96);
-            document.documentElement.style.setProperty('--tg-content-safe-area-inset-top', top + 'px');
-            document.documentElement.style.setProperty('--tg-content-safe-area-inset-right', right + 'px');
-          }
-        } catch (e) {}
+        function applyInsets() {
+          try {
+            var tg = window.Telegram && window.Telegram.WebApp;
+            if (tg) {
+              var platform = String(tg.platform || '').toLowerCase();
+              var isDesktop = ['tdesktop', 'macos', 'windows', 'web', 'weba', 'webk'].indexOf(platform) !== -1 || window.innerWidth >= 1024;
+              var inset = tg.contentSafeAreaInset || tg.safeAreaInset;
+              var top = isDesktop ? 0 : (inset && inset.top ? inset.top : 0);
+              var right = Math.max(inset && inset.right ? inset.right : 0, isDesktop ? 116 : 96);
+              document.documentElement.style.setProperty('--tg-content-safe-area-inset-top', top + 'px');
+              document.documentElement.style.setProperty('--tg-content-safe-area-inset-right', right + 'px');
+            }
+          } catch (e) {}
+        }
+        applyInsets();
+        window.addEventListener('DOMContentLoaded', applyInsets);
       })();
     </script>
     <!-- Мок в dev подставляет Vite-плагин botflow-dev-mock (vite.config.ts), в проде его нет. -->

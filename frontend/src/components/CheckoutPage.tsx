@@ -29,6 +29,7 @@ export function CheckoutPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isPaid, setIsPaid] = useState(false);
   const [agreedToOffer, setAgreedToOffer] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   const paymentId = window.location.pathname.replace(/^\/checkout\/?/, "").split("/")[0] || "";
 
@@ -58,6 +59,10 @@ export function CheckoutPage() {
     }
 
     let isMounted = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 12000); // 12 секунд таймаут на случай медленного интернета или проблем с сетью
 
     async function fetchCheckout() {
       try {
@@ -66,7 +71,9 @@ export function CheckoutPage() {
 
         const res = await fetch(`/api/checkout/${encodeURIComponent(paymentId)}`, {
           cache: "no-store",
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
 
         if (!res.ok) {
           if (res.status === 404) {
@@ -87,7 +94,11 @@ export function CheckoutPage() {
         }
       } catch (err: unknown) {
         if (!isMounted) return;
-        setError(err instanceof Error ? err.message : "Ошибка при загрузке счёта.");
+        if (err instanceof DOMException && err.name === "AbortError") {
+          setError("Время ожидания ответа сервера истекло. Проверьте подключение к интернету.");
+        } else {
+          setError(err instanceof Error ? err.message : "Ошибка при загрузке счёта.");
+        }
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -97,8 +108,10 @@ export function CheckoutPage() {
 
     return () => {
       isMounted = false;
+      clearTimeout(timeoutId);
+      controller.abort();
     };
-  }, [paymentId]);
+  }, [paymentId, retryCount]);
 
   const cleanEmail = email.trim();
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail);
@@ -108,6 +121,9 @@ export function CheckoutPage() {
   async function handlePay() {
     if (!isValidEmail || (hasOffer && !agreedToOffer) || isSubmitting) return;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
+
     try {
       setIsSubmitting(true);
       setSubmitError(null);
@@ -116,7 +132,9 @@ export function CheckoutPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanEmail }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       const resData = await res.json();
 
@@ -135,8 +153,14 @@ export function CheckoutPage() {
         throw new Error("Ссылка для оплаты не получена.");
       }
     } catch (err: unknown) {
-      setSubmitError(err instanceof Error ? err.message : "Произошла ошибка при переходе к оплате.");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setSubmitError("Время ожидания сервера истекло. Пожалуйста, повторите попытку.");
+      } else {
+        setSubmitError(err instanceof Error ? err.message : "Произошла ошибка при переходе к оплате.");
+      }
       setIsSubmitting(false);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -160,6 +184,13 @@ export function CheckoutPage() {
           </div>
           <h2 className="text-lg font-bold text-slate-900">Не удалось открыть счёт</h2>
           <p className="text-sm text-slate-600">{error || "Информация о заказе недоступна."}</p>
+          <button
+            type="button"
+            onClick={() => setRetryCount((c) => c + 1)}
+            className="mt-2 inline-flex items-center justify-center px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-colors cursor-pointer"
+          >
+            Попробовать снова
+          </button>
         </div>
       </div>
     );
