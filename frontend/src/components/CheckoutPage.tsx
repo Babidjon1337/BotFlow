@@ -192,7 +192,7 @@ export function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen min-h-[100dvh] w-full bg-slate-50 text-slate-800 flex flex-col justify-between py-6 pb-16 px-4 sm:px-6 overflow-y-auto overscroll-y-contain">
+    <div className="min-h-screen min-h-[100dvh] w-full bg-slate-50 text-slate-800 flex flex-col justify-between py-6 pb-16 px-4 sm:px-6">
       <div className="max-w-md w-full mx-auto bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-100 overflow-hidden">
         {/* Картинка / первый кадр тарифа */}
         {data.has_media && data.media_url && (
@@ -363,11 +363,9 @@ export function CheckoutPage() {
         <p>Обработка платежей защищена сертификатом безопасности PCI DSS</p>
       </footer>
 
-      {/* Стили для Telegram HTML внутри описания */}
+      {/* Стили для Telegram HTML внутри описания и идеального скролла на ПК и мобильных */}
       <style>{`
-        html,
-        body,
-        #root {
+        html {
           overflow-y: auto !important;
           overflow-x: hidden !important;
           position: static !important;
@@ -375,7 +373,18 @@ export function CheckoutPage() {
           min-height: 100% !important;
           min-height: 100dvh !important;
           -webkit-overflow-scrolling: touch !important;
-          overscroll-behavior-y: auto !important;
+          overscroll-behavior: auto !important;
+        }
+
+        body,
+        #root {
+          overflow-y: visible !important;
+          overflow-x: hidden !important;
+          position: static !important;
+          height: auto !important;
+          min-height: 100% !important;
+          min-height: 100dvh !important;
+          overscroll-behavior: auto !important;
         }
 
         .checkout-html-content b,

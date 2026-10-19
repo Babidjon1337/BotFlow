@@ -23,6 +23,7 @@ const isCheckoutRoute = window.location.pathname.startsWith("/checkout/");
 if (isCheckoutRoute) {
   document.documentElement.classList.add("checkout-scroll-enabled");
   document.body.classList.add("checkout-scroll-enabled");
+  document.getElementById("root")?.classList.add("checkout-scroll-enabled");
 }
 
 createRoot(document.getElementById("root")!).render(
