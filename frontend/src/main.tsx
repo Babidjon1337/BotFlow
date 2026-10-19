@@ -1,13 +1,19 @@
-import { StrictMode } from "react";
+import { StrictMode, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
-import App from "./App.tsx";
-import { AlertProvider } from "./components/AlertProvider";
-import { AppStateProvider } from "./providers/AppStateProvider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-
 import { LegalViewer } from "./components/LegalViewer";
 import { CheckoutPage } from "./components/CheckoutPage";
+
+// Ленивая загрузка основного приложения конструктора,
+// чтобы страницы оплаты (/checkout) и оферты (/legal) открывались мгновенно
+const App = lazy(() => import("./App.tsx"));
+const AlertProvider = lazy(() =>
+  import("./components/AlertProvider").then((m) => ({ default: m.AlertProvider }))
+);
+const AppStateProvider = lazy(() =>
+  import("./providers/AppStateProvider").then((m) => ({ default: m.AppStateProvider }))
+);
 
 // Если динамический import() не может найти чанк (устаревший index.html
 // после нового деплоя фронтенда) — Vite эмитит это событие вместо того,
@@ -34,11 +40,13 @@ createRoot(document.getElementById("root")!).render(
       ) : isCheckoutRoute ? (
         <CheckoutPage />
       ) : (
-        <AlertProvider>
-          <AppStateProvider>
-            <App />
-          </AppStateProvider>
-        </AlertProvider>
+        <Suspense fallback={<div className="min-h-screen bg-slate-900" />}>
+          <AlertProvider>
+            <AppStateProvider>
+              <App />
+            </AppStateProvider>
+          </AlertProvider>
+        </Suspense>
       )}
     </ErrorBoundary>
   </StrictMode>,
