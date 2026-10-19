@@ -1069,6 +1069,58 @@ async def get_admin_system_endpoint(request: Request):
     return get_scheduler_health()
 
 
+@api_router.api_route("/api/admin/logs/stream", methods=["GET", "POST"])
+async def admin_logs_stream_endpoint(request: Request):
+    """Server-Sent Events stream for live server logs with initial 100-log history."""
+    await get_current_admin(request)
+    from services.log_stream import log_buffer
+
+    async def log_generator():
+        queue = log_buffer.subscribe()
+        try:
+            # Yield initial batch of recent logs
+            recent_logs = log_buffer.get_recent()
+            yield f"event: initial\ndata: {json.dumps(recent_logs, ensure_ascii=False)}\n\n"
+
+            while True:
+                try:
+                    if await request.is_disconnected():
+                        break
+                except Exception:
+                    pass
+                try:
+                    log_item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    payload = json.dumps(log_item, ensure_ascii=False)
+                    yield f"event: log\ndata: {payload}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keep-alive\n\n"
+        except (asyncio.CancelledError, GeneratorExit):
+            pass
+        finally:
+            log_buffer.unsubscribe(queue)
+
+    return StreamingResponse(
+        log_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@api_router.delete("/api/admin/logs")
+async def admin_clear_logs_endpoint(request: Request):
+    """Clear in-memory server log ring buffer."""
+    await get_current_admin(request)
+    from services.log_stream import log_buffer
+
+    log_buffer.clear()
+    return {"status": "ok", "message": "Логи очищены"}
+
+
+
 # ── Спец-ссылки доступа (период / бессрочно / один бот бесплатно) ──
 
 
@@ -1515,6 +1567,8 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
         update_data["offer_installments"] = body.offer_installments
     if body.payment_provider is not None:
         update_data["payment_provider"] = body.payment_provider
+        if body.payment_provider != bot.payment_provider and body.payment_creds is None:
+            update_data["payment_creds_enc"] = None
     if body.payment_creds is not None:
         provider_changed = bool(
             body.payment_provider and body.payment_provider != bot.payment_provider

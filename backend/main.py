@@ -67,6 +67,9 @@ async def lifespan(app: FastAPI):
     if user_bot_router not in dp.sub_routers:
         dp.include_router(user_bot_router)
 
+    from services.log_stream import log_buffer
+    log_buffer.set_loop(asyncio.get_running_loop())
+
     await init_models()
     start_scheduler()
 

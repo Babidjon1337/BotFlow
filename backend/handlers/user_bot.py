@@ -9,6 +9,7 @@ from aiogram.types import (
     ChatMemberUpdated,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
+    ErrorEvent,
 )
 from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.exceptions import TelegramBadRequest
@@ -41,6 +42,13 @@ from services.chat_access import apply_joined_member_access
 
 user_bot_router = Router()
 user_bot_router.message.filter(F.bot.id != MAIN_BOT_TG_ID)
+
+
+@user_bot_router.errors()
+async def on_user_bot_error(event: ErrorEvent):
+    """Log any unhandled exception in client bot handlers."""
+    logger.exception("Ошибка в обработчике клиентского бота: %s", event.exception)
+
 
 
 @user_bot_router.my_chat_member()
