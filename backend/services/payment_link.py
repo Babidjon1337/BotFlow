@@ -131,9 +131,10 @@ async def validate_payment_credentials(
 
 def get_checkout_page_url(payment_id: uuid.UUID | str) -> str:
     """Return checkout web page URL for the given payment."""
+    import time
     from config import WEBAPP_URL, WEBHOOK_URL
     base = (WEBAPP_URL or WEBHOOK_URL or "https://botflow.malinaezo.ru").rstrip("/")
-    return f"{base}/checkout/{payment_id}"
+    return f"{base}/checkout/{payment_id}?v={int(time.time())}"
 
 
 async def generate_payment_link(
