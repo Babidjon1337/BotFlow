@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
   Bot,
+  Check,
   CheckCircle2,
   ChevronRight,
   ClipboardList,
   Clock,
+  Copy,
   CreditCard,
   Crown,
   Gift,
@@ -22,6 +25,8 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  Terminal,
+  Trash2,
   Workflow,
   X,
   Users,
@@ -31,6 +36,7 @@ import { useAlert } from "../AlertProvider";
 import { BotCreateSheet } from "../sheets/BotCreateSheet";
 import {
   apiService,
+  getInitData,
   type AdminAuditEntry,
   type AdminBotAction,
   type AdminBot,
@@ -43,7 +49,7 @@ import {
   type AccessLink,
 } from "../../services/api";
 
-type AdminSection = "overview" | "users" | "payments" | "operations" | "system" | "access-links";
+type AdminSection = "overview" | "users" | "payments" | "operations" | "system" | "access-links" | "logs";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 const sections: Array<{ id: AdminSection; label: string }> = [
@@ -53,6 +59,7 @@ const sections: Array<{ id: AdminSection; label: string }> = [
   { id: "operations", label: "Операции" },
   { id: "system", label: "Система" },
   { id: "access-links", label: "Ссылки доступа" },
+  { id: "logs", label: "Логи" },
 ];
 
 const formatAmount = (amount: number, currency: string = "RUB") =>
@@ -264,6 +271,10 @@ export function AdminStats() {
       if (section === "access-links") {
         const nextLinks = await apiService.listAccessLinks();
         setAccessLinks(nextLinks.links);
+      }
+      if (section === "logs") {
+        setState("ready");
+        return;
       }
       setState("ready");
     } catch (requestError) {
@@ -711,6 +722,7 @@ export function AdminStats() {
       {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
       {state !== "error" && section === "access-links" ? <AccessLinksSection links={accessLinks} loading={state === "loading"} onChanged={() => void refreshSection()} /> : null}
+      {state !== "error" && section === "logs" ? <LogsSection /> : null}
       {actionUser ? <UserActionDialog key={actionUser.id} user={actionUser} busy={actionBusy} onClose={() => setActionUser(null)} onApply={applyUserAction} /> : null}
       {grantTarget ? (
         <GrantSubscriptionDialog
@@ -2373,6 +2385,418 @@ function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]
           <EmptyState icon={<CheckCircle2 size={21} />} title="Ссылок пока нет" description="Создайте первую — и отправьте её человеку в личку или в рассылке." />
         )}
       </Section>
+    </div>
+  );
+}
+
+interface LogItem {
+  id: number;
+  timestamp: string;
+  iso_time: string;
+  level: string;
+  logger: string;
+  message: string;
+  exc_text?: string | null;
+}
+
+function LogsSection() {
+  const [logs, setLogs] = useState<LogItem[]>([]);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | "connecting" | "disconnected">("connecting");
+  const [levelFilter, setLevelFilter] = useState<"ALL" | "INFO" | "WARNING" | "ERROR">("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [expandedTraceId, setExpandedTraceId] = useState<number | null>(null);
+  const logContainerRef = useRef<HTMLDivElement>(null);
+  const [reconnectCount, setReconnectCount] = useState(0);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const abortController = new AbortController();
+
+    async function startStream() {
+      setConnectionStatus("connecting");
+      try {
+        const initData = getInitData();
+        const response = await fetch("/api/admin/logs/stream", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-Init-Data": initData,
+          },
+          body: JSON.stringify({ init_data: initData }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        if (isCancelled) return;
+        setConnectionStatus("connected");
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!abortController.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split(/\r?\n\r?\n/);
+          buffer = parts.pop() ?? "";
+
+          for (const block of parts) {
+            if (!block.trim()) continue;
+            let eventType = "message";
+            const dataLines: string[] = [];
+
+            for (const line of block.split(/\r?\n/)) {
+              if (line.startsWith(":")) continue;
+              if (line.startsWith("event:")) {
+                eventType = line.slice(6).trim();
+              } else if (line.startsWith("data:")) {
+                dataLines.push(line.slice(5).trim());
+              }
+            }
+
+            if (dataLines.length > 0) {
+              const rawData = dataLines.join("\n");
+              try {
+                const parsed = JSON.parse(rawData);
+                if (eventType === "initial" && Array.isArray(parsed)) {
+                  setLogs(parsed.slice(-100));
+                } else if (eventType === "log" && parsed && typeof parsed === "object") {
+                  setLogs((prev) => [...prev.slice(-99), parsed as LogItem]);
+                }
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+      } catch {
+        if (!isCancelled) {
+          setConnectionStatus("disconnected");
+        }
+      }
+    }
+
+    void startStream();
+
+    return () => {
+      isCancelled = true;
+      abortController.abort();
+    };
+  }, [reconnectCount]);
+
+  useEffect(() => {
+    if (autoScroll && logContainerRef.current) {
+      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }
+  }, [logs, autoScroll]);
+
+  const filteredLogs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return logs.filter((item) => {
+      if (levelFilter !== "ALL" && item.level.toUpperCase() !== levelFilter) {
+        return false;
+      }
+      if (q) {
+        const matchesMsg = item.message.toLowerCase().includes(q);
+        const matchesLogger = item.logger.toLowerCase().includes(q);
+        const matchesExc = item.exc_text?.toLowerCase().includes(q) ?? false;
+        if (!matchesMsg && !matchesLogger && !matchesExc) return false;
+      }
+      return true;
+    });
+  }, [logs, levelFilter, searchQuery]);
+
+  const stats = useMemo(() => {
+    let info = 0;
+    let warn = 0;
+    let err = 0;
+    for (const l of logs) {
+      const lev = l.level.toUpperCase();
+      if (lev === "INFO") info++;
+      else if (lev === "WARNING" || lev === "WARN") warn++;
+      else if (lev === "ERROR" || lev === "CRITICAL") err++;
+    }
+    return { info, warn, err, total: logs.length };
+  }, [logs]);
+
+  const handleCopy = useCallback(() => {
+    const text = filteredLogs
+      .map(
+        (l) =>
+          `[${l.timestamp}] [${l.level}] [${l.logger}] ${l.message}${l.exc_text ? `\n${l.exc_text}` : ""}`
+      )
+      .join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [filteredLogs]);
+
+  const handleClear = useCallback(async () => {
+    setIsClearing(true);
+    try {
+      await apiService.clearAdminLogs();
+      setLogs([]);
+    } catch {
+      // ignore
+    } finally {
+      setIsClearing(false);
+    }
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      {/* Верхняя карточка с настройками и фильтрами */}
+      <section className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 md:p-6 shadow-[var(--shadow-card)]">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-base font-bold tracking-[-0.01em] text-[var(--color-foreground)] flex items-center gap-2">
+                <Terminal size={18} className="text-[var(--color-primary)]" />
+                Логи сервера в прямом эфире
+              </h2>
+              <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-xs font-bold tabular-nums text-[var(--color-foreground-secondary)]">
+                {logs.length} / 100
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-[var(--color-foreground-secondary)]">
+              Стриминг запросов, вебхуков, оплат и ошибок в реальном времени (буфер до 100 записей).
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {/* Индикатор статуса соединения */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/60 text-xs font-medium text-[var(--color-foreground)]">
+              <span className="relative flex h-2 w-2">
+                {connectionStatus === "connected" && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                )}
+                <span
+                  className={`relative inline-flex rounded-full h-2 w-2 ${
+                    connectionStatus === "connected"
+                      ? "bg-emerald-500"
+                      : connectionStatus === "connecting"
+                      ? "bg-amber-500 animate-pulse"
+                      : "bg-rose-500"
+                  }`}
+                />
+              </span>
+              <span>
+                {connectionStatus === "connected"
+                  ? "Прямой эфир"
+                  : connectionStatus === "connecting"
+                  ? "Подключение..."
+                  : "Отключено"}
+              </span>
+            </div>
+
+            {connectionStatus === "disconnected" && (
+              <button
+                type="button"
+                onClick={() => setReconnectCount((c) => c + 1)}
+                className="h-8 rounded-lg border border-[var(--color-border)] px-2.5 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] transition-colors"
+              >
+                Подключить
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleCopy}
+              disabled={filteredLogs.length === 0}
+              className="h-8 flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-2.5 text-xs font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Скопировать логи"
+            >
+              {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+              <span>{copied ? "Скопировано" : "Копировать"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAutoScroll((v) => !v)}
+              className={`h-8 flex items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+                autoScroll
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary-soft)] text-[var(--color-primary)]"
+                  : "border-[var(--color-border)] text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)]"
+              }`}
+              title="Автоскролл к новым сообщениям"
+            >
+              <ArrowDown size={14} />
+              <span>Автоскролл</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={logs.length === 0 || isClearing}
+              className="h-8 flex items-center gap-1.5 rounded-lg border border-[var(--color-danger)] text-[var(--color-danger)] px-2.5 text-xs font-semibold hover:bg-[var(--color-danger-soft)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              title="Очистить лог"
+            >
+              <Trash2 size={14} />
+              <span>{isClearing ? "Очистка…" : "Очистить"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Панель фильтрации */}
+        <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between pt-3 border-t border-[var(--color-border)]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setLevelFilter("ALL")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                levelFilter === "ALL"
+                  ? "bg-[var(--color-foreground)] text-[var(--color-background)]"
+                  : "bg-[var(--color-surface-2)] text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
+              }`}
+            >
+              Все ({stats.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("INFO")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                levelFilter === "INFO"
+                  ? "bg-sky-500 text-white"
+                  : "bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20"
+              }`}
+            >
+              INFO ({stats.info})
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("WARNING")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                levelFilter === "WARNING"
+                  ? "bg-amber-500 text-white"
+                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+              }`}
+            >
+              WARNING ({stats.warn})
+            </button>
+            <button
+              type="button"
+              onClick={() => setLevelFilter("ERROR")}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                levelFilter === "ERROR"
+                  ? "bg-rose-500 text-white"
+                  : "bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-500/20"
+              }`}
+            >
+              ERROR ({stats.err})
+            </button>
+          </div>
+
+          <div className="w-full sm:w-64">
+            <SearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Фильтр по тексту..."
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Окно терминала логов */}
+      <section className="rounded-2xl border border-slate-800 bg-slate-950 p-3 sm:p-4 shadow-2xl font-mono text-xs select-text">
+        <div
+          ref={logContainerRef}
+          className="max-h-[580px] overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-800/60"
+        >
+          {filteredLogs.length > 0 ? (
+            filteredLogs.map((log) => {
+              const level = log.level.toUpperCase();
+              const isError = level === "ERROR" || level === "CRITICAL";
+              const isWarn = level === "WARNING" || level === "WARN";
+              const isInfo = level === "INFO";
+              const isExpanded = expandedTraceId === log.id;
+
+              return (
+                <div key={log.id} className="pt-1.5 first:pt-0 leading-relaxed font-mono">
+                  <div className="flex items-start gap-2 text-[11px] sm:text-xs">
+                    {/* Время */}
+                    <span className="text-slate-500 shrink-0 select-none">
+                      {log.timestamp}
+                    </span>
+
+                    {/* Уровень лога */}
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 select-none ${
+                        isError
+                          ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                          : isWarn
+                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          : isInfo
+                          ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
+                          : "bg-slate-800 text-slate-400 border border-slate-700"
+                      }`}
+                    >
+                      {log.level}
+                    </span>
+
+                    {/* Имя логгера */}
+                    <span className="text-slate-400 shrink-0 hidden sm:inline select-none">
+                      [{log.logger}]
+                    </span>
+
+                    {/* Содержимое сообщения */}
+                    <div className="min-w-0 flex-1 break-words">
+                      <span
+                        className={
+                          isError
+                            ? "text-rose-200 font-medium"
+                            : isWarn
+                            ? "text-amber-200"
+                            : "text-slate-200"
+                        }
+                      >
+                        {log.message}
+                      </span>
+
+                      {/* Трейсбек если есть */}
+                      {log.exc_text && (
+                        <div className="mt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedTraceId((curr) => (curr === log.id ? null : log.id))
+                            }
+                            className="text-[10px] text-rose-400 hover:text-rose-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>{isExpanded ? "Скрыть стек вызовов" : "Показать стек вызовов"}</span>
+                          </button>
+                          {isExpanded && (
+                            <pre className="mt-1.5 p-2.5 rounded-lg bg-rose-950/40 border border-rose-800/40 text-[10px] text-rose-300 overflow-x-auto whitespace-pre leading-normal">
+                              {log.exc_text}
+                            </pre>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="py-16 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
+              <Terminal size={24} className="opacity-40" />
+              <p className="text-xs">
+                {logs.length === 0
+                  ? "Логи ещё не поступали. События сервера появятся здесь в прямом эфире."
+                  : "Нет записей, соответствующих выбранным фильтрам."}
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

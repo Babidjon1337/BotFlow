@@ -499,6 +499,12 @@ export const apiService = {
     return fetchApi<AdminSystemStatus>("/api/admin/system");
   },
 
+  async clearAdminLogs() {
+    return fetchApi<{ status: string; message: string }>("/api/admin/logs", {
+      method: "DELETE",
+    });
+  },
+
   async listAccessLinks() {
     return fetchApi<{ links: AccessLink[] }>("/api/admin/access-links");
   },

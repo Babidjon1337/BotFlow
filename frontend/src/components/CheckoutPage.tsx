@@ -102,10 +102,11 @@ export function CheckoutPage() {
 
   const cleanEmail = email.trim();
   const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail);
-  const canPay = isValidEmail && agreedToOffer && !isSubmitting;
+  const hasOffer = Boolean(data?.offer_url);
+  const canPay = isValidEmail && (!hasOffer || agreedToOffer) && !isSubmitting;
 
   async function handlePay() {
-    if (!isValidEmail || !agreedToOffer || isSubmitting) return;
+    if (!isValidEmail || (hasOffer && !agreedToOffer) || isSubmitting) return;
 
     try {
       setIsSubmitting(true);
@@ -298,22 +299,22 @@ export function CheckoutPage() {
             </div>
           )}
 
-          {/* Отдельная галочка согласия с договором оферты */}
-          <div className="pt-1 pb-1">
-            <label
-              htmlFor="offer-consent"
-              className="flex items-start gap-2.5 cursor-pointer select-none group"
-            >
-              <input
-                type="checkbox"
-                id="offer-consent"
-                checked={agreedToOffer}
-                onChange={(e) => setAgreedToOffer(e.target.checked)}
-                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 shrink-0"
-              />
-              <span className="text-xs text-slate-600 leading-snug group-hover:text-slate-800 transition-colors">
-                Я согласен с условиями{" "}
-                {data.offer_url ? (
+          {/* Отдельная галочка согласия с договором оферты (только если оферта настроена) */}
+          {data.offer_url && (
+            <div className="pt-1 pb-1">
+              <label
+                htmlFor="offer-consent"
+                className="flex items-start gap-2.5 cursor-pointer select-none group"
+              >
+                <input
+                  type="checkbox"
+                  id="offer-consent"
+                  checked={agreedToOffer}
+                  onChange={(e) => setAgreedToOffer(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 shrink-0"
+                />
+                <span className="text-xs text-slate-600 leading-snug group-hover:text-slate-800 transition-colors">
+                  Я согласен с условиями{" "}
                   <a
                     href={data.offer_url}
                     target="_blank"
@@ -323,12 +324,10 @@ export function CheckoutPage() {
                   >
                     договора оферты
                   </a>
-                ) : (
-                  <span className="font-medium text-slate-700">договора оферты</span>
-                )}
-              </span>
-            </label>
-          </div>
+                </span>
+              </label>
+            </div>
+          )}
 
           {/* Кнопка оплаты */}
           <button
