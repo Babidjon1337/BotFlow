@@ -423,8 +423,43 @@ async def _create_yookassa_link(
             return data["confirmation"]["confirmation_url"]
 
         resp_lower = response.text.lower()
-        if response.status_code == 400 and "receipt" in resp_lower:
-            # 1. Если магазин в ЮKassa требует фискальный чек (54-ФЗ)
+        if response.status_code == 400 and (
+            "receipt_should_be_absent" in resp_lower
+            or ("receipt" in resp_lower and "absent" in resp_lower)
+        ):
+            # 1. Если магазин в ЮKassa настроен на самостоятельную фискализацию (чек передавать нельзя)
+            logger.warning(
+                "У магазина ЮKassa настроена самостоятельная фискализация (%s). Повторяем без объекта receipt...",
+                response.text[:200],
+            )
+            no_receipt_payload = dict(payload)
+            no_receipt_payload.pop("receipt", None)
+            no_receipt_headers = dict(headers)
+            no_receipt_headers["Idempotence-Key"] = str(uuid.uuid4())
+            no_receipt_resp = await _safe_http_request(
+                "post",
+                url,
+                json=no_receipt_payload,
+                headers=no_receipt_headers,
+                auth=(str(shop_id), str(api_key)),
+            )
+            if no_receipt_resp.status_code == 200:
+                data = no_receipt_resp.json()
+                if client_payment:
+                    await set_client_payment_provider_id(client_payment.id, str(data["id"]))
+                logger.info("Счёт ЮKassa без чека успешно создан: order_id=%s", data["id"])
+                return data["confirmation"]["confirmation_url"]
+
+            response = no_receipt_resp
+            resp_lower = response.text.lower()
+
+        elif (
+            response.status_code == 400
+            and "receipt" in resp_lower
+            and "absent" not in resp_lower
+            and "receipt" not in payload
+        ):
+            # 2. Если магазин в ЮKassa требует фискальный чек (54-ФЗ), а он не был передан
             logger.warning(
                 "У магазина ЮKassa включена фискализация (54-ФЗ), но чек не был передан (%s). Повторяем с объектом receipt...",
                 response.text[:200],
@@ -449,26 +484,11 @@ async def _create_yookassa_link(
                 logger.info("Счёт ЮKassa с фискализацией успешно создан: order_id=%s", data["id"])
                 return data["confirmation"]["confirmation_url"]
 
-            if (receipt_resp.status_code in (400, 403)) and receipt_payload.get("save_payment_method"):
-                receipt_resp_lower = receipt_resp.text.lower()
-                if (
-                    "recurring" in receipt_resp_lower
-                    or "forbidden" in receipt_resp_lower
-                    or "save_payment_method" in receipt_resp_lower
-                    or "can't make recurring" in receipt_resp_lower
-                ):
-                    logger.warning("ЮKassa с чеком отклонила рекуррентный платёж: %s", receipt_resp.text[:200])
-                    await notify_bot_owner_recurring_disabled(
-                        bot_config, client_payment, shop_id=str(shop_id), provider="yookassa"
-                    )
-                    raise RecurringPaymentDisabledError(
-                        "Рекуррентные платежи не подключены в магазине ЮKassa",
-                        provider="yookassa",
-                        shop_id=str(shop_id),
-                    )
+            response = receipt_resp
+            resp_lower = response.text.lower()
 
-        # 2. Если магазин отклонил save_payment_method (400 или 403 Forbidden "This store can't make recurring payments")
-        elif (response.status_code in (400, 403)) and payload.get("save_payment_method"):
+        # 3. Если магазин отклонил save_payment_method (400 или 403 Forbidden "This store can't make recurring payments")
+        if (response.status_code in (400, 403)) and payload.get("save_payment_method"):
             if (
                 "recurring" in resp_lower
                 or "forbidden" in resp_lower

@@ -118,7 +118,32 @@ class YooKassaProvider(PaymentProvider):
             )
 
         if resp.status_code != 200:
-            if resp.status_code == 400 and "receipt" in resp.text.lower():
+            resp_lower = resp.text.lower()
+            if resp.status_code == 400 and (
+                "receipt_should_be_absent" in resp_lower
+                or ("receipt" in resp_lower and "absent" in resp_lower)
+            ):
+                logger.warning(
+                    "Магазин ЮKassa настроен на самостоятельную фискализацию (%s). Повторяем без чека...",
+                    resp.text[:200],
+                )
+                payload_no_receipt = dict(payload)
+                payload_no_receipt.pop("receipt", None)
+                headers["Idempotence-Key"] = str(uuid.uuid4())
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        f"{self.BASE_URL}/payments",
+                        json=payload_no_receipt,
+                        headers=headers,
+                        auth=(shop_id, secret_key),
+                    )
+                resp_lower = resp.text.lower()
+            elif (
+                resp.status_code == 400
+                and "receipt" in resp_lower
+                and "absent" not in resp_lower
+                and "receipt" not in payload
+            ):
                 logger.warning("ЮKassa требует receipt. Повторяем с фискальным чеком...")
                 from services.payment_link import _build_yookassa_receipt
 
@@ -139,6 +164,7 @@ class YooKassaProvider(PaymentProvider):
                         headers=headers,
                         auth=(shop_id, secret_key),
                     )
+                resp_lower = resp.text.lower()
 
             if (resp.status_code in (400, 403)) and payload.get("save_payment_method"):
                 resp_lower = resp.text.lower()
@@ -256,7 +282,33 @@ class YooKassaProvider(PaymentProvider):
             )
 
         if resp.status_code != 200:
-            if resp.status_code == 400 and "receipt" in resp.text.lower():
+            resp_lower = resp.text.lower()
+            if resp.status_code == 400 and (
+                "receipt_should_be_absent" in resp_lower
+                or ("receipt" in resp_lower and "absent" in resp_lower)
+            ):
+                logger.warning(
+                    "ЮKassa отклонила receipt при рекуррентном списании (самостоятельная фискализация). Повторяем без чека..."
+                )
+                payload_no_receipt = dict(payload)
+                payload_no_receipt.pop("receipt", None)
+                headers["Idempotence-Key"] = f"{attempt.idempotency_key}_norcpt"
+                try:
+                    async with httpx.AsyncClient(timeout=20.0) as client:
+                        resp = await client.post(
+                            f"{self.BASE_URL}/payments",
+                            json=payload_no_receipt,
+                            headers=headers,
+                            auth=(shop_id, secret_key),
+                        )
+                except Exception as exc:
+                    logger.exception("Сетевая ошибка при повторном списании YooKassa без чека: %s", exc)
+            elif (
+                resp.status_code == 400
+                and "receipt" in resp_lower
+                and "absent" not in resp_lower
+                and "receipt" not in payload
+            ):
                 logger.warning("ЮKassa требует receipt при рекуррентном списании. Повторяем с чеком...")
                 from services.payment_link import _build_yookassa_receipt
 
