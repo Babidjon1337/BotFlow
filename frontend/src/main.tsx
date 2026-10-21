@@ -23,7 +23,9 @@ window.addEventListener("vite:preloadError", () => {
   window.location.reload();
 });
 
-const isLegalRoute = window.location.pathname.startsWith("/legal/");
+const isLegalRoute =
+  window.location.pathname.startsWith("/legal") ||
+  window.location.pathname.startsWith("/offer");
 const isCheckoutRoute = window.location.pathname.startsWith("/checkout/");
 
 if (isCheckoutRoute) {

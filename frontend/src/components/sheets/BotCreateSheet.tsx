@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Bot, Check, Plus, Rocket, ShieldCheck, X } from 'lucide-react';
+import { AlertCircle, Bot, Check, CreditCard, Plus, Rocket, ShieldCheck, X } from 'lucide-react';
 import type { PaymentProvider } from '../../types';
 import { useViewportHeight } from '../../hooks';
 import { PlatformGlyph } from '../common/platform';
@@ -35,9 +35,11 @@ const scenarios = [
 /** Создаёт черновик с готовой основой; детали настраиваются в рабочем пространстве бота. */
 export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: BotCreateSheetProps) => {
   const [isCreating, setIsCreating] = useState(false);
+  const [isPaying, setIsPaying] = useState(false);
+  const [limitError, setLimitError] = useState(false);
   const [name, setName] = useState('');
   const viewportHeight = useViewportHeight();
-  const { isAdmin } = useAppState();
+  const { isAdmin, appState } = useAppState();
 
   const handleFocus = (event: React.FocusEvent<HTMLInputElement>) => {
     window.setTimeout(() => event.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
@@ -54,18 +56,38 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
     };
   }, [onClose]);
 
+  const handlePaySubscription = async () => {
+    setIsPaying(true);
+    try {
+      const { apiService } = await import('../../services/api');
+      const checkout = await apiService.createBillingCheckout('pro', appState.userEmail || undefined);
+      const tg = (window as Window & { Telegram?: { WebApp?: { openLink?: (url: string) => void } } }).Telegram?.WebApp;
+      if (tg?.openLink) tg.openLink(checkout.confirmationUrl);
+      else window.location.assign(checkout.confirmationUrl);
+    } catch (e) {
+      onError?.(e instanceof Error ? e.message : 'Не удалось сформировать платёж.');
+    } finally {
+      setIsPaying(false);
+    }
+  };
+
   const createBot = async () => {
     if (!navigator.onLine) {
       onError?.('Отсутствует подключение к интернету. Проверьте сеть.');
       return;
     }
     setIsCreating(true);
+    setLimitError(false);
     onBusyChange?.(true);
     try {
       await onCreate({ displayName: name.trim(), paymentCreds: {}, offerUrl: '' });
       (window as Window & { Telegram?: { WebApp?: TelegramWebApp } }).Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success');
     } catch (error) {
-      onError?.(error instanceof Error ? error.message : 'Не удалось создать бота.');
+      const msg = error instanceof Error ? error.message : 'Не удалось создать бота.';
+      if (msg.includes('лимит ботов') || msg.includes('403') || msg.includes('Оплатите подписку')) {
+        setLimitError(true);
+      }
+      onError?.(msg);
     } finally {
       setIsCreating(false);
       onBusyChange?.(false);
@@ -168,14 +190,54 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                 </p>
               </div>
               )}
+
+              {limitError && (
+                <div className="mt-5 rounded-[var(--radius-card)] border border-primary/30 bg-primary/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
+                    <div>
+                      <p className="text-body-sm font-bold text-foreground">
+                        Достигнут лимит ботов
+                      </p>
+                      <p className="mt-1 text-meta leading-relaxed text-fg-secondary">
+                        Бесплатно доступен 1 бот. Чтобы подключить и запустить следующего бота, оформите подписку сервиса (990 ₽/мес).
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handlePaySubscription()}
+                    disabled={isPaying}
+                    className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary py-2.5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
+                  >
+                    {isPaying ? (
+                      <span className="size-4 animate-spin rounded-full border-2 border-white/35 border-t-white" />
+                    ) : (
+                      <CreditCard className="size-4" aria-hidden="true" />
+                    )}
+                    Оплатить подписку (990 ₽/мес)
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
           <footer className="shrink-0 border-t border-border bg-card px-5 pb-[max(20px,calc(env(safe-area-inset-bottom,0px)+12px))] pt-4 lg:px-6 lg:pb-5">
-            <button type="button" onClick={createBot} disabled={!name.trim() || isCreating} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary px-5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={createBot} disabled={!name.trim() || isCreating || isPaying} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary px-5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50">
               {isCreating ? <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground/35 border-t-primary-foreground" aria-label="Создаём бота" /> : <><Rocket className="size-4" aria-hidden="true" />Создать и настроить</>}
             </button>
-            <p className="mt-3 text-center text-meta text-fg-secondary">Черновик бесплатен. Подключение платформы и оплата — позже, перед публикацией.</p>
+            <p className="mt-3 text-center text-meta text-fg-secondary">
+              Создавая бота, вы принимаете условия{' '}
+              <a
+                href="/legal/offer"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline font-medium"
+              >
+                Публичной оферты
+              </a>
+              . Черновик бесплатен, оплата — перед публикацией.
+            </p>
           </footer>
         </motion.section>
       </div>

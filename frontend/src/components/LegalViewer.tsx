@@ -7,7 +7,12 @@ export function LegalViewer() {
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
-  const slug = window.location.pathname.replace(/^\/legal\/?/, "").split("/")[0] || "";
+  const rawPath = window.location.pathname;
+  const slug =
+    rawPath
+      .replace(/^\/(?:legal|offer)\/?/, "")
+      .split("/")[0]
+      .trim() || "offer";
 
   useEffect(() => {
     if (!slug) {

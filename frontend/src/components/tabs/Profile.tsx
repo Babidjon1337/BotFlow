@@ -10,6 +10,9 @@ import {
   BarChart2,
   ArrowRight,
   Bot,
+  FileText,
+  Download,
+  ExternalLink,
 } from "lucide-react";
 import { useAppState } from "../../providers/AppStateProvider";
 
@@ -434,6 +437,54 @@ export const Profile = () => {
                   </button>
                 </div>
               )}
+            </motion.div>
+
+            {/* Юридическая информация и оферта платформы */}
+            <motion.div
+              variants={{
+                hidden: { opacity: 0, y: 10 },
+                visible: { opacity: 1, y: 0 },
+              }}
+              className="rounded-[22px] border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm"
+            >
+              <div className="flex items-start gap-4">
+                <div
+                  className="w-10 h-10 rounded-[14px] flex items-center justify-center shrink-0"
+                  style={{
+                    background: "var(--color-primary-soft)",
+                    color: "var(--color-primary)",
+                  }}
+                >
+                  <FileText size={18} />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <h3 className="text-[14px] font-bold text-[var(--color-foreground)]">
+                    Публичная оферта сервиса BotFlow
+                  </h3>
+                  <p className="text-[12px] text-[var(--color-foreground-secondary)] leading-relaxed">
+                    ИП Медоян Арам Гагикович · ИНН 613302383615 · ОГРНИП 321619600251571
+                  </p>
+                  <div className="flex items-center gap-2 pt-2 flex-wrap">
+                    <a
+                      href="/legal/offer"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] text-[12px] font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-border)]/50 transition-colors"
+                    >
+                      <span>Читать оферту</span>
+                      <ExternalLink size={12} className="text-[var(--color-foreground-tertiary)]" />
+                    </a>
+                    <a
+                      href="/api/legal/offer?download=1"
+                      download="Оферта_сервиса_ботов_ИП_Медоян.docx"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[var(--color-primary)]/20 bg-[var(--color-primary-soft)] text-[12px] font-semibold text-[var(--color-primary)] hover:opacity-90 transition-opacity"
+                    >
+                      <Download size={12} />
+                      <span>Скачать .DOCX</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         </AnimatePresence>

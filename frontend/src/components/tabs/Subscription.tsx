@@ -14,6 +14,8 @@ import {
   ChevronRight,
   ExternalLink,
   AlertCircle,
+  FileText,
+  Download,
 } from "lucide-react";
 
 import { useAppState } from "../../providers/AppStateProvider";
@@ -41,7 +43,7 @@ const plural = (n: number, one: string, few: string, many: string) => {
 const formatPrice = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
 
 export const Subscription = () => {
-  const { appState, setAppState, setActiveTab, setToastMessage, setToastType, isAdmin, selectBot } =
+  const { appState, setAppState, setActiveTab, setToastMessage, setToastType, isAdmin, selectBot, handleCreateBotClick } =
     useAppState();
   const { showConfirm } = useAlert();
 
@@ -306,16 +308,29 @@ export const Subscription = () => {
 
       {/* ── 2. Список ботов: управление каждой подпиской и возможностями ── */}
       <section className="rounded-[20px] border border-border bg-card p-5 shadow-xs">
-        <div className="flex items-center justify-between gap-3 pb-3 border-b border-border">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
           <div>
             <h2 className="text-body font-bold text-fg-primary">Ваши Telegram-боты</h2>
             <p className="text-micro text-fg-secondary">
               Включение и отключение подписки для каждого бота по отдельности
             </p>
           </div>
-          <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-semibold text-fg-secondary">
-            {bots.length}
-          </span>
+          <div className="flex items-center gap-2">
+            {!isAdmin && billingEnabled && (
+              <Button
+                size="sm"
+                onClick={() => void payForBot()}
+                disabled={busy}
+                className="h-8 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-micro font-semibold gap-1.5 shadow-xs"
+              >
+                <CreditCard className="size-3.5" aria-hidden="true" />
+                Подключить нового бота (990 ₽/мес)
+              </Button>
+            )}
+            <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-semibold text-fg-secondary">
+              {bots.length}
+            </span>
+          </div>
         </div>
 
         {bots.length === 0 ? (
@@ -327,7 +342,7 @@ export const Subscription = () => {
             <p className="mt-1 text-body-sm text-fg-secondary max-w-sm mx-auto">
               Создайте первого бота: проектирование воронки в черновике бесплатно.
             </p>
-            <Button className="mt-4 rounded-xl" onClick={() => setActiveTab("build")}>
+            <Button className="mt-4 rounded-xl" onClick={handleCreateBotClick}>
               Создать бота
             </Button>
           </div>
@@ -607,6 +622,46 @@ export const Subscription = () => {
         </div>
 
         {emailError && <p className="mt-2 text-micro text-danger">{emailError}</p>}
+      </section>
+
+      {/* ── 4. Официальная оферта платформы (ИП Медоян А.Г.) ── */}
+      <section className="rounded-[20px] border border-border bg-card p-5 shadow-xs">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <FileText className="size-4 text-primary" aria-hidden="true" />
+              <h2 className="text-body font-bold text-fg-primary">Публичная оферта сервиса BotFlow</h2>
+            </div>
+            <p className="text-micro text-fg-secondary leading-relaxed">
+              Официальный договор-оферта на предоставление доступа к платформе создания и обслуживания ботов.
+              Исполнитель: Индивидуальный предприниматель Медоян Арам Гагикович (ИНН 613302383615, ОГРНИП 321619600251571).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <a
+              href="/legal/offer"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 hover:bg-muted px-3.5 py-2 text-micro font-semibold text-fg-primary transition"
+            >
+              <span>Читать оферту</span>
+              <ExternalLink className="size-3 text-fg-tertiary" aria-hidden="true" />
+            </a>
+            <a
+              href="/api/legal/offer?download=1"
+              download="Оферта_сервиса_ботов_ИП_Медоян.docx"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 hover:bg-primary/20 px-3.5 py-2 text-micro font-semibold text-primary transition"
+            >
+              <Download className="size-3.5" aria-hidden="true" />
+              <span>Скачать .DOCX</span>
+            </a>
+          </div>
+        </div>
+        <p className="mt-3 border-t border-border/60 pt-3 text-micro text-fg-tertiary leading-relaxed">
+          Оплачивая подписку или подключая бота, вы подтверждаете акцепт публичной оферты и согласие на обработку персональных данных (152-ФЗ).
+          Периодические списания за подписку производятся каждые 30 дней и могут быть отключены в любой момент.
+        </p>
       </section>
     </motion.div>
   );
