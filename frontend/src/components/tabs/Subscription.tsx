@@ -49,6 +49,7 @@ export const Subscription = () => {
 
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [offerAccepted, setOfferAccepted] = useState(false);
 
   // Email для чеков и квитанций
   const [email, setEmail] = useState(appState.userEmail || "");
@@ -115,14 +116,15 @@ export const Subscription = () => {
   }, [loadBilling]);
 
   const payForBot = async (botId?: string) => {
-    if (busy || !billingEnabled) return;
+    if (busy || !billingEnabled || !offerAccepted) return;
     setBusy(true);
     try {
       const { apiService } = await import("../../services/api");
       const checkout = await apiService.createBillingCheckout(
         "pro",
         email.trim() || appState.userEmail || undefined,
-        botId
+        botId,
+        offerAccepted
       );
       const telegram = (window as Window & {
         Telegram?: { WebApp?: { openLink?: (url: string) => void } };
@@ -320,7 +322,7 @@ export const Subscription = () => {
               <Button
                 size="sm"
                 onClick={() => void payForBot()}
-                disabled={busy}
+                disabled={busy || !offerAccepted}
                 className="h-8 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-micro font-semibold gap-1.5 shadow-xs"
               >
                 <CreditCard className="size-3.5" aria-hidden="true" />
@@ -332,6 +334,13 @@ export const Subscription = () => {
             </span>
           </div>
         </div>
+
+        {!isAdmin && billingEnabled && (
+          <label className="mt-3 flex items-start gap-2.5 rounded-xl border border-border bg-muted/30 p-3 text-micro text-fg-secondary">
+            <input type="checkbox" checked={offerAccepted} onChange={(event) => setOfferAccepted(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]" />
+            <span>Я принимаю <a href="/legal/offer" target="_blank" rel="noreferrer" className="font-semibold text-primary underline">публичную оферту BotFlow</a> и понимаю, что подписка продлевается автоматически каждые 30 дней. Автопродление можно отключить в любой момент.</span>
+          </label>
+        )}
 
         {bots.length === 0 ? (
           <div className="py-10 text-center">
@@ -540,7 +549,7 @@ export const Subscription = () => {
                       {!isAdmin && billingEnabled && (cov.kind === "unpaid" || (cov.kind === "draft" && bot.status === "inactive")) && (
                         <Button
                           size="sm"
-                          disabled={busy}
+                          disabled={busy || !offerAccepted}
                           onClick={() => void payForBot(bot.id)}
                           className="h-8 px-3 rounded-lg bg-primary hover:bg-primary-hover text-white text-micro font-semibold gap-1.5"
                         >

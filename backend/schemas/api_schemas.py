@@ -40,6 +40,7 @@ class AuthRequest(BaseModel):
 class BillingCheckoutRequest(BaseModel):
     product: str
     email: Optional[str] = None
+    offer_accepted: bool = Field(default=False, alias="offerAccepted")
     # Бот, за которого платим: итог считает серверный квоут (990 ₽ + доплаты).
     bot_id: Optional[int] = Field(None, alias="botId")
 

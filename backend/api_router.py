@@ -1275,6 +1275,8 @@ async def deactivate_access_link_endpoint(link_id: UUID, request: Request):
 
 @api_router.post("/api/billing/checkout", response_model=BillingCheckoutResponse)
 async def create_billing_checkout(request: Request, body: BillingCheckoutRequest):
+    if not body.offer_accepted:
+        raise HTTPException(status_code=422, detail="Подтвердите согласие с публичной офертой перед оплатой.")
     if not BILLING_ENABLED:
         raise HTTPException(
             status_code=403,

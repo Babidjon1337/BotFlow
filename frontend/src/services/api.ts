@@ -909,13 +909,14 @@ export const apiService = {
   async createBillingCheckout(
     product: "basic" | "pro",
     email?: string,
-    botId?: string | number
+    botId?: string | number,
+    offerAccepted: boolean = false
   ) {
     return fetchApi<{ paymentId: string; confirmationUrl: string }>(
       "/api/billing/checkout",
       {
         method: "POST",
-        body: JSON.stringify({ product, email, botId }),
+        body: JSON.stringify({ product, email, botId, offerAccepted }),
       }
     );
   },

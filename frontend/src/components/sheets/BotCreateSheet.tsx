@@ -37,6 +37,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
   const [isCreating, setIsCreating] = useState(false);
   const [isPaying, setIsPaying] = useState(false);
   const [limitError, setLimitError] = useState(false);
+  const [offerAccepted, setOfferAccepted] = useState(false);
   const [name, setName] = useState('');
   const viewportHeight = useViewportHeight();
   const { isAdmin, appState } = useAppState();
@@ -57,10 +58,11 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
   }, [onClose]);
 
   const handlePaySubscription = async () => {
+    if (!offerAccepted) return;
     setIsPaying(true);
     try {
       const { apiService } = await import('../../services/api');
-      const checkout = await apiService.createBillingCheckout('pro', appState.userEmail || undefined);
+      const checkout = await apiService.createBillingCheckout('pro', appState.userEmail || undefined, undefined, offerAccepted);
       const tg = (window as Window & { Telegram?: { WebApp?: { openLink?: (url: string) => void } } }).Telegram?.WebApp;
       if (tg?.openLink) tg.openLink(checkout.confirmationUrl);
       else window.location.assign(checkout.confirmationUrl);
@@ -207,7 +209,7 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                   <button
                     type="button"
                     onClick={() => void handlePaySubscription()}
-                    disabled={isPaying}
+                    disabled={isPaying || !offerAccepted}
                     className="mt-3.5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-control)] bg-primary py-2.5 text-body-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
                   >
                     {isPaying ? (
@@ -217,6 +219,10 @@ export const BotCreateSheet = ({ onClose, onCreate, onError, onBusyChange }: Bot
                     )}
                     Оплатить подписку (990 ₽/мес)
                   </button>
+                  <label className="mt-3 flex items-start gap-2 text-meta text-fg-secondary">
+                    <input type="checkbox" checked={offerAccepted} onChange={(event) => setOfferAccepted(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]" />
+                    <span>Принимаю <a href="/legal/offer" target="_blank" rel="noreferrer" className="font-medium text-primary underline">публичную оферту BotFlow</a> и условия автопродления каждые 30 дней.</span>
+                  </label>
                 </div>
               )}
             </div>
