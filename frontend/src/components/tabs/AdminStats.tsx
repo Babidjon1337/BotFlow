@@ -52,15 +52,12 @@ import {
 type AdminSection = "overview" | "users" | "payments" | "operations" | "system" | "access-links" | "logs";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-const sections: Array<{ id: AdminSection; label: string }> = [
-  { id: "overview", label: "Обзор" },
-  { id: "users", label: "Пользователи" },
-  { id: "payments", label: "Платежи" },
-  { id: "operations", label: "Операции" },
-  { id: "system", label: "Система" },
-  { id: "access-links", label: "Ссылки доступа" },
-  { id: "logs", label: "Логи" },
+const sectionGroups: Array<{ label: string; items: Array<{ id: AdminSection; label: string }> }> = [
+  { label: "Работа", items: [{ id: "overview", label: "Обзор" }, { id: "users", label: "Пользователи" }] },
+  { label: "Оплаты", items: [{ id: "payments", label: "Подписки BotFlow" }, { id: "operations", label: "Проблемы выдачи" }] },
+  { label: "Сервис", items: [{ id: "access-links", label: "Ссылки доступа" }, { id: "system", label: "Состояние и действия" }, { id: "logs", label: "Логи приложения" }] },
 ];
+const sections = sectionGroups.flatMap((group) => group.items);
 
 const formatAmount = (amount: number, currency: string = "RUB") =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
@@ -133,8 +130,14 @@ export function AdminStats() {
 
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [usersTotal, setUsersTotal] = useState(0);
+  const [usersPage, setUsersPage] = useState(1);
   const [payments, setPayments] = useState<AdminSaasPayment[]>([]);
+  const [paymentsTotal, setPaymentsTotal] = useState(0);
+  const [paymentsPage, setPaymentsPage] = useState(1);
   const [operations, setOperations] = useState<AdminOperation[]>([]);
+  const [operationsTotal, setOperationsTotal] = useState(0);
+  const [operationsPage, setOperationsPage] = useState(1);
   const [auditEntries, setAuditEntries] = useState<AdminAuditEntry[]>([]);
   const [systemStatus, setSystemStatus] = useState<AdminSystemStatus | null>(null);
   const [accessLinks, setAccessLinks] = useState<AccessLink[]>([]);
@@ -161,7 +164,6 @@ export function AdminStats() {
     | null
   >(null);
   const [grantBusy, setGrantBusy] = useState(false);
-  const [quickGrantUserId, setQuickGrantUserId] = useState<number | null>(null);
   const [isCreateBotForUserOpen, setIsCreateBotForUserOpen] = useState(false);
 
   const handleEditFunnel = useCallback(
@@ -260,16 +262,19 @@ export function AdminStats() {
         setOperations(nextOperations.operations);
       }
       if (section === "users") {
-        const nextUsers = await apiService.getAdminUsers(usersQuery, 1, 50);
+        const nextUsers = await apiService.getAdminUsers(usersQuery, usersPage, 25);
         setUsers(nextUsers.users);
+        setUsersTotal(nextUsers.total);
       }
       if (section === "payments") {
-        const nextPayments = await apiService.getAdminPayments(undefined, 1, 50);
+        const nextPayments = await apiService.getAdminPayments(undefined, paymentsPage, 25);
         setPayments(nextPayments.payments);
+        setPaymentsTotal(nextPayments.total);
       }
       if (section === "operations") {
-        const nextOperations = await apiService.getAdminOperations(1, 50);
+        const nextOperations = await apiService.getAdminOperations(operationsPage, 25);
         setOperations(nextOperations.operations);
+        setOperationsTotal(nextOperations.total);
       }
       if (section === "system") {
         const [nextAudit, nextSystemStatus] = await Promise.all([
@@ -295,7 +300,7 @@ export function AdminStats() {
       setToastType("error");
       setToastMessage(message);
     }
-  }, [section, setToastMessage, setToastType, usersQuery]);
+  }, [section, setToastMessage, setToastType, usersQuery, usersPage, paymentsPage, operationsPage]);
 
   useEffect(() => {
     const delay = section === "users" ? 250 : 0;
@@ -507,18 +512,6 @@ export function AdminStats() {
     });
   }, [refreshSection, setToastMessage, setToastType, showConfirm]);
 
-  const openGrantForUser = useCallback(async (user: AdminUser) => {
-    setQuickGrantUserId(user.id);
-    try {
-      const detail = await apiService.getAdminUserDetail(user.id);
-      setGrantTarget({ type: "user", user, bots: detail.bots });
-    } catch {
-      setGrantTarget({ type: "user", user, bots: [] });
-    } finally {
-      setQuickGrantUserId(null);
-    }
-  }, []);
-
   const openGrantForBot = useCallback((bot: AdminBot) => {
     setGrantTarget({ type: "bot", bot });
   }, []);
@@ -721,8 +714,10 @@ export function AdminStats() {
           </button>
         </div>
 
-        <nav className="mt-6 flex gap-1 overflow-x-auto scrollbar-none border-b border-[var(--color-border)]" aria-label="Разделы администрирования">
-          {sections.map((item) => {
+        <nav className="mt-6 flex flex-wrap gap-x-5 gap-y-3 border-b border-[var(--color-border)] pb-3" aria-label="Разделы администрирования">
+          {sectionGroups.map((group) => <div key={group.label} className="min-w-0">
+            <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-wide text-[var(--color-foreground-tertiary)]">{group.label}</p>
+            <div className="flex flex-wrap gap-1">{group.items.map((item) => {
             const active = section === item.id;
             return (
               <button
@@ -735,17 +730,16 @@ export function AdminStats() {
                   setSection(item.id);
                 }}
                 aria-current={active ? "page" : undefined}
-                className={`relative h-10 shrink-0 px-3 text-sm font-semibold transition-colors ${
+                className={`relative min-h-10 rounded-lg px-3 text-sm font-semibold transition-colors ${
                   active
-                    ? "text-[var(--color-foreground)]"
-                    : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"
+                    ? "bg-[var(--color-surface-2)] text-[var(--color-foreground)]"
+                    : "text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)]"
                 }`}
               >
                 {item.label}
-                {active && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-[var(--color-primary)]" />}
               </button>
             );
-          })}
+          })}</div></div>)}
         </nav>
       </header>
 
@@ -778,17 +772,18 @@ export function AdminStats() {
         ) : (
           <UsersSection
             users={users}
+            total={usersTotal}
+            page={usersPage}
+            onPageChange={setUsersPage}
             query={usersQuery}
-            onQueryChange={setUsersQuery}
+            onQueryChange={(value) => { setUsersPage(1); setUsersQuery(value); }}
             loading={state === "loading"}
-            quickGrantLoadingId={quickGrantUserId}
             onOpenProfile={openUserProfile}
-            onQuickGrant={openGrantForUser}
           />
         )
       ) : null}
-      {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} loading={state === "loading"} /> : null}
-      {state !== "error" && section === "operations" ? <OperationsSection operations={operations} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
+      {state !== "error" && section === "payments" ? <PaymentsSection payments={payments} total={paymentsTotal} page={paymentsPage} onPageChange={setPaymentsPage} loading={state === "loading"} /> : null}
+      {state !== "error" && section === "operations" ? <OperationsSection operations={operations} total={operationsTotal} page={operationsPage} onPageChange={setOperationsPage} loading={state === "loading"} onRetryOperation={retryOperation} retryingOperationId={operationActionId} /> : null}
       {state !== "error" && section === "system" ? <SystemSection entries={auditEntries} systemStatus={systemStatus} loading={state === "loading"} /> : null}
       {state !== "error" && section === "access-links" ? <AccessLinksSection links={accessLinks} loading={state === "loading"} onChanged={() => void refreshSection()} /> : null}
       {state !== "error" && section === "logs" ? <LogsSection /> : null}
@@ -838,7 +833,7 @@ function Overview({ overview, operations, loading, onNavigate, onRetryOperation,
   const metrics = [
     { label: "Владельцы ботов", value: overview?.users_total, icon: Users, note: "Зарегистрированы в BotFlow" },
     { label: "Активные боты", value: overview ? `${overview.bots_active} / ${overview.bots_total}` : null, icon: Bot, note: "Активны сейчас" },
-    { label: "SaaS-выручка", value: overview ? formatAmount(overview.saas_revenue) : null, icon: CreditCard, note: "Подтверждённые платежи" },
+    { label: "Оплаты BotFlow", value: overview ? formatAmount(overview.saas_revenue) : null, icon: CreditCard, note: "Успешно за всё время" },
     { label: "Требуют внимания", value: overview?.operations_requiring_attention, icon: AlertTriangle, note: "Выдача доступа или уведомление" },
   ];
   return (
@@ -863,25 +858,27 @@ function Overview({ overview, operations, loading, onNavigate, onRetryOperation,
 
 function UsersSection({
   users,
+  total,
+  page,
+  onPageChange,
   query,
   onQueryChange,
   loading,
-  quickGrantLoadingId,
   onOpenProfile,
-  onQuickGrant,
 }: {
   users: AdminUser[];
+  total: number;
+  page: number;
+  onPageChange: (page: number) => void;
   query: string;
   onQueryChange: (value: string) => void;
   loading: boolean;
-  quickGrantLoadingId?: number | null;
   onOpenProfile: (user: AdminUser) => void;
-  onQuickGrant: (user: AdminUser) => void;
 }) {
   return (
     <Section
       title="Пользователи платформы"
-      description="Нажмите на строку любого пользователя, чтобы открыть подробный профиль, управлять доступом и настроить подписки на его ботов."
+      description="Откройте профиль пользователя, чтобы управлять доступом и подписками его ботов."
     >
       <SearchInput
         value={query}
@@ -897,9 +894,7 @@ function UsersSection({
               <UserCard
                 key={user.id}
                 user={user}
-                loadingGrant={quickGrantLoadingId === user.id}
                 onOpenProfile={onOpenProfile}
-                onQuickGrant={onQuickGrant}
               />
             ))}
           </div>
@@ -918,13 +913,12 @@ function UsersSection({
                 {users.map((user) => (
                   <tr
                     key={user.id}
-                    onClick={() => onOpenProfile(user)}
-                    className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]/60 transition-colors"
+                    className="group border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]/60 transition-colors"
                   >
                     <td className="py-4">
-                      <p className="font-semibold tabular-nums text-[var(--color-foreground)] group-hover:text-[var(--color-primary)] transition-colors">
+                      <button type="button" onClick={() => onOpenProfile(user)} className="rounded font-semibold tabular-nums text-[var(--color-foreground)] hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
                         {user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}
-                      </p>
+                      </button>
                       <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
                         Telegram ID: {user.telegram_id} · BotFlow #{user.id}
                       </p>
@@ -962,28 +956,7 @@ function UsersSection({
                       {formatDate(user.created_at)}
                     </td>
                     <td className="py-4 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onQuickGrant(user);
-                          }}
-                          disabled={quickGrantLoadingId === user.id}
-                          className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[var(--color-primary)] px-3 text-xs font-bold text-white shadow-sm transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                          title="Выдать бесплатный доступ (3 месяца на бота)"
-                        >
-                          {quickGrantLoadingId === user.id ? (
-                            <RefreshCw size={13} className="animate-spin" aria-hidden="true" />
-                          ) : (
-                            <Gift size={14} aria-hidden="true" />
-                          )}
-                          +3 мес на бота
-                        </button>
-                        <span className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] group-hover:bg-[var(--color-surface-2)] group-hover:text-[var(--color-primary)] transition-colors">
-                          <ChevronRight size={18} aria-hidden="true" />
-                        </span>
-                      </div>
+                      <button type="button" onClick={() => onOpenProfile(user)} aria-label={`Открыть профиль ${user.username ? `@${user.username}` : user.telegram_id}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"><ChevronRight size={18} aria-hidden="true" /></button>
                     </td>
                   </tr>
                 ))}
@@ -998,31 +971,25 @@ function UsersSection({
           description="Проверьте @username, Telegram ID или внутренний ID BotFlow."
         />
       )}
+      {!loading && total > 25 ? <Pagination page={page} total={total} onChange={onPageChange} /> : null}
     </Section>
   );
 }
 
 function UserCard({
   user,
-  loadingGrant,
   onOpenProfile,
-  onQuickGrant,
 }: {
   user: AdminUser;
-  loadingGrant?: boolean;
   onOpenProfile: (user: AdminUser) => void;
-  onQuickGrant: (user: AdminUser) => void;
 }) {
   return (
-    <article
-      onClick={() => onOpenProfile(user)}
-      className="group cursor-pointer rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm transition-all hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-2)]/50"
-    >
+    <article className="group rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm transition-all hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-2)]/50">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="truncate font-semibold tabular-nums text-[var(--color-foreground)] group-hover:text-[var(--color-primary)] transition-colors">
+          <button type="button" onClick={() => onOpenProfile(user)} className="truncate text-left font-semibold tabular-nums text-[var(--color-foreground)] group-hover:text-[var(--color-primary)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
             {user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}
-          </p>
+          </button>
           <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
             Telegram ID: {user.telegram_id} · BotFlow #{user.id}
           </p>
@@ -1063,27 +1030,10 @@ function UserCard({
           </dd>
         </div>
       </dl>
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--color-border)]/60 pt-3">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onQuickGrant(user);
-          }}
-          disabled={loadingGrant}
-          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--color-primary)] px-3.5 text-xs font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
-        >
-          {loadingGrant ? (
-            <RefreshCw size={14} className="animate-spin" aria-hidden="true" />
-          ) : (
-            <Gift size={15} aria-hidden="true" />
-          )}
-          +3 мес на бота
+      <div className="mt-4 border-t border-[var(--color-border)]/60 pt-3">
+        <button type="button" onClick={() => onOpenProfile(user)} className="inline-flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-2 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+          Открыть профиль <ChevronRight size={15} aria-hidden="true" />
         </button>
-        <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--color-foreground-secondary)] group-hover:text-[var(--color-primary)] transition-colors">
-          Карточка
-          <ChevronRight size={15} aria-hidden="true" />
-        </span>
       </div>
     </article>
   );
@@ -1239,15 +1189,20 @@ function UserProfileScreen({
       ) : (
         <>
           {/* ── 4 compact metrics ── */}
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <ProfileMetric icon={<Bot size={16} />} label="Всего ботов" value={String(bots.length)} note={`В аккаунте: ${user.bots_count}`} />
             <ProfileMetric icon={<Activity size={16} />} label="Активны" value={`${activeRunningCount} / ${bots.length}`} note="Активные боты" />
             <ProfileMetric icon={<ShieldCheck size={16} />} label="С подпиской" value={`${activeSubCount} / ${bots.length}`} note="1 бот = 1 подписка" />
-            <ProfileMetric icon={<Clock size={16} />} label="Регистрация" value={formatDate(user.created_at).split(",")[0]} note={formatDate(user.created_at).split(",")[1]?.trim()} />
           </div>
 
-          {/* ── Entitlements: 3-column grid ── */}
+          {/* ── Основной доступ и редко меняемые привилегии ── */}
           <div className="grid gap-3 sm:grid-cols-3">
+            <details className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-sm font-bold text-[var(--color-foreground)] marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] [&::-webkit-details-marker]:hidden">
+                <span className="inline-flex items-center gap-2"><Gift size={16} className="text-[var(--color-primary)]" aria-hidden="true" />Дополнительные привилегии</span>
+                <ChevronRight size={16} className="transition-transform group-open:rotate-90" aria-hidden="true" />
+              </summary>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {/* VIP */}
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <div className="flex items-center gap-2.5 mb-3">
@@ -1328,6 +1283,8 @@ function UserProfileScreen({
                 )}
               </div>
             </section>
+              </div>
+            </details>
 
             {/* Mini App Access */}
             <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -2064,12 +2021,27 @@ function Trash2Icon() {
   return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 }
 
-function PaymentsSection({ payments, loading }: { payments: AdminSaasPayment[]; loading: boolean }) {
-  return <Section title="Платежи BotFlow" description="История оплаты подписок на ботов. Статус нельзя изменить вручную — источником истины остаётся провайдер.">{loading ? <RowsSkeleton count={5} /> : payments.length ? <div className="mt-2 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Продукт</th><th className="pb-3">Сумма</th><th className="pb-3">Статус</th><th className="pb-3">Дата</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{payment.user_telegram_id}</td><td className="py-4 text-[var(--color-foreground)]">{productName[payment.product]}</td><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{formatAmount(payment.amount, payment.currency)}</td><td className="py-4"><StatusBadge tone={payment.status === "succeeded" ? "success" : payment.status === "failed" ? "danger" : "warning"}>{payment.status === "succeeded" ? "Оплачен" : payment.status === "failed" ? "Ошибка" : "Ожидает"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(payment.paid_at ?? payment.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<CreditCard size={21} />} title="Платежей пока нет" description="После создания первого счёта здесь появится реальная история SaaS-платежей." />}</Section>;
+function PaymentsSection({ payments, total, page, onPageChange, loading }: { payments: AdminSaasPayment[]; total: number; page: number; onPageChange: (page: number) => void; loading: boolean }) {
+  return <Section title="Подписки BotFlow" description="Оплаты подписок владельцев ботов. Статус подтверждает платёжная система.">{loading ? <RowsSkeleton count={5} /> : payments.length ? <><div className="mt-2 overflow-x-auto"><table className="w-full min-w-[720px] text-left text-sm"><thead className="border-b border-[var(--color-border)] text-xs font-semibold text-[var(--color-foreground-tertiary)]"><tr><th className="pb-3">Пользователь</th><th className="pb-3">Продукт</th><th className="pb-3">Сумма</th><th className="pb-3">Статус</th><th className="pb-3">Дата</th></tr></thead><tbody>{payments.map((payment) => <tr key={payment.id} className="border-b border-[var(--color-border)] last:border-0"><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{payment.user_telegram_id}</td><td className="py-4 text-[var(--color-foreground)]">{productName[payment.product]}</td><td className="py-4 font-semibold tabular-nums text-[var(--color-foreground)]">{formatAmount(payment.amount, payment.currency)}</td><td className="py-4"><StatusBadge tone={payment.status === "succeeded" ? "success" : payment.status === "failed" ? "danger" : "warning"}>{payment.status === "succeeded" ? "Оплачен" : payment.status === "failed" ? "Ошибка" : "Ожидает"}</StatusBadge></td><td className="py-4 text-[var(--color-foreground-secondary)]">{formatDate(payment.paid_at ?? payment.created_at)}</td></tr>)}</tbody></table></div><Pagination page={page} total={total} onChange={onPageChange} /></> : <EmptyState icon={<CreditCard size={21} />} title="Платежей пока нет" description="После создания первого счёта здесь появится реальная история SaaS-платежей." />}</Section>;
 }
 
-function OperationsSection({ operations, loading, onRetryOperation, retryingOperationId }: { operations: AdminOperation[]; loading: boolean; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
-  return <Section title="Операции" description="Оплата уже подтверждена, но выдача доступа или уведомление владельца требует внимания.">{loading ? <RowsSkeleton count={4} /> : operations.length ? <div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} expanded onRetry={onRetryOperation} busy={retryingOperationId === operation.payment_id} />)}</div> : <EmptyState icon={<CheckCircle2 size={21} />} title="Ничего не требует действий" description="Все подтверждённые платежи обработаны или ожидают штатной очереди." />}</Section>;
+function OperationsSection({ operations, total, page, onPageChange, loading, onRetryOperation, retryingOperationId }: { operations: AdminOperation[]; total: number; page: number; onPageChange: (page: number) => void; loading: boolean; onRetryOperation: (operation: AdminOperation) => void; retryingOperationId: string | null }) {
+  return <Section title="Проблемы выдачи" description="Оплата подтверждена, но доступ или уведомление владельца не удалось выдать.">{loading ? <RowsSkeleton count={4} /> : operations.length ? <><div className="divide-y divide-[var(--color-border)]">{operations.map((operation) => <OperationRow key={operation.payment_id} operation={operation} expanded onRetry={onRetryOperation} busy={retryingOperationId === operation.payment_id} />)}</div><Pagination page={page} total={total} onChange={onPageChange} /></> : <EmptyState icon={<CheckCircle2 size={21} />} title="Ничего не требует действий" description="Все подтверждённые платежи обработаны или ожидают штатной очереди." />}</Section>;
+}
+
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  const pageCount = Math.ceil(total / 25);
+  if (pageCount <= 1) return null;
+  const first = (page - 1) * 25 + 1;
+  const last = Math.min(page * 25, total);
+  return <nav aria-label="Страницы списка" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--color-border)] pt-4">
+    <p className="text-xs text-[var(--color-foreground-secondary)]">{first}–{last} из {total}</p>
+    <div className="flex items-center gap-2">
+      <button type="button" onClick={() => onChange(page - 1)} disabled={page <= 1} className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-45">Назад</button>
+      <span aria-live="polite" className="min-w-16 text-center text-xs text-[var(--color-foreground-secondary)]">{page} / {pageCount}</span>
+      <button type="button" onClick={() => onChange(page + 1)} disabled={page >= pageCount} className="min-h-10 rounded-lg border border-[var(--color-border)] px-3 text-sm font-semibold text-[var(--color-foreground)] hover:bg-[var(--color-surface-2)] disabled:cursor-not-allowed disabled:opacity-45">Далее</button>
+    </div>
+  </nav>;
 }
 
 function AccessLinksSection({ links, loading, onChanged }: { links: AccessLink[]; loading: boolean; onChanged: () => void }) {
