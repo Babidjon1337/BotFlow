@@ -2859,9 +2859,71 @@ async def delete_offer_file(bot_id: int, request: Request):
     return resp.model_dump(by_alias=True)
 
 
+PLATFORM_OFFER_SLUGS = {
+    "offer",
+    "platform",
+    "terms",
+    "service",
+    "service-offer",
+    "botflow",
+}
+
+
+def _serve_platform_offer(format: str | None = None, download: int | None = None) -> Response:
+    from pathlib import Path
+
+    legal_dir = Path(__file__).resolve().parent / "static" / "legal"
+    docx_path = legal_dir / "platform_offer.docx"
+    html_path = legal_dir / "platform_offer.html"
+
+    if (format or "").lower() == "docx" or download == 1:
+        if not docx_path.exists():
+            raise HTTPException(status_code=404, detail="Файл оферты не найден")
+        headers = {
+            "Content-Disposition": 'attachment; filename="oferta_botflow_ip_medoyan.docx"',
+            "Cache-Control": "public, max-age=3600",
+        }
+        return Response(
+            content=docx_path.read_bytes(),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers=headers,
+        )
+
+    if not html_path.exists():
+        from services.build_platform_offer import build_platform_offer_html
+
+        html_content = build_platform_offer_html()
+    else:
+        html_content = html_path.read_text(encoding="utf-8")
+
+    headers = {
+        "Cache-Control": "public, max-age=3600",
+        "Content-Security-Policy": "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'",
+    }
+    return Response(content=html_content, media_type="text/html; charset=utf-8", headers=headers)
+
+
+@api_router.get("/offer")
+@api_router.get("/api/offer")
+@api_router.get("/legal/offer")
+@api_router.get("/api/legal/offer")
+@api_router.get("/legal/platform")
+@api_router.get("/api/legal/platform")
+async def get_platform_offer_direct(format: str | None = None, download: int | None = None):
+    return _serve_platform_offer(format=format, download=download)
+
+
 @api_router.get("/legal/{slug}")
 @api_router.get("/api/legal/{slug}")
-async def get_public_offer(slug: str, request: Request):
+async def get_public_offer(
+    slug: str,
+    request: Request,
+    format: str | None = None,
+    download: int | None = None,
+):
+    """Публичная оферта: для 'offer'/'platform' отдаёт оферту сервиса, для бота — оферту клиента."""
+    if slug.lower() in PLATFORM_OFFER_SLUGS:
+        return _serve_platform_offer(format=format, download=download)
     """Публичная оферта бота: slug случайный и привязан к одному боту."""
     from aiogram import Bot
     from services import offer_document as offer_doc

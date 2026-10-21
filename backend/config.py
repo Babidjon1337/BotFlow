@@ -61,7 +61,8 @@ SAAS_BOT_BASE_PRICE_RUB = int(os.getenv("SAAS_BOT_BASE_PRICE_RUB", "990"))
 
 # Рубильник оплаты для тестового периода: пока false, checkout запрещён,
 # а Mini App скрывает кнопки оплаты. Доступ тестерам выдаётся вручную.
-BILLING_ENABLED = os.getenv("BILLING_ENABLED", "false").lower() == "true"
+_billing_default = "true" if (SAAS_YOOKASSA_SHOP_ID and SAAS_YOOKASSA_SECRET_KEY) else "false"
+BILLING_ENABLED = os.getenv("BILLING_ENABLED", _billing_default).lower() == "true"
 
 # Administrative access is always decided by the API.  Keep this value in the
 # environment, never in the Mini App bundle.
