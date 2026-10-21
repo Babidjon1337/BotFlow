@@ -52,12 +52,23 @@ import {
 type AdminSection = "overview" | "users" | "payments" | "operations" | "system" | "access-links" | "logs";
 type LoadState = "idle" | "loading" | "ready" | "error";
 
-const sectionGroups: Array<{ label: string; items: Array<{ id: AdminSection; label: string }> }> = [
-  { label: "Работа", items: [{ id: "overview", label: "Обзор" }, { id: "users", label: "Пользователи" }] },
-  { label: "Оплаты", items: [{ id: "payments", label: "Подписки BotFlow" }, { id: "operations", label: "Проблемы выдачи" }] },
-  { label: "Сервис", items: [{ id: "access-links", label: "Ссылки доступа" }, { id: "system", label: "Состояние и действия" }, { id: "logs", label: "Логи приложения" }] },
+const sections: Array<{ id: AdminSection; label: string }> = [
+  { id: "overview", label: "Обзор" },
+  { id: "users", label: "Пользователи" },
+  { id: "payments", label: "Оплаты" },
+  { id: "operations", label: "Проблемы выдачи" },
+  { id: "system", label: "Система" },
+  { id: "access-links", label: "Ссылки доступа" },
+  { id: "logs", label: "Логи" },
 ];
-const sections = sectionGroups.flatMap((group) => group.items);
+const navigation: Array<{ id: AdminSection; label: string; activeFor?: AdminSection[] }> = [
+  { id: "overview", label: "Обзор" },
+  { id: "users", label: "Пользователи" },
+  { id: "payments", label: "Оплаты", activeFor: ["payments", "operations"] },
+  { id: "system", label: "Система" },
+  { id: "access-links", label: "Ссылки доступа" },
+  { id: "logs", label: "Логи" },
+];
 
 const formatAmount = (amount: number, currency: string = "RUB") =>
   new Intl.NumberFormat("ru-RU", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
@@ -311,7 +322,7 @@ export function AdminStats() {
   }, [refreshSection, section]);
 
   const activeSection = useMemo(
-    () => sections.find((item) => item.id === section)?.label ?? "Админ",
+    () => section === "operations" ? "Оплаты" : sections.find((item) => item.id === section)?.label ?? "Админ",
     [section],
   );
 
@@ -714,11 +725,9 @@ export function AdminStats() {
           </button>
         </div>
 
-        <nav className="mt-6 flex flex-wrap gap-x-5 gap-y-3 border-b border-[var(--color-border)] pb-3" aria-label="Разделы администрирования">
-          {sectionGroups.map((group) => <div key={group.label} className="min-w-0">
-            <p className="mb-1 px-2 text-[10px] font-bold uppercase tracking-wide text-[var(--color-foreground-tertiary)]">{group.label}</p>
-            <div className="flex flex-wrap gap-1">{group.items.map((item) => {
-            const active = section === item.id;
+        <nav className="mt-6 flex flex-wrap gap-1 border-b border-[var(--color-border)] pb-2" aria-label="Разделы администрирования">
+          {navigation.map((item) => {
+            const active = (item.activeFor ?? [item.id]).includes(section);
             return (
               <button
                 key={item.id}
@@ -739,8 +748,11 @@ export function AdminStats() {
                 {item.label}
               </button>
             );
-          })}</div></div>)}
+          })}
         </nav>
+        {(section === "payments" || section === "operations") ? <nav className="mt-3 flex gap-1 rounded-xl bg-[var(--color-surface-2)] p-1" aria-label="Разделы оплат">
+          {([{ id: "payments", label: "История оплат" }, { id: "operations", label: "Проблемы выдачи" }] as const).map((item) => <button key={item.id} type="button" onClick={() => setSection(item.id)} aria-current={section === item.id ? "page" : undefined} className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition-colors ${section === item.id ? "bg-[var(--color-surface)] text-[var(--color-foreground)] shadow-sm" : "text-[var(--color-foreground-secondary)] hover:text-[var(--color-foreground)]"}`}>{item.label}</button>)}
+        </nav> : null}
       </header>
 
       {state === "error" ? <ErrorState message={error ?? "Не удалось загрузить данные."} onRetry={refreshSection} /> : null}
@@ -913,12 +925,21 @@ function UsersSection({
                 {users.map((user) => (
                   <tr
                     key={user.id}
-                    className="group border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-surface-2)]/60 transition-colors"
+                    onClick={() => onOpenProfile(user)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onOpenProfile(user);
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-label={`Открыть профиль ${user.username ? `@${user.username}` : `Telegram ${user.telegram_id}`}`}
+                    className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 transition-colors hover:bg-[var(--color-surface-2)]/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-primary)]"
                   >
                     <td className="py-4">
-                      <button type="button" onClick={() => onOpenProfile(user)} className="rounded font-semibold tabular-nums text-[var(--color-foreground)] hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+                      <span className="font-semibold tabular-nums text-[var(--color-foreground)] group-hover:text-[var(--color-primary)]">
                         {user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}
-                      </button>
+                      </span>
                       <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
                         Telegram ID: {user.telegram_id} · BotFlow #{user.id}
                       </p>
@@ -956,7 +977,7 @@ function UsersSection({
                       {formatDate(user.created_at)}
                     </td>
                     <td className="py-4 text-right">
-                      <button type="button" onClick={() => onOpenProfile(user)} aria-label={`Открыть профиль ${user.username ? `@${user.username}` : user.telegram_id}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"><ChevronRight size={18} aria-hidden="true" /></button>
+                      <span className="ml-auto flex h-9 w-9 items-center justify-center rounded-lg text-[var(--color-foreground-secondary)] group-hover:text-[var(--color-primary)]"><ChevronRight size={18} aria-hidden="true" /></span>
                     </td>
                   </tr>
                 ))}
@@ -984,12 +1005,24 @@ function UserCard({
   onOpenProfile: (user: AdminUser) => void;
 }) {
   return (
-    <article className="group rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm transition-all hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-2)]/50">
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={`Открыть профиль ${user.username ? `@${user.username}` : `Telegram ${user.telegram_id}`}`}
+      onClick={() => onOpenProfile(user)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenProfile(user);
+        }
+      }}
+      className="group cursor-pointer rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm transition-colors hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-surface-2)]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <button type="button" onClick={() => onOpenProfile(user)} className="truncate text-left font-semibold tabular-nums text-[var(--color-foreground)] group-hover:text-[var(--color-primary)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+          <span className="truncate text-left font-semibold tabular-nums text-[var(--color-foreground)] group-hover:text-[var(--color-primary)] transition-colors">
             {user.username ? `@${user.username.replace(/^@/, "")}` : `ID ${user.telegram_id}`}
-          </button>
+          </span>
           <p className="mt-1 text-xs text-[var(--color-foreground-secondary)]">
             Telegram ID: {user.telegram_id} · BotFlow #{user.id}
           </p>
@@ -1031,9 +1064,9 @@ function UserCard({
         </div>
       </dl>
       <div className="mt-4 border-t border-[var(--color-border)]/60 pt-3">
-        <button type="button" onClick={() => onOpenProfile(user)} className="inline-flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-2 text-xs font-semibold text-[var(--color-primary)] hover:bg-[var(--color-surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]">
+        <span className="inline-flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-2 text-xs font-semibold text-[var(--color-primary)]">
           Открыть профиль <ChevronRight size={15} aria-hidden="true" />
-        </button>
+        </span>
       </div>
     </article>
   );
@@ -1125,21 +1158,21 @@ function UserProfileScreen({
           <ChevronRight size={13} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
           <span className="text-[11px] font-semibold text-[var(--color-foreground)]">{displayName}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => onOpenGrantUser(user, bots)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-3 text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[var(--color-primary)] px-2.5 text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90 sm:px-3"
           >
             <Gift size={13} aria-hidden="true" />
-            +3 мес на бота
+            <span className="hidden sm:inline">Выдать 3 месяца</span><span className="sm:hidden">+3 мес.</span>
           </button>
           <button
             type="button"
             onClick={onManageAccess}
-            className="h-8 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-[11px] font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)]"
+            className={`h-9 rounded-lg border px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--color-surface-2)] sm:px-3 ${user.is_disabled ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground)]"}`}
           >
-            {user.is_disabled ? "Разблокировать" : "Ограничить доступ"}
+            {user.is_disabled ? "Разблокировать" : "Ограничить"}
           </button>
         </div>
       </div>
@@ -1199,7 +1232,7 @@ function UserProfileScreen({
           <div className="grid gap-3 sm:grid-cols-3">
             <details className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <summary className="flex min-h-8 cursor-pointer list-none items-center justify-between gap-3 rounded-lg text-sm font-bold text-[var(--color-foreground)] marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] [&::-webkit-details-marker]:hidden">
-                <span className="inline-flex items-center gap-2"><Gift size={16} className="text-[var(--color-primary)]" aria-hidden="true" />Дополнительные привилегии</span>
+                <span className="inline-flex min-w-0 items-center gap-2"><Gift size={16} className="shrink-0 text-[var(--color-primary)]" aria-hidden="true" /><span>Доп. привилегии</span><span className="hidden truncate text-[10px] font-medium text-[var(--color-foreground-tertiary)] sm:inline">· VIP {user.is_vip_permanent ? "∞" : user.is_vip ? "активен" : "нет"} · слоты {freeAvail}/{freeTotal}</span></span>
                 <ChevronRight size={16} className="transition-transform group-open:rotate-90" aria-hidden="true" />
               </summary>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1307,13 +1340,6 @@ function UserProfileScreen({
                     : "Стандартный доступ к платформе, созданию и настройке воронок."}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={onManageAccess}
-                className="h-7 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 text-[11px] font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface)]"
-              >
-                {user.is_disabled ? "Разблокировать вход" : "Ограничить доступ"}
-              </button>
             </section>
           </div>
 
@@ -1820,7 +1846,7 @@ function AdminBotRow({
 
   return (
     <article className={`rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)]/40 p-4 transition-all hover:bg-[var(--color-surface-2)]/70 ${menuOpen ? "relative z-30" : ""}`}>
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0 xl:pr-4">
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="truncate text-base font-bold text-[var(--color-foreground)]">
@@ -1865,41 +1891,27 @@ function AdminBotRow({
           </p>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           {/* Кнопка прямого перехода в конструктор воронки */}
           {onEditFunnel ? (
             <button
               type="button"
               onClick={() => onEditFunnel(bot)}
               disabled={busy}
-              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary-soft)] px-3 text-xs font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+              className="inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg border border-[var(--color-primary)] bg-[var(--color-primary-soft)] px-2.5 text-xs font-bold text-[var(--color-primary)] transition-colors hover:bg-[var(--color-primary)] hover:text-white disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
               title="Открыть конструктор и настроить сценарий этого бота"
             >
               <Workflow size={15} aria-hidden="true" />
-              Заполнить воронку
+              Сценарий
             </button>
           ) : null}
 
-          {/* Кнопка перехода в платёжки и токен */}
-          {onOpenIntegrations ? (
-            <button
-              type="button"
-              onClick={() => onOpenIntegrations(bot)}
-              disabled={busy}
-              className="inline-flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-600 dark:text-emerald-400 transition-colors hover:bg-emerald-500 hover:text-white disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-              title="Подключить токен бота и платёжную систему (ЮKassa / Robokassa / Prodamus)"
-            >
-              <CreditCard size={15} aria-hidden="true" />
-              Платёжка и токен
-            </button>
-          ) : null}
-
-          {/* Кнопка запуска (в формате как в сценарии воронки) */}
+          {/* Кнопка запуска */}
           <button
             type="button"
             onClick={() => onAction(bot, isActive ? "stop" : "start")}
             disabled={busy || bot.status === "archived"}
-            className="size-10 rounded-xl flex items-center justify-center border transition-colors shrink-0 disabled:opacity-60"
+            className="size-9 rounded-lg flex items-center justify-center border transition-[background-color,border-color,color,transform] duration-150 ease-out active:scale-95 motion-reduce:transition-none shrink-0 disabled:opacity-60"
             style={{
               borderColor: isActive
                 ? "var(--color-success-soft)"
@@ -1913,12 +1925,9 @@ function AdminBotRow({
             }}
             title={isActive ? "Остановить бота" : "Запустить бота"}
             aria-label={isActive ? "Остановить бота" : "Запустить бота"}
+            aria-busy={busy || undefined}
           >
-            {busy ? (
-              <div className="animate-spin size-4 border-2 border-current border-t-transparent rounded-full" />
-            ) : (
-              <Power size={17} />
-            )}
+            {busy ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" aria-hidden="true" /> : <Power size={16} aria-hidden="true" />}
           </button>
 
           {/* Кнопка [ ••• ] с выпадающими действиями */}
@@ -1929,7 +1938,7 @@ function AdminBotRow({
               disabled={busy}
               aria-label="Дополнительные действия"
               aria-expanded={menuOpen}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground-secondary)] transition-colors hover:bg-[var(--color-surface-2)] hover:text-[var(--color-foreground)] disabled:opacity-60"
             >
               <MoreHorizontal size={16} aria-hidden="true" />
             </button>
@@ -1949,6 +1958,8 @@ function AdminBotRow({
                   >
                     <ScanSearch size={14} className="text-[var(--color-foreground-secondary)]" /> Проверить готовность
                   </button>
+
+                  {onOpenIntegrations ? <button type="button" onClick={() => { setMenuOpen(false); onOpenIntegrations(bot); }} disabled={busy} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-surface-2)] disabled:opacity-60"><CreditCard size={14} className="text-emerald-600 dark:text-emerald-400" />Платёжка и токен</button> : null}
 
                   {/* • + 3 мес */}
                   {onOpenGrant ? (
