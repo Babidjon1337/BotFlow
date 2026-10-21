@@ -295,6 +295,11 @@ export default function App() {
       };
     }
 
+    if (resolvedRoute.level === 'account' && resolvedRoute.tab === 'admin') {
+      // Админка управляет кнопкой «Назад» внутри себя
+      return;
+    }
+
     backButton.hide();
   }, [appState.activeSheet, appState.activeBot, setSheet, resolvedRoute, switchingBotId, isBotCreating, adminOrigin]);
 

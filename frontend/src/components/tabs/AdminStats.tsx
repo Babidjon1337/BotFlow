@@ -122,7 +122,15 @@ function auditSummary(entry: AdminAuditEntry): string | null {
 export function AdminStats() {
   const { setToastMessage, setToastType, setActiveTab, selectBot, setSheet, setAdminOrigin } = useAppState();
   const { showConfirm } = useAlert();
-  const [section, setSection] = useState<AdminSection>("overview");
+  const [section, setSectionState] = useState<AdminSection>(() => {
+    const saved = sessionStorage.getItem("botflow_admin_section");
+    return (saved as AdminSection) || "overview";
+  });
+  const setSection = useCallback((next: AdminSection) => {
+    setSectionState(next);
+    sessionStorage.setItem("botflow_admin_section", next);
+  }, []);
+
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [payments, setPayments] = useState<AdminSaasPayment[]>([]);
@@ -132,7 +140,14 @@ export function AdminStats() {
   const [accessLinks, setAccessLinks] = useState<AccessLink[]>([]);
   const [state, setState] = useState<LoadState>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [usersQuery, setUsersQuery] = useState("");
+  const [usersQuery, setUsersQueryState] = useState(() => {
+    return sessionStorage.getItem("botflow_admin_users_query") || "";
+  });
+  const setUsersQuery = useCallback((next: string) => {
+    setUsersQueryState(next);
+    sessionStorage.setItem("botflow_admin_users_query", next);
+  }, []);
+
   const [actionUser, setActionUser] = useState<AdminUser | null>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUserDetail | null>(null);
   const [selectedUserState, setSelectedUserState] = useState<LoadState>("idle");
@@ -159,7 +174,6 @@ export function AdminStats() {
           setToastMessage(result.message || "Не удалось открыть воронку бота.");
           return;
         }
-        setSelectedUser(null);
         setActiveTab("build");
         setToastType("success");
         setToastMessage(`Открыт сценарий бота «${bot.display_name}».`);
@@ -181,7 +195,6 @@ export function AdminStats() {
           setToastMessage(result.message || "Не удалось открыть интеграции бота.");
           return;
         }
-        setSelectedUser(null);
         setActiveTab("integrations");
         setToastType("success");
         setToastMessage(`Открыты интеграции и касса бота «${bot.display_name}».`);
@@ -203,7 +216,6 @@ export function AdminStats() {
           setToastMessage(result.message || "Не удалось открыть воркспейс бота.");
           return;
         }
-        setSelectedUser(null);
         setActiveTab("home");
         setToastType("success");
         setToastMessage(`Открыт воркспейс бота «${bot.display_name}».`);
@@ -225,7 +237,6 @@ export function AdminStats() {
           setToastMessage(result.message || "Не удалось открыть настройки бота.");
           return;
         }
-        setSelectedUser(null);
         setActiveTab("build");
         setSheet("bot_settings");
       } catch {
@@ -316,9 +327,59 @@ export function AdminStats() {
   }, [setToastMessage, setToastType]);
 
   const openUserProfile = useCallback((user: AdminUser) => {
+    sessionStorage.setItem("botflow_admin_user_id", String(user.id));
     setSelectedUser({ user, bots: [] });
     void loadUserProfile(user.id);
   }, [loadUserProfile]);
+
+  const closeUserProfile = useCallback(() => {
+    sessionStorage.removeItem("botflow_admin_user_id");
+    setSelectedUser(null);
+    setSelectedUserState("idle");
+    setSelectedUserError(null);
+  }, []);
+
+  // Восстанавливаем открытого пользователя при возвращении в админку
+  useEffect(() => {
+    const savedUserId = sessionStorage.getItem("botflow_admin_user_id");
+    if (savedUserId && section === "users") {
+      void loadUserProfile(Number(savedUserId));
+    }
+  }, [loadUserProfile, section]);
+
+  // Управление нативной кнопкой «Назад» Telegram в админке
+  useEffect(() => {
+    const tg = (window as Window & { Telegram?: { WebApp?: { BackButton?: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void } } } }).Telegram?.WebApp;
+    const backButton = tg?.BackButton;
+    if (!backButton) return;
+
+    const canGoBack = Boolean(
+      selectedUser || actionUser || grantTarget || isCreateBotForUserOpen || section !== "overview"
+    );
+
+    if (canGoBack) {
+      backButton.show();
+      const handleBack = () => {
+        if (actionUser) {
+          setActionUser(null);
+        } else if (grantTarget) {
+          setGrantTarget(null);
+        } else if (isCreateBotForUserOpen) {
+          setIsCreateBotForUserOpen(false);
+        } else if (selectedUser) {
+          closeUserProfile();
+        } else if (section !== "overview") {
+          setSection("overview");
+        }
+      };
+      backButton.onClick(handleBack);
+      return () => {
+        backButton.offClick(handleBack);
+      };
+    } else {
+      backButton.hide();
+    }
+  }, [selectedUser, actionUser, grantTarget, isCreateBotForUserOpen, section, closeUserProfile, setSection]);
 
   const applyUserAction = useCallback(async (data: { stopActiveBots?: boolean }) => {
     if (!actionUser) return;
@@ -631,6 +692,16 @@ export function AdminStats() {
       <header className="mb-6 border-b border-[var(--color-border)] pb-5 md:mb-8 md:pb-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="min-w-0">
+            {section !== "overview" && !selectedUser && (
+              <button
+                type="button"
+                onClick={() => setSection("overview")}
+                className="mb-1.5 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--color-primary)] transition-colors hover:underline"
+              >
+                <ArrowLeft size={13} aria-hidden="true" />
+                Назад к обзору
+              </button>
+            )}
             <p className="kicker">Админ</p>
             <h1 id="admin-title" className="mt-2 text-page-title font-extrabold text-[var(--color-foreground)]">
               {activeSection}
@@ -658,7 +729,9 @@ export function AdminStats() {
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  setSelectedUser(null);
+                  if (item.id !== "users") {
+                    closeUserProfile();
+                  }
                   setSection(item.id);
                 }}
                 aria-current={active ? "page" : undefined}
@@ -685,11 +758,7 @@ export function AdminStats() {
             state={selectedUserState}
             error={selectedUserError}
             busyBotId={botActionId}
-            onClose={() => {
-              setSelectedUser(null);
-              setSelectedUserState("idle");
-              setSelectedUserError(null);
-            }}
+            onClose={closeUserProfile}
             onRetry={() => void loadUserProfile(selectedUser.user.id)}
             onManageAccess={() => setActionUser(selectedUser.user)}
             onAction={requestBotAction}
