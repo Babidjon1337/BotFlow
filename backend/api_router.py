@@ -3152,7 +3152,7 @@ async def submit_checkout_payment(payment_id: str, body: CheckoutPayRequest):
     import re
     from database.requests.client_payment_rq import get_client_payment
     from database.requests.user_rq import update_lead_email
-    from services.payment_link import generate_payment_link
+    from services.payment_link import generate_payment_link, RecurringPaymentDisabledError
 
     clean_email = (body.email or "").strip().lower()
     if not clean_email or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean_email):
@@ -3183,15 +3183,31 @@ async def submit_checkout_payment(payment_id: str, body: CheckoutPayRequest):
     description = f"{tariff_name}: {tariff_desc}".strip(": ") or "Оплата доступа"
     lead_tg_id = payment.lead.telegram_id if payment.lead else 0
 
-    payment_url = await generate_payment_link(
-        bot_config=payment.bot,
-        amount=float(payment.amount),
-        description=description,
-        lead_telegram_id=lead_tg_id,
-        client_payment=payment,
-        installments=tariff.get("installments", False),
-        customer_email=clean_email,
-    )
+    try:
+        payment_url = await generate_payment_link(
+            bot_config=payment.bot,
+            amount=float(payment.amount),
+            description=description,
+            lead_telegram_id=lead_tg_id,
+            client_payment=payment,
+            installments=tariff.get("installments", False),
+            customer_email=clean_email,
+        )
+    except RecurringPaymentDisabledError as exc:
+        logger.warning(
+            "Платёж %s отклонён: рекуррентные платежи не включены в магазине бота %s (%s)",
+            payment.id,
+            payment.bot_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Оплата по подписке временно недоступна для этого магазина. "
+                "Владелец бота уже оповещён о необходимости включить регулярные списания в ЮKassa. "
+                "Пожалуйста, свяжитесь с автором бота или попробуйте позже."
+            ),
+        )
 
     if not payment_url:
         logger.error("Не удалось сформировать ссылку ЮKassa для платежа %s с email %s", payment.id, clean_email)

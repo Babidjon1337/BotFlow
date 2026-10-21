@@ -39,6 +39,106 @@ class PaymentDeliveryError(RuntimeError):
     """Paid access could not be delivered and must be retried."""
 
 
+class RecurringPaymentDisabledError(Exception):
+    """Raised when payment provider rejects recurring subscription charge because it is not enabled on the merchant account."""
+
+    def __init__(self, message: str, provider: str = "yookassa", shop_id: str | None = None):
+        super().__init__(message)
+        self.message = message
+        self.provider = provider
+        self.shop_id = shop_id
+
+
+_last_recurring_alert: dict[int, float] = {}
+
+
+async def notify_bot_owner_recurring_disabled(
+    bot_config: Any,
+    client_payment: Any | None = None,
+    shop_id: str | None = None,
+    provider: str = "yookassa",
+) -> None:
+    """Notify the bot owner about recurring payments being disabled on their payment account."""
+    import time
+    from database.models import async_session, User
+    from services.billing_notifications import notify_billing_user
+
+    bot_id = getattr(bot_config, "id", None)
+    now = time.time()
+    # Rate limit alerts to once per 10 minutes per bot to prevent spamming
+    if bot_id and (now - _last_recurring_alert.get(bot_id, 0)) < 600:
+        logger.info("Уведомление о рекурренте для бота %s уже отправлялось недавно, пропускаем дубль", bot_id)
+        return
+    if bot_id:
+        _last_recurring_alert[bot_id] = now
+
+    owner_tg_id = None
+    if getattr(bot_config, "owner", None) and getattr(bot_config.owner, "telegram_id", None):
+        owner_tg_id = bot_config.owner.telegram_id
+    elif getattr(bot_config, "owner_id", None):
+        try:
+            async with async_session() as session:
+                user = await session.get(User, bot_config.owner_id)
+                if user:
+                    owner_tg_id = user.telegram_id
+        except Exception as e:
+            logger.warning("Не удалось загрузить владельца бота %s: %s", bot_id, e)
+
+    bot_name = getattr(bot_config, "display_name", None) or getattr(bot_config, "username", None) or f"ID {bot_id}"
+    tariff_name = "с подпиской"
+    amount_str = ""
+    if client_payment:
+        snap = getattr(client_payment, "tariff_snapshot", None) or {}
+        tariff_name = snap.get("name") or "с подпиской"
+        amount = getattr(client_payment, "amount", None)
+        if amount:
+            amount_str = f" ({float(amount):,.0f} ₽)"
+
+    shop_info = f" (Shop ID: <code>{shop_id}</code>)" if shop_id else ""
+
+    text = (
+        f"⚠️ <b>Ошибка оплаты в боте «{bot_name}»</b>\n\n"
+        f"Клиент попытался оплатить тариф «<b>{tariff_name}</b>»{amount_str}, "
+        f"но платёж был отклонён платёжной системой <b>ЮKassa</b>{shop_info}.\n\n"
+        f"❌ <b>Причина:</b> В настройках вашего магазина ЮKassa <b>не включены рекуррентные платежи (подписки)</b>.\n\n"
+        f"🛠 <b>Что нужно сделать (варианты решения):</b>\n\n"
+        f"1️⃣ <b>Подключить рекуррент в ЮKassa (рекомендуется):</b>\n"
+        f"Напишите вашему менеджеру в ЮKassa или в поддержку ЮMoney на <code>merchants@yoomoney.ru</code>:\n"
+        f"<i>«Здравствуйте! Прошу подключить возможность приёма рекуррентных платежей (автосписания/подписки) для магазина {shop_id or ''}»</i>.\n"
+        f"Обычно подключение занимает 1–2 рабочих дня.\n\n"
+        f"2️⃣ <b>Сделать тариф разовым платежом:</b>\n"
+        f"Если вам не нужны автосписания каждый месяц, откройте конструктор бота, "
+        f"выберите блок тарифов и измените тип платежа этого тарифа с <i>«Рекуррентный (подписка)»</i> на <i>«Разовый»</i>.\n\n"
+        f"3️⃣ <b>Использовать тестовую кассу:</b>\n"
+        f"Если вы сейчас тестируете бота, подключите тестовый магазин ЮKassa (в тестовых кассах рекуррентные списания работают сразу)."
+    )
+
+    if owner_tg_id:
+        try:
+            await notify_billing_user(owner_tg_id, text)
+            logger.info("Уведомление об ошибке рекуррента успешно отправлено владельцу %s бота %s", owner_tg_id, bot_id)
+        except Exception as e:
+            logger.warning("Не удалось отправить сообщение владельцу %s: %s", owner_tg_id, e)
+
+    try:
+        from services.event_bus import event_bus
+        if owner_tg_id:
+            event_bus.publish_user(
+                owner_tg_id,
+                "bot:payment_error",
+                {
+                    "bot_id": bot_id,
+                    "error_type": "recurring_disabled",
+                    "provider": provider,
+                    "shop_id": shop_id,
+                    "tariff_name": tariff_name,
+                    "message": "В ЮKassa не включены рекуррентные платежи",
+                },
+            )
+    except Exception:
+        pass
+
+
 def _clean_payment_description(description: str, max_length: int = 120) -> str:
     """Strip HTML tags, unescape entities, collapse whitespace, and truncate safely."""
     text = re.sub(r"<[^>]+>", " ", description)
@@ -350,67 +450,48 @@ async def _create_yookassa_link(
                 return data["confirmation"]["confirmation_url"]
 
             if (receipt_resp.status_code in (400, 403)) and receipt_payload.get("save_payment_method"):
-                logger.warning(
-                    "ЮKassa с чеком отклонила save_payment_method (%s). Повторяем как разовый платёж с чеком...",
-                    receipt_resp.text[:200],
-                )
-                receipt_payload.pop("save_payment_method", None)
-                receipt_headers["Idempotence-Key"] = str(uuid.uuid4())
-                retry_resp = await _safe_http_request(
-                    "post",
-                    url,
-                    json=receipt_payload,
-                    headers=receipt_headers,
-                    auth=(str(shop_id), str(api_key)),
-                )
-                if retry_resp.status_code == 200:
-                    data = retry_resp.json()
-                    if client_payment:
-                        await set_client_payment_provider_id(client_payment.id, str(data["id"]))
-                    return data["confirmation"]["confirmation_url"]
+                receipt_resp_lower = receipt_resp.text.lower()
+                if (
+                    "recurring" in receipt_resp_lower
+                    or "forbidden" in receipt_resp_lower
+                    or "save_payment_method" in receipt_resp_lower
+                    or "can't make recurring" in receipt_resp_lower
+                ):
+                    logger.warning("ЮKassa с чеком отклонила рекуррентный платёж: %s", receipt_resp.text[:200])
+                    await notify_bot_owner_recurring_disabled(
+                        bot_config, client_payment, shop_id=str(shop_id), provider="yookassa"
+                    )
+                    raise RecurringPaymentDisabledError(
+                        "Рекуррентные платежи не подключены в магазине ЮKassa",
+                        provider="yookassa",
+                        shop_id=str(shop_id),
+                    )
 
         # 2. Если магазин отклонил save_payment_method (400 или 403 Forbidden "This store can't make recurring payments")
         elif (response.status_code in (400, 403)) and payload.get("save_payment_method"):
-            logger.warning(
-                "ЮKassa отклонила save_payment_method (status=%s: %s). Повторяем запрос как разовый платёж...",
-                response.status_code,
-                response.text[:200],
-            )
-            fallback_payload = dict(payload)
-            fallback_payload.pop("save_payment_method", None)
-            fallback_headers = dict(headers)
-            fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
-            fallback_resp = await _safe_http_request(
-                "post",
-                url,
-                json=fallback_payload,
-                headers=fallback_headers,
-                auth=(str(shop_id), str(api_key)),
-            )
-            if fallback_resp.status_code == 200:
-                data = fallback_resp.json()
-                if client_payment:
-                    await set_client_payment_provider_id(client_payment.id, str(data["id"]))
-                return data["confirmation"]["confirmation_url"]
-            if fallback_resp.status_code == 400 and "receipt" in fallback_resp.text.lower():
-                fallback_payload["receipt"] = _build_yookassa_receipt(
-                    description, amount, telegram_id, bot_config, creds, customer_email=customer_email
+            if (
+                "recurring" in resp_lower
+                or "forbidden" in resp_lower
+                or "save_payment_method" in resp_lower
+                or "can't make recurring" in resp_lower
+            ):
+                logger.warning(
+                    "ЮKassa отклонила рекуррентный платёж (status=%s: %s). Оповещаем владельца бота...",
+                    response.status_code,
+                    response.text[:200],
                 )
-                fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
-                retry_resp = await _safe_http_request(
-                    "post",
-                    url,
-                    json=fallback_payload,
-                    headers=fallback_headers,
-                    auth=(str(shop_id), str(api_key)),
+                await notify_bot_owner_recurring_disabled(
+                    bot_config, client_payment, shop_id=str(shop_id), provider="yookassa"
                 )
-                if retry_resp.status_code == 200:
-                    data = retry_resp.json()
-                    if client_payment:
-                        await set_client_payment_provider_id(client_payment.id, str(data["id"]))
-                    return data["confirmation"]["confirmation_url"]
+                raise RecurringPaymentDisabledError(
+                    "Рекуррентные платежи не подключены в магазине ЮKassa",
+                    provider="yookassa",
+                    shop_id=str(shop_id),
+                )
 
         logger.error(f"Ошибка API ЮKassa: {response.text}")
+    except RecurringPaymentDisabledError:
+        raise
     except Exception as e:
         logger.error(f"Сетевой сбой при обращении к ЮKassa: {e}")
     return None

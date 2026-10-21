@@ -28,7 +28,7 @@ from keyboard.user_kb import *
 from loggers import logger
 
 # ⚡️ Подключаем наш сервис оплат
-from services.payment_link import generate_payment_link
+from services.payment_link import generate_payment_link, RecurringPaymentDisabledError
 from services.funnel_message import send_funnel_node_message, to_telegram_html
 from services.manager_link import build_manager_deep_link
 from database.requests.client_payment_rq import create_client_payment
@@ -961,14 +961,28 @@ async def _send_tariff_invoice(
         from services.payment_link import get_checkout_page_url
         payment_url = get_checkout_page_url(client_payment.id)
     else:
-        payment_url = await generate_payment_link(
-            bot_config=bot_config,
-            amount=amount,
-            description=f"{tariff_name}: {tariff_description}".strip(": "),
-            lead_telegram_id=callback.from_user.id,
-            client_payment=client_payment,
-            installments=tariff_snapshot.get("installments", False),
-        )
+        try:
+            payment_url = await generate_payment_link(
+                bot_config=bot_config,
+                amount=amount,
+                description=f"{tariff_name}: {tariff_description}".strip(": "),
+                lead_telegram_id=callback.from_user.id,
+                client_payment=client_payment,
+                installments=tariff_snapshot.get("installments", False),
+            )
+        except RecurringPaymentDisabledError:
+            error_text = (
+                "⚠️ Оплата по подписке временно недоступна для этого тарифа. "
+                "Владелец бота уже оповещён о необходимости включить регулярные списания в кассе."
+            )
+            try:
+                await callback.answer(error_text, show_alert=True)
+            except Exception:
+                try:
+                    await callback.message.answer(error_text)
+                except Exception:
+                    pass
+            return
     if not payment_url:
         error_text = "Не удалось создать ссылку на оплату. Проверьте настройки кассы и повторите попытку."
         try:
@@ -1475,13 +1489,22 @@ async def process_manual_invoice_choice(callback: CallbackQuery):
 
             url = get_checkout_page_url(payment.id)
         else:
-            url = await generate_payment_link(
-                payment.bot,
-                amount,
-                f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
-                callback.from_user.id,
-                client_payment=payment,
-            )
+            try:
+                url = await generate_payment_link(
+                    payment.bot,
+                    amount,
+                    f"{tariff.get('name', 'Тариф')}: {tariff.get('description', '')}".strip(": "),
+                    callback.from_user.id,
+                    client_payment=payment,
+                )
+            except RecurringPaymentDisabledError:
+                await _remove_callback_message(callback)
+                await _send_payment_message(
+                    callback,
+                    "⚠️ Оплата по подписке временно недоступна для этого тарифа. Владелец бота уже оповещён о необходимости включить регулярные списания в кассе.",
+                    InlineKeyboardMarkup(inline_keyboard=[]),
+                )
+                return
         if not url:
             await _remove_callback_message(callback)
             await _send_payment_message(

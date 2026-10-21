@@ -141,20 +141,25 @@ class YooKassaProvider(PaymentProvider):
                     )
 
             if (resp.status_code in (400, 403)) and payload.get("save_payment_method"):
-                logger.warning(
-                    "ЮKassa отклонила save_payment_method (%s). Повторяем как разовый платёж...",
-                    resp.text[:200],
-                )
-                fallback_payload = dict(payload)
-                fallback_payload.pop("save_payment_method", None)
-                fallback_headers = dict(headers)
-                fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(
-                        f"{self.BASE_URL}/payments",
-                        json=fallback_payload,
-                        headers=fallback_headers,
-                        auth=(shop_id, secret_key),
+                resp_lower = resp.text.lower()
+                if (
+                    "recurring" in resp_lower
+                    or "forbidden" in resp_lower
+                    or "save_payment_method" in resp_lower
+                    or "can't make recurring" in resp_lower
+                ):
+                    logger.warning("ЮKassa отклонила рекуррентный платёж: %s", resp.text[:200])
+                    from services.payment_link import (
+                        notify_bot_owner_recurring_disabled,
+                        RecurringPaymentDisabledError,
+                    )
+                    await notify_bot_owner_recurring_disabled(
+                        bot_config, client_payment=None, shop_id=shop_id, provider="yookassa"
+                    )
+                    raise RecurringPaymentDisabledError(
+                        "Рекуррентные платежи не подключены в ЮKassa",
+                        provider="yookassa",
+                        shop_id=shop_id,
                     )
 
         if resp.status_code != 200:

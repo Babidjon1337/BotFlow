@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import joinedload
 
-from database.models import ClientPayment, Lead, ScheduledTask, Tariff, async_session
+from database.models import BotConfig, ClientPayment, Lead, ScheduledTask, Tariff, async_session
 
 
 class ClientPaymentInvariantError(ValueError):
@@ -135,7 +135,10 @@ async def get_client_payment(payment_id: uuid.UUID | str) -> ClientPayment | Non
     async with async_session() as session:
         return await session.scalar(
             select(ClientPayment)
-            .options(joinedload(ClientPayment.bot), joinedload(ClientPayment.lead))
+            .options(
+                joinedload(ClientPayment.bot).joinedload(BotConfig.owner),
+                joinedload(ClientPayment.lead),
+            )
             .where(ClientPayment.id == normalized_id)
         )
 
