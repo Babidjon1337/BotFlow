@@ -3069,6 +3069,7 @@ async def get_checkout_info(payment_id: str):
         "has_media": bool(photo_fid),
         "media_url": f"/api/checkout/{payment.id}/media" if photo_fid else None,
         "lead_email": getattr(payment.lead, "email", None),
+        "payment_provider": getattr(payment.bot, "payment_provider", None) if payment.bot else None,
         "status": payment.status,
         "offer_url": offer_url,
     }
@@ -3389,13 +3390,9 @@ async def get_bot_stats_endpoint(bot_id: int, request: Request):
         "conversion": conversion,
         "revenue": revenue,
         "funnel_data": [
-            {"name": "Старт", "value": views},
-            {"name": "Клик", "value": clicks},
-            {
-                "name": "Дожим 1",
-                "value": sum(1 for l in leads if l.current_step_id == "push1"),
-            },
-            {"name": "Оплата", "value": sales},
+            {"name": "Запуск бота (/start)", "value": views},
+            {"name": "Переход по воронке", "value": clicks},
+            {"name": "Оплата тарифа", "value": sales},
         ],
         # Keep the response shape compatible without inventing a daily history.
         "chart_data": [],

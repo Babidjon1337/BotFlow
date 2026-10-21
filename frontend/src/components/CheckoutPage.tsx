@@ -16,6 +16,7 @@ interface CheckoutInfo {
   has_media: boolean;
   media_url: string | null;
   lead_email: string | null;
+  payment_provider?: string | null;
   status: string;
   offer_url: string | null;
 }
@@ -252,7 +253,13 @@ export function CheckoutPage() {
         <div className="px-6 pt-5 pb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
           <span className="truncate max-w-[200px]">{data.bot_name}</span>
           <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full text-[11px] font-medium">
-            <ShieldCheck className="w-3.5 h-3.5" /> ЮKassa 54-ФЗ
+            <ShieldCheck className="w-3.5 h-3.5" />
+            {data.payment_provider === "robokassa"
+              ? "Robokassa"
+              : data.payment_provider === "prodamus"
+                ? "Prodamus"
+                : "ЮKassa"}
+            {" • Безопасная оплата"}
           </span>
         </div>
 
@@ -318,7 +325,7 @@ export function CheckoutPage() {
               />
             </div>
             <p className="text-xs text-slate-400 leading-normal">
-              Согласно закону 54-ФЗ электронный чек об оплате будет направлен на эту почту.
+              Электронный чек и подтверждение оплаты будут направлены на эту почту.
             </p>
           </div>
 

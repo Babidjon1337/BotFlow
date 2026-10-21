@@ -866,66 +866,108 @@ export const Home = () => {
 
       {stats && (
         <section className="card-saas p-4 sm:p-5" aria-labelledby="sales-funnel-title">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="sales-funnel-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Воронка продаж</h2>
-              <p className="mt-1 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Покажет, на каком этапе пользователи перестают двигаться к оплате.</p>
+              <h2 id="sales-funnel-title" className="text-[15px] font-semibold text-[var(--color-foreground)]">Конверсия воронки</h2>
+              <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Путь пользователя от первого перехода до подтверждённой оплаты</p>
             </div>
-            <BarChart2 size={18} className="mt-0.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-[var(--color-surface-2)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-foreground-secondary)] border border-[var(--color-border)]">
+                Конверсия в оплату: <span className="font-bold text-[var(--color-success)]">{stats.conversion}%</span>
+              </span>
+            </div>
           </div>
-          {stats.funnel_data && stats.funnel_data.length > 0 && stats.funnel_data.some(d => d.value > 0) ? (
-            <div className="mt-5 flex flex-col gap-2.5">
-              {stats.funnel_data.map((step, idx: number) => {
-                const maxFunnelValue = Math.max(...stats.funnel_data.map(d => d.value), 1);
-                const percentage = Math.max((step.value / maxFunnelValue) * 100, 2); // min 2% for visibility
-                const prevValue = idx > 0 ? stats.funnel_data[idx - 1].value : null;
-                const conversionFromPrev = prevValue ? Math.round((step.value / prevValue) * 100) : (idx === 0 ? 100 : 0);
-                
-                return (
-                  <div key={step.name} className="group relative flex flex-col gap-3 rounded-[14px] bg-[var(--color-surface)] p-4 border border-[var(--color-border)] shadow-sm hover:border-[var(--color-border-strong)] transition-all">
-                    <div className="relative z-10 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-surface-2)] shadow-xs text-[12px] font-bold text-[var(--color-foreground-tertiary)] group-hover:text-[var(--color-primary)] transition-colors">
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <span className="block text-[14px] font-semibold text-[var(--color-foreground)]">{step.name}</span>
-                          {idx > 0 && (
-                            <span className="block text-[11px] font-medium text-[var(--color-foreground-secondary)] mt-0.5">
-                              Конверсия: <span className={conversionFromPrev > 50 ? 'text-[var(--color-success)] font-medium' : 'text-[var(--color-foreground)] font-medium'}>{conversionFromPrev}%</span>
-                            </span>
-                          )}
-                        </div>
+
+          {stats.views > 0 ? (
+            <div className="mt-4 space-y-2.5">
+              {[
+                {
+                  id: "views",
+                  name: "Запуск бота (/start)",
+                  desc: "Пользователи, открывшие бота",
+                  value: stats.views,
+                  pct: 100,
+                  color: "bg-blue-500",
+                  tag: "100%",
+                },
+                {
+                  id: "clicks",
+                  name: "Переход по воронке",
+                  desc: "Нажали кнопки и перешли по шагам сценария",
+                  value: stats.clicks,
+                  pct: stats.views > 0 ? Math.min(100, Math.round((stats.clicks / stats.views) * 100)) : 0,
+                  color: "bg-indigo-500",
+                  tag: `${stats.views > 0 ? Math.round((stats.clicks / stats.views) * 100) : 0}% от старта`,
+                },
+                {
+                  id: "sales",
+                  name: "Оплата тарифа",
+                  desc: "Успешно оплатили доступ к продукту",
+                  value: stats.sales,
+                  pct: stats.views > 0 ? Math.min(100, Math.max(3, Math.round((stats.sales / stats.views) * 100))) : 0,
+                  color: "bg-emerald-500",
+                  tag: `${stats.conversion}% конверсия`,
+                },
+              ].map((step, idx) => (
+                <div
+                  key={step.id}
+                  className="rounded-[14px] border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 transition-all hover:border-[var(--color-border-strong)]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--color-surface-2)] text-[12px] font-bold text-[var(--color-foreground-secondary)]">
+                        {idx + 1}
                       </div>
-                      
-                      <div className="flex flex-col items-end text-right">
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-[20px] font-bold tracking-tight text-[var(--color-foreground)] tabular-nums">
-                            {step.value}
-                          </span>
-                          <span className="text-[12px] font-medium text-[var(--color-foreground-secondary)]">
-                            {step.value === 1 ? 'чел' : 'чел'}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] font-semibold text-[var(--color-foreground)] truncate">{step.name}</span>
+                          <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--color-foreground-secondary)]">
+                            {step.tag}
                           </span>
                         </div>
+                        <p className="text-[11px] text-[var(--color-foreground-tertiary)] truncate">{step.desc}</p>
                       </div>
                     </div>
-
-                    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-                      <div 
-                        className="absolute bottom-0 left-0 top-0 rounded-full bg-[var(--color-primary)] transition-all duration-1000 ease-out"
-                        style={{ width: `${percentage}%` }}
-                      />
+                    <div className="text-right shrink-0">
+                      <span className="text-[17px] font-bold tabular-nums text-[var(--color-foreground)]">
+                        {step.value}
+                      </span>
+                      <span className="ml-1 text-[11px] font-medium text-[var(--color-foreground-secondary)]">чел</span>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="mt-2.5 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+                    <div
+                      className={`h-full rounded-full ${step.color} transition-all duration-700 ease-out`}
+                      style={{ width: `${step.pct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {/* Финансовый итог воронки */}
+              <div className="mt-3 grid grid-cols-2 gap-2.5 pt-1">
+                <div className="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-2)]/60 p-3">
+                  <span className="text-[11px] font-medium text-[var(--color-foreground-secondary)]">Выручка воронки</span>
+                  <div className="mt-0.5 text-[16px] font-bold tabular-nums text-[var(--color-foreground)]">
+                    {stats.revenue ? `${stats.revenue.toLocaleString("ru-RU")} ₽` : "0 ₽"}
+                  </div>
+                </div>
+                <div className="rounded-[12px] border border-[var(--color-border)] bg-[var(--color-surface-2)]/60 p-3">
+                  <span className="text-[11px] font-medium text-[var(--color-foreground-secondary)]">Средний чек</span>
+                  <div className="mt-0.5 text-[16px] font-bold tabular-nums text-[var(--color-foreground)]">
+                    {stats.sales > 0 && stats.revenue ? `${Math.round(stats.revenue / stats.sales).toLocaleString("ru-RU")} ₽` : "—"}
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-strong)] bg-[var(--color-surface-2)] px-5 py-4 text-center">
               <GitMerge size={20} className="text-[var(--color-foreground-tertiary)]" aria-hidden="true" />
-              <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">Детальная воронка пока недоступна</p>
-              <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">Переходы между этапами ещё не сохраняются в истории, поэтому мы не подменяем их текущим положением клиентов.</p>
-              <button type="button" onClick={() => setActiveTab("flow")} className="mt-3 text-[13px] font-semibold text-[var(--color-primary)] hover:underline">Открыть воронку</button>
+              <p className="mt-2 text-[13px] font-medium text-[var(--color-foreground)]">Ожидаем первых пользователей</p>
+              <p className="mt-1 max-w-md text-[12px] leading-relaxed text-[var(--color-foreground-secondary)]">
+                Когда люди начнут заходить в бота и переходить по сценарию, здесь появится статистика воронки.
+              </p>
             </div>
           )}
         </section>

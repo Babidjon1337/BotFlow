@@ -195,22 +195,13 @@ const MessageBubble = ({
     {button && (
       <div
         onClick={() => onButtonClick?.(1)}
-        style={{
-          background: "rgba(255, 255, 255, 0.1)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          color: "var(--color-primary)",
-          padding: "10px",
-          borderRadius: "12px",
-          fontSize: "14px",
-          fontWeight: 600,
-          textAlign: "center",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-          cursor: onButtonClick ? "pointer" : "default",
-          userSelect: "none",
-          border: "1px solid rgba(255, 255, 255, 0.05)",
-        }}
-        className="hover:bg-white/20 active:scale-[0.98] transition-all"
+        className={`px-3 py-2.5 rounded-xl text-[14px] font-semibold text-center select-none shadow-xs transition-all active:scale-[0.98] ${
+          onButtonClick ? "cursor-pointer" : "cursor-default"
+        } ${
+          theme === "dark"
+            ? "bg-white/10 text-[var(--color-primary)] border border-white/10 hover:bg-white/15"
+            : "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border border-[var(--color-primary)]/20 hover:bg-[var(--color-primary-soft)]/80"
+        }`}
       >
         {button}
       </div>
@@ -218,22 +209,13 @@ const MessageBubble = ({
     {button2 && (
       <div
         onClick={() => onButtonClick?.(2)}
-        style={{
-          background: "rgba(255, 255, 255, 0.1)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          color: "var(--color-primary)",
-          padding: "10px",
-          borderRadius: "12px",
-          fontSize: "14px",
-          fontWeight: 600,
-          textAlign: "center",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
-          cursor: onButtonClick ? "pointer" : "default",
-          userSelect: "none",
-          border: "1px solid rgba(255, 255, 255, 0.05)",
-        }}
-        className="hover:bg-white/20 active:scale-[0.98] transition-all"
+        className={`px-3 py-2.5 rounded-xl text-[14px] font-semibold text-center select-none shadow-xs transition-all active:scale-[0.98] ${
+          onButtonClick ? "cursor-pointer" : "cursor-default"
+        } ${
+          theme === "dark"
+            ? "bg-white/10 text-[var(--color-primary)] border border-white/10 hover:bg-white/15"
+            : "bg-[var(--color-primary-soft)] text-[var(--color-primary)] border border-[var(--color-primary)]/20 hover:bg-[var(--color-primary-soft)]/80"
+        }`}
       >
         {button2}
       </div>
