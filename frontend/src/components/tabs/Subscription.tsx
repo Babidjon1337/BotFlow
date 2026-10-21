@@ -1,79 +1,89 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   Bot,
-  CreditCard,
-  RefreshCcw,
-  ShieldCheck,
-  PowerOff,
-  Lock,
-  GitBranch,
-  Send,
-  Mail,
+  CalendarClock,
   Check,
   ChevronRight,
+  CircleHelp,
+  CreditCard,
   ExternalLink,
-  AlertCircle,
-  FileText,
-  Download,
+  GitBranch,
+  Mail,
+  MessageCircle,
+  Power,
+  RefreshCw,
+  ShieldCheck,
+  X,
 } from "lucide-react";
 
 import { useAppState } from "../../providers/AppStateProvider";
-import { PageHeader } from "../common/PageHeader";
-import { StatusBadge } from "../common/StatusBadge";
 import { useAlert } from "../AlertProvider";
 import { Button } from "../ui/button";
 import type { BotConfig } from "../../types";
 
 const MONTH_PRICE = 990;
 
-const formatDate = (iso: string | null | undefined) =>
-  iso
-    ? new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })
-    : "—";
-
-const plural = (n: number, one: string, few: string, many: string) => {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
+const formatDate = (value?: string | null) => {
+  if (!value) return "Дата уточняется";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Дата уточняется";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 };
 
-const formatPrice = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
+const formatPrice = (amount: number) => `${amount.toLocaleString("ru-RU")} ₽`;
+
+type BotAccess =
+  | { kind: "lifetime"; endsAt: null; autoRenew: false }
+  | { kind: "draft"; endsAt: null; autoRenew: false }
+  | { kind: "unpaid"; endsAt: null; autoRenew: false }
+  | { kind: "active"; endsAt: string | null; autoRenew: boolean };
+
+function getBotAccess(bot: BotConfig, accountStatus: string, accountUntil: string | null, accountAutoRenew: boolean): BotAccess {
+  if (bot.hasLifetimeLicense) return { kind: "lifetime", endsAt: null, autoRenew: false };
+  if (bot.subscriptionStatus === "active") {
+    return {
+      kind: "active",
+      endsAt: bot.subscriptionEndsAt ?? null,
+      autoRenew: bot.subscriptionAutoRenew !== false,
+    };
+  }
+  if (bot.subscriptionStatus === "expired") return { kind: "unpaid", endsAt: null, autoRenew: false };
+  if (bot.status === "active" && accountStatus === "active") {
+    return { kind: "active", endsAt: accountUntil, autoRenew: accountAutoRenew };
+  }
+  return { kind: bot.status === "inactive" ? "draft" : "unpaid", endsAt: null, autoRenew: false };
+}
 
 export const Subscription = () => {
-  const { appState, setAppState, setActiveTab, setToastMessage, setToastType, isAdmin, selectBot, handleCreateBotClick } =
-    useAppState();
+  const {
+    appState,
+    setAppState,
+    setActiveTab,
+    setToastMessage,
+    setToastType,
+    isAdmin,
+    selectBot,
+    handleCreateBotClick,
+  } = useAppState();
   const { showConfirm } = useAlert();
-
-  const [busy, setBusy] = useState(false);
+  const [busyBotId, setBusyBotId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [offerAccepted, setOfferAccepted] = useState(false);
-
-  // Email для чеков и квитанций
+  const [purchaseOpen, setPurchaseOpen] = useState(false);
+  const [purchaseBot, setPurchaseBot] = useState<BotConfig | null>(null);
+  const [detailsBot, setDetailsBot] = useState<BotConfig | null>(null);
   const [email, setEmail] = useState(appState.userEmail || "");
   const [savingEmail, setSavingEmail] = useState(false);
-  const [emailSaved, setEmailSaved] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setEmail(appState.userEmail || "");
-  }, [appState.userEmail]);
-
-  const bots = appState.bots;
-  const published = bots.filter((bot) => bot.status === "active");
-  const paidBots = published.filter((bot) => !bot.hasLifetimeLicense);
-  const monthlyTotal = isAdmin
-    ? 0
-    : paidBots.reduce(
-        (sum, bot) => sum + (bot.subscriptionAmountRub ?? MONTH_PRICE),
-        0
-      );
-
-  const status = isAdmin ? "active" : appState.subscriptionStatus;
-  const autoRenew = Boolean(appState.subscriptionAutoRenew);
-  const billingEnabled = Boolean(appState.billingEnabled);
+  useEffect(() => setEmail(appState.userEmail || ""), [appState.userEmail]);
 
   const loadBilling = useCallback(async (showIndicator = false) => {
     if (showIndicator) setRefreshing(true);
@@ -90,20 +100,23 @@ export const Subscription = () => {
         subscriptionUntil: billing.subscription_until,
         subscriptionAutoRenew: billing.subscription_auto_renew,
         billingEnabled: billing.billing_enabled,
-        userEmail: billing.email || prev.userEmail,
+        userEmail: billing.email || "",
+        emailReceiptsEnabled: billing.email_receipts_enabled,
+        emailBillingNotificationsEnabled: billing.email_billing_notifications_enabled,
         bots: botsRes.bots.map(mapApiBot),
       }));
     } catch {
-      // Игнорируем сетевые сбои при тихом обновлении
+      if (showIndicator) {
+        setToastType("error");
+        setToastMessage("Не удалось обновить данные подписки.");
+      }
     } finally {
       setRefreshing(false);
     }
-  }, [setAppState]);
+  }, [setAppState, setToastMessage, setToastType]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void loadBilling();
-    }, 0);
+    const timer = window.setTimeout(() => void loadBilling(), 0);
     return () => window.clearTimeout(timer);
   }, [loadBilling]);
 
@@ -115,16 +128,29 @@ export const Subscription = () => {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [loadBilling]);
 
-  const payForBot = async (botId?: string) => {
-    if (busy || !billingEnabled || !offerAccepted) return;
-    setBusy(true);
+  const accountStatus = isAdmin ? "active" : appState.subscriptionStatus;
+  const accountAutoRenew = Boolean(appState.subscriptionAutoRenew);
+  const accountPaidUntil = appState.subscriptionUntil;
+  const billingEnabled = Boolean(appState.billingEnabled);
+  const bots = appState.bots;
+  const billableBots = bots.filter((bot) => {
+    const access = getBotAccess(bot, accountStatus, accountPaidUntil, accountAutoRenew);
+    return access.kind === "active" && !bot.hasLifetimeLicense;
+  });
+  const monthlyTotal = isAdmin
+    ? 0
+    : billableBots.reduce((total, bot) => total + (bot.subscriptionAmountRub ?? MONTH_PRICE), 0);
+
+  const startCheckout = async (bot?: BotConfig) => {
+    if (!billingEnabled || !offerAccepted) return;
+    setBusyBotId(bot?.id ?? "new");
     try {
       const { apiService } = await import("../../services/api");
       const checkout = await apiService.createBillingCheckout(
         "pro",
-        email.trim() || appState.userEmail || undefined,
-        botId,
-        offerAccepted
+        email.trim(),
+        bot?.id,
+        true,
       );
       const telegram = (window as Window & {
         Telegram?: { WebApp?: { openLink?: (url: string) => void } };
@@ -135,60 +161,44 @@ export const Subscription = () => {
       setToastType("error");
       setToastMessage(error instanceof Error ? error.message : "Не удалось создать платёж.");
     } finally {
-      setBusy(false);
+      setBusyBotId(null);
     }
   };
 
-  const cancelBotSubscription = (bot: BotConfig) => {
-    const botEndsAt = bot.subscriptionEndsAt || appState.subscriptionUntil;
+  const toggleAutoRenew = async (bot: BotConfig, enabled: boolean) => {
+    if (busyBotId) return;
+    setBusyBotId(bot.id);
+    try {
+      const { apiService } = await import("../../services/api");
+      if (enabled) await apiService.setBillingAutoRenew(bot.id, true);
+      else await apiService.cancelBilling(bot.id);
+      await loadBilling();
+      setToastType("success");
+      setToastMessage(enabled ? "Автопродление включено." : "Автопродление отключено.");
+    } catch (error) {
+      setToastType("error");
+      setToastMessage(error instanceof Error ? error.message : "Не удалось изменить автопродление.");
+    } finally {
+      setBusyBotId(null);
+    }
+  };
+
+  const requestCancel = (bot: BotConfig, endsAt: string | null) => {
     showConfirm({
       type: "warning",
-      title: `Отключить подписку бота «${bot.name}»?`,
-      message: `Бот продолжит полноценно работать до ${formatDate(botEndsAt)}. После этой даты автосписание не произойдёт, и бот перейдёт в черновик. Все сценарии, клиенты и статистика сохранятся.`,
-      confirmText: "Отключить автопродление",
-      cancelText: "Оставить активной",
-      onConfirm: () => {
-        void (async () => {
-          setBusy(true);
-          try {
-            const { apiService } = await import("../../services/api");
-            await apiService.cancelBilling(bot.id);
-            await loadBilling(true);
-            setToastType("success");
-            setToastMessage(`Автопродление для бота «${bot.name}» отключено`);
-          } catch (error) {
-            setToastType("error");
-            setToastMessage(error instanceof Error ? error.message : "Не удалось отключить автопродление.");
-          } finally {
-            setBusy(false);
-          }
-        })();
-      },
+      title: "Отключить автопродление?",
+      message: `Новое списание за «${bot.name}» не пройдёт. Бот останется доступен до ${formatDate(endsAt)}.`,
+      confirmText: "Отключить",
+      cancelText: "Оставить",
+      onConfirm: () => void toggleAutoRenew(bot, false),
     });
   };
 
-  const enableBotAutoRenew = async (bot: BotConfig) => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const { apiService } = await import("../../services/api");
-      await apiService.setBillingAutoRenew(bot.id, true);
-      await loadBilling(true);
-      setToastType("success");
-      setToastMessage(`Автопродление для бота «${bot.name}» успешно включено`);
-    } catch (error) {
-      setToastType("error");
-      setToastMessage(error instanceof Error ? error.message : "Не удалось включить автопродление.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleSaveEmail = async () => {
+  const saveEmail = async () => {
     if (savingEmail) return;
     const value = email.trim();
     if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      setEmailError("Введите корректный адрес электронной почты");
+      setEmailError("Проверьте адрес электронной почты.");
       return;
     }
     setSavingEmail(true);
@@ -201,375 +211,152 @@ export const Subscription = () => {
         emailBillingNotificationsEnabled: true,
       });
       setAppState((prev) => ({ ...prev, userEmail: value }));
-      setEmailSaved(true);
       setToastType("success");
-      setToastMessage("Email для чеков сохранён");
-      window.setTimeout(() => setEmailSaved(false), 2500);
+      setToastMessage(value ? "Email сохранён для следующих чеков." : "Настройки email сохранены.");
     } catch (error) {
-      setEmailError(error instanceof Error ? error.message : "Не удалось сохранить email");
+      setEmailError(error instanceof Error ? error.message : "Не удалось сохранить email.");
     } finally {
       setSavingEmail(false);
     }
   };
 
-  const getBotCoverage = (bot: BotConfig) => {
-    if (bot.hasLifetimeLicense) return { kind: "free" as const };
-    if (bot.status !== "active") return { kind: "draft" as const };
-    if (bot.subscriptionStatus === "active" && bot.subscriptionEndsAt) {
-      return {
-        kind: "sub" as const,
-        endsAt: bot.subscriptionEndsAt,
-        autoRenew: bot.subscriptionAutoRenew !== false,
-      };
-    }
-    if (bot.subscriptionStatus === "expired") return { kind: "unpaid" as const };
-    if (status === "active") {
-      return {
-        kind: "legacy" as const,
-        endsAt: appState.subscriptionUntil,
-        autoRenew: autoRenew,
-      };
-    }
-    return { kind: "unpaid" as const };
+  const openPurchase = (bot?: BotConfig) => {
+    setOfferAccepted(false);
+    setPurchaseBot(bot ?? null);
+    setPurchaseOpen(true);
   };
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22 }}
-      className="mx-auto flex w-full max-w-4xl flex-col gap-5 pb-20"
-    >
-      <PageHeader
-        kicker="Подписка"
-        tone="violet"
-        title="Подписки и боты"
-        hint="Стоимость каждого активного бота — 990 ₽/мес. Черновики всегда бесплатны."
-      />
+  const purchasePrice = purchaseBot?.subscriptionAmountRub ?? MONTH_PRICE;
 
-      {/* ── 1. Сводка по расходам и состоянию аккаунта ── */}
-      <section className="rounded-[20px] border border-border bg-card p-5 shadow-xs">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-fg-tertiary">
-              Текущие расходы
-            </span>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-[32px] font-bold leading-none tracking-tight tabular-nums text-fg-primary sm:text-[38px]">
-                {monthlyTotal.toLocaleString("ru-RU")} ₽
-              </span>
-              <span className="text-body-sm font-medium text-fg-tertiary">/ мес</span>
+  return (
+    <motion.main
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className="mx-auto flex w-full max-w-3xl flex-col gap-6 pb-20"
+    >
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
+        <div>
+          <p className="text-micro font-semibold uppercase tracking-[0.16em] text-primary">Аккаунт · подписка</p>
+          <h1 className="mt-1 text-[30px] font-bold leading-tight tracking-tight text-fg-primary">Оплата и боты</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => void loadBilling(true)}
+          disabled={refreshing}
+          className="inline-flex items-center gap-2 rounded-lg px-2.5 py-2 text-micro font-semibold text-fg-secondary transition hover:bg-muted hover:text-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-60"
+        >
+          <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} aria-hidden="true" />
+          Обновить
+        </button>
+      </header>
+
+      <section className="relative overflow-hidden rounded-[22px] border border-border bg-card p-5 sm:p-7">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1.5 bg-gradient-to-b from-primary via-violet-400 to-cyan-400" />
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-micro font-semibold text-fg-secondary">
+              {isAdmin ? <ShieldCheck className="size-4 text-success" /> : <CalendarClock className="size-4 text-primary" />}
+              {isAdmin ? "Полный доступ" : "В месяц за активных ботов"}
             </div>
-            <p className="mt-2 text-body-sm text-fg-secondary">
-              {isAdmin ? (
-                <span className="inline-flex items-center gap-1.5 font-medium text-success">
-                  <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
-                  Администратор платформы — безлимитный доступ ко всем ботам
-                </span>
-              ) : paidBots.length > 0 ? (
-                `${paidBots.length} ${plural(paidBots.length, "активный бот", "активных бота", "активных ботов")} на подписке · ${bots.length} ${plural(bots.length, "бот", "бота", "ботов")} всего`
-              ) : (
-                "Все ваши боты находятся в бесплатном режиме черновика"
-              )}
+            <p className="mt-2 font-mono text-[clamp(2.5rem,8vw,4rem)] font-semibold leading-none tracking-[-0.07em] text-fg-primary">
+              {isAdmin ? "∞" : formatPrice(monthlyTotal)}
+              {!isAdmin && <span className="ml-2 font-sans text-base font-medium tracking-normal text-fg-tertiary">/ мес.</span>}
             </p>
           </div>
-
-          <div className="flex flex-col items-end gap-2">
-            <StatusBadge
-              tone={
-                isAdmin
-                  ? "success"
-                  : status === "active"
-                    ? "success"
-                    : status === "expired"
-                      ? "warning"
-                      : "neutral"
-              }
-              label={
-                isAdmin
-                  ? "Админ: Безлимит"
-                  : status === "active"
-                    ? "Подписка активна"
-                    : status === "expired"
-                      ? "Доступ истёк"
-                      : "Бесплатный режим"
-              }
-            />
-            <button
-              type="button"
-              onClick={() => void loadBilling(true)}
-              disabled={refreshing}
-              className="inline-flex items-center gap-1.5 text-micro font-medium text-fg-tertiary hover:text-fg-secondary transition-colors"
-            >
-              <RefreshCcw className={`size-3 ${refreshing ? "animate-spin text-primary" : ""}`} aria-hidden="true" />
-              Обновить статус
-            </button>
+          <div className="max-w-xs border-l-2 border-primary/30 pl-3 text-micro leading-relaxed text-fg-secondary">
+            {isAdmin
+              ? "Подписка для аккаунта администратора не списывается."
+              : billableBots.length
+                ? `${billableBots.length} ${billableBots.length === 1 ? "бот на подписке" : "бота на подписке"}. Платите только за опубликованных ботов.`
+                : "Пока нет ботов с регулярной оплатой."}
           </div>
         </div>
       </section>
 
-      {/* ── 2. Список ботов: управление каждой подпиской и возможностями ── */}
-      <section className="rounded-[20px] border border-border bg-card p-5 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border">
+      <section aria-labelledby="bots-heading">
+        <div className="mb-3 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-body font-bold text-fg-primary">Ваши Telegram-боты</h2>
-            <p className="text-micro text-fg-secondary">
-              Включение и отключение подписки для каждого бота по отдельности
-            </p>
+            <h2 id="bots-heading" className="text-lg font-bold tracking-tight text-fg-primary">Ваши боты</h2>
+            <p className="mt-0.5 text-micro text-fg-tertiary">Срок, автопродление и состав тарифа</p>
           </div>
-          <div className="flex items-center gap-2">
-            {!isAdmin && billingEnabled && (
-              <Button
-                size="sm"
-                onClick={() => void payForBot()}
-                disabled={busy || !offerAccepted}
-                className="h-8 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-micro font-semibold gap-1.5 shadow-xs"
-              >
-                <CreditCard className="size-3.5" aria-hidden="true" />
-                Подключить нового бота (990 ₽/мес)
-              </Button>
-            )}
-            <span className="rounded-full bg-muted px-2.5 py-0.5 text-micro font-semibold text-fg-secondary">
-              {bots.length}
-            </span>
-          </div>
+          {!isAdmin && billingEnabled && (
+            <Button size="sm" onClick={() => openPurchase()} className="shrink-0 gap-1.5 rounded-xl">
+              <CreditCard className="size-3.5" aria-hidden="true" />
+              Купить бота
+            </Button>
+          )}
         </div>
 
-        {!isAdmin && billingEnabled && (
-          <label className="mt-3 flex items-start gap-2.5 rounded-xl border border-border bg-muted/30 p-3 text-micro text-fg-secondary">
-            <input type="checkbox" checked={offerAccepted} onChange={(event) => setOfferAccepted(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]" />
-            <span>Я принимаю <a href="/legal/offer" target="_blank" rel="noreferrer" className="font-semibold text-primary underline">публичную оферту BotFlow</a> и понимаю, что подписка продлевается автоматически каждые 30 дней. Автопродление можно отключить в любой момент.</span>
-          </label>
-        )}
-
         {bots.length === 0 ? (
-          <div className="py-10 text-center">
-            <div className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-muted text-fg-tertiary">
-              <Bot className="size-6" aria-hidden="true" />
-            </div>
-            <h3 className="mt-3 text-body font-bold text-fg-primary">У вас пока нет созданных ботов</h3>
-            <p className="mt-1 text-body-sm text-fg-secondary max-w-sm mx-auto">
-              Создайте первого бота: проектирование воронки в черновике бесплатно.
-            </p>
-            <Button className="mt-4 rounded-xl" onClick={handleCreateBotClick}>
-              Создать бота
-            </Button>
+          <div className="rounded-2xl border border-dashed border-border px-5 py-9 text-center">
+            <Bot className="mx-auto size-8 text-fg-tertiary" aria-hidden="true" />
+            <h3 className="mt-3 font-semibold text-fg-primary">Сначала создайте бота</h3>
+            <p className="mx-auto mt-1 max-w-sm text-micro leading-relaxed text-fg-secondary">Черновик можно настроить бесплатно. Оплата начнётся перед публикацией.</p>
+            <Button variant="outline" size="sm" className="mt-4 rounded-xl" onClick={handleCreateBotClick}>Создать бота</Button>
           </div>
         ) : (
-          <div className="mt-4 flex flex-col gap-3.5">
+          <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
             {bots.map((bot) => {
-              const cov = getBotCoverage(bot);
-              const isSubActive = cov.kind === "sub" || cov.kind === "legacy";
-              const isAutoRenewOn = cov.kind === "sub" ? cov.autoRenew : autoRenew;
-              const endsDate =
-                cov.kind === "sub"
-                  ? cov.endsAt
-                  : cov.kind === "legacy"
-                    ? cov.endsAt
-                    : bot.subscriptionEndsAt;
-
+              const access = getBotAccess(bot, accountStatus, accountPaidUntil, accountAutoRenew);
+              const isActive = access.kind === "active";
+              const dueDate = access.kind === "active" ? access.endsAt : null;
+              const amount = bot.subscriptionAmountRub ?? MONTH_PRICE;
               return (
-                <article
-                  key={bot.id}
-                  className={`rounded-[16px] border p-4 transition-all ${
-                    cov.kind === "unpaid"
-                      ? "border-warning/40 bg-warning/5"
-                      : isSubActive
-                        ? "border-border bg-card hover:border-primary/40 shadow-2xs"
-                        : "border-border bg-card/60"
-                  }`}
-                >
-                  {/* Заголовок карточки бота */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`flex size-11 shrink-0 items-center justify-center rounded-xl ${
-                          isSubActive
-                            ? "bg-[#229ED9]/15 text-[#229ED9] border border-[#229ED9]/30"
-                            : cov.kind === "unpaid"
-                              ? "bg-warning/15 text-warning border border-warning/30"
-                              : "bg-muted text-fg-secondary border border-border"
-                        }`}
-                      >
+                <article key={bot.id} className="p-4 sm:p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className={`grid size-10 shrink-0 place-items-center rounded-xl ${isActive ? "bg-primary/10 text-primary" : "bg-muted text-fg-secondary"}`}>
                         <Bot className="size-5" aria-hidden="true" />
                       </div>
-
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="truncate text-body font-bold text-fg-primary">
-                            {bot.name}
-                          </h3>
-                          {bot.username && bot.username !== "@unknown" && (
-                            <a
-                              href={`https://t.me/${bot.username.replace("@", "")}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-micro font-medium text-primary hover:underline inline-flex items-center gap-1"
-                            >
-                              {bot.username}
-                              <ExternalLink className="size-3" aria-hidden="true" />
-                            </a>
-                          )}
-                        </div>
-                        <p className="text-micro text-fg-secondary mt-0.5">
-                          {cov.kind === "draft"
-                            ? "Черновик — бесплатно до момента публикации"
-                            : isSubActive
-                              ? `Подписка активна до ${formatDate(endsDate)}`
-                              : cov.kind === "free"
-                                ? "Бесплатная спец-лицензия"
-                                : "Оплата не внесена — бот приостановлен"}
+                        <h3 className="truncate font-semibold text-fg-primary">{bot.name}</h3>
+                        <p className="mt-0.5 text-micro text-fg-tertiary">
+                          {access.kind === "lifetime" ? "Доступ навсегда" : access.kind === "draft" ? "Черновик · оплаты нет" : access.kind === "unpaid" ? "Подписка закончилась" : access.autoRenew ? `Следующее списание · ${formatDate(dueDate)}` : `Доступ до · ${formatDate(dueDate)}`}
                         </p>
                       </div>
                     </div>
-
-                    {/* Статус и стоимость */}
-                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
-                      <div className="text-right">
-                        <span className="font-bold text-body text-fg-primary tabular-nums">
-                          {isAdmin || cov.kind === "free" || cov.kind === "draft" ? (
-                            <span className="text-success">0 ₽</span>
-                          ) : (
-                            `${formatPrice(bot.subscriptionAmountRub ?? MONTH_PRICE)} / мес`
-                          )}
+                    <div className="flex items-center gap-2 pl-[52px] sm:pl-0">
+                      <span className="whitespace-nowrap font-mono text-sm font-semibold tabular-nums text-fg-primary">
+                        {access.kind === "lifetime" || access.kind === "draft" || isAdmin ? "0 ₽" : `${formatPrice(amount)} / мес`}
+                      </span>
+                      {isActive && (
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${access.autoRenew ? "bg-success/10 text-success" : "bg-warning/15 text-warning"}`}>
+                          {access.autoRenew ? "Автоплатёж" : "Отключён"}
                         </span>
-                      </div>
-                      <StatusBadge
-                        tone={
-                          cov.kind === "free"
-                            ? "success"
-                            : cov.kind === "draft"
-                              ? "neutral"
-                              : cov.kind === "unpaid"
-                                ? "danger"
-                                : isAutoRenewOn
-                                  ? "success"
-                                  : "warning"
-                        }
-                        label={
-                          cov.kind === "free"
-                            ? "Бесплатно"
-                            : cov.kind === "draft"
-                              ? "Черновик"
-                              : cov.kind === "unpaid"
-                                ? "Нужна оплата"
-                                : isAutoRenewOn
-                                  ? "Автопродление вкл"
-                                  : "Автопродление выкл"
-                        }
-                      />
+                      )}
                     </div>
                   </div>
 
-                  {/* Блок «Что включено в бота» (Telegram + воронка продаж) */}
-                  <div className="mt-3.5 rounded-xl border border-border/70 bg-muted/30 p-2.5 sm:p-3">
-                    <span className="block text-[11px] font-semibold uppercase tracking-wider text-fg-tertiary mb-2">
-                      Возможности этого бота:
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-micro font-medium text-fg-secondary">
-                      <div className="flex items-center gap-1.5 truncate">
-                        <GitBranch className="size-3.5 text-primary shrink-0" />
-                        <span className="truncate">Воронка продаж</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 truncate">
-                        <CreditCard className="size-3.5 text-emerald-500 shrink-0" />
-                        <span className="truncate">Приём оплаты</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 truncate">
-                        <Lock className="size-3.5 text-violet-500 shrink-0" />
-                        <span className="truncate">Автовыдача доступа</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 truncate">
-                        <Send className="size-3.5 text-cyan-500 shrink-0" />
-                        <span className="truncate">База без лимитов</span>
-                      </div>
-                    </div>
-                  </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setDetailsBot(bot)}
+                      className="inline-flex items-center gap-1.5 rounded-lg py-1.5 text-micro font-semibold text-fg-secondary transition hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                    >
+                      <CircleHelp className="size-3.5" aria-hidden="true" />
+                      Что входит в бота
+                      <ChevronRight className="size-3.5" aria-hidden="true" />
+                    </button>
 
-                  {/* Нижняя строка: управление автопродлением и редактирование */}
-                  <div className="mt-3.5 pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2.5">
-                    {/* Статус автосписания */}
-                    <div className="text-micro text-fg-secondary">
-                      {isSubActive ? (
-                        isAutoRenewOn ? (
-                          <span className="inline-flex items-center gap-1.5 text-success">
-                            <span className="size-1.5 rounded-full bg-success" />
-                            Автосписание активно — бот продлевается автоматически
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 text-warning">
-                            <span className="size-1.5 rounded-full bg-warning" />
-                            Автосписание выключено — остановится {formatDate(endsDate)}
-                          </span>
-                        )
-                      ) : cov.kind === "unpaid" ? (
-                        <span className="inline-flex items-center gap-1.5 text-danger font-medium">
-                          <AlertCircle className="size-3.5 text-danger" />
-                          Оплатите подписку для возобновления работы бота
-                        </span>
-                      ) : (
-                        <span className="text-fg-tertiary">
-                          В режиме черновика плата не взимается
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Кнопки действий */}
-                    <div className="flex flex-wrap items-center gap-2 ml-auto">
-                      {/* Отключение автопродления */}
-                      {!isAdmin && isSubActive && isAutoRenewOn && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => cancelBotSubscription(bot)}
-                          className="h-8 px-2.5 text-micro text-danger hover:bg-danger-soft hover:text-danger rounded-lg gap-1"
-                          title="Отключить автоматическое продление подписки"
-                        >
-                          <PowerOff className="size-3.5" aria-hidden="true" />
-                          Отключить автопродление
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isActive && !isAdmin && access.autoRenew && (
+                        <Button variant="ghost" size="sm" disabled={busyBotId === bot.id} onClick={() => requestCancel(bot, dueDate)} className="h-8 gap-1.5 rounded-lg px-2.5 text-micro text-danger hover:bg-danger-soft hover:text-danger">
+                          <Power className="size-3.5" aria-hidden="true" /> Отключить автопродление
                         </Button>
                       )}
-
-                      {/* Включение автопродления */}
-                      {!isAdmin && isSubActive && !isAutoRenewOn && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() => void enableBotAutoRenew(bot)}
-                          className="h-8 px-2.5 text-micro text-fg-primary rounded-lg gap-1"
-                        >
-                          <RefreshCcw className="size-3.5 text-primary" aria-hidden="true" />
-                          Включить автопродление
+                      {isActive && !isAdmin && !access.autoRenew && (
+                        <Button variant="outline" size="sm" disabled={busyBotId === bot.id} onClick={() => void toggleAutoRenew(bot, true)} className="h-8 gap-1.5 rounded-lg px-2.5 text-micro">
+                          <RefreshCw className="size-3.5" aria-hidden="true" /> Включить снова
                         </Button>
                       )}
-
-                      {/* Оплата для неактивного бота */}
-                      {!isAdmin && billingEnabled && (cov.kind === "unpaid" || (cov.kind === "draft" && bot.status === "inactive")) && (
-                        <Button
-                          size="sm"
-                          disabled={busy || !offerAccepted}
-                          onClick={() => void payForBot(bot.id)}
-                          className="h-8 px-3 rounded-lg bg-primary hover:bg-primary-hover text-white text-micro font-semibold gap-1.5"
-                        >
-                          <CreditCard className="size-3.5" aria-hidden="true" />
-                          Оплатить {formatPrice(bot.subscriptionAmountRub ?? MONTH_PRICE)}
+                      {(access.kind === "unpaid" || access.kind === "draft") && !isAdmin && billingEnabled && (
+                        <Button size="sm" disabled={busyBotId === bot.id} onClick={() => openPurchase(bot)} className="h-8 gap-1.5 rounded-lg px-2.5 text-micro">
+                          Оплатить {formatPrice(amount)} <ArrowUpRight className="size-3.5" aria-hidden="true" />
                         </Button>
                       )}
-
-                      {/* Редактировать возможности / сценарий бота */}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          selectBot(bot.id);
-                          setActiveTab("build");
-                        }}
-                        className="h-8 px-2.5 text-micro font-semibold rounded-lg gap-1"
-                      >
-                        Редактировать воронку
-                        <ChevronRight className="size-3.5 text-fg-tertiary" aria-hidden="true" />
+                      <Button variant="secondary" size="sm" onClick={() => { selectBot(bot.id); setActiveTab("build"); }} className="h-8 gap-1 rounded-lg px-2.5 text-micro">
+                        Изменить воронку <ChevronRight className="size-3.5" aria-hidden="true" />
                       </Button>
                     </div>
                   </div>
@@ -580,98 +367,125 @@ export const Subscription = () => {
         )}
       </section>
 
-      {/* ── 3. Чеки об оплате платформы (54-ФЗ) ── */}
-      <section className="rounded-[20px] border border-border bg-card p-5 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary border border-primary/20">
-              <Mail className="size-4" aria-hidden="true" />
-            </div>
-            <div>
-              <h2 className="text-body font-bold text-fg-primary">Электронные чеки платформы</h2>
-              <p className="text-micro text-fg-secondary">
-                На эту почту будут приходить чеки об оплате подписки BotFlow (по 54-ФЗ)
-              </p>
-            </div>
-          </div>
-
-          <StatusBadge
-            tone={appState.userEmail ? "success" : "neutral"}
-            label={appState.userEmail ? "Email привязан" : "Не указан"}
+      <section className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+        <div>
+          <label htmlFor="billing-email" className="flex items-center gap-2 text-sm font-semibold text-fg-primary">
+            <Mail className="size-4 text-primary" aria-hidden="true" /> Email для чека <span className="font-normal text-fg-tertiary">· необязательно</span>
+          </label>
+          <input
+            id="billing-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => { setEmail(event.target.value); setEmailError(null); }}
+            placeholder="Можно оставить пустым"
+            className="mt-2 h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-fg-primary outline-none transition placeholder:text-fg-tertiary focus:border-primary focus:ring-2 focus:ring-primary/15"
           />
+          <p className="mt-1.5 text-micro text-fg-tertiary">Сохраним адрес для следующих оплат. Без email чек останется у платёжной системы.</p>
+          {emailError && <p className="mt-1 text-micro text-danger">{emailError}</p>}
         </div>
-
-        <div className="mt-4 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <div className="relative flex-1">
-            <Mail className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-fg-tertiary" aria-hidden="true" />
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setEmailError(null);
-              }}
-              placeholder="name@example.com"
-              className="w-full rounded-xl border border-border bg-muted/40 py-2 pl-10 pr-4 text-body-sm text-fg-primary placeholder:text-fg-tertiary focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
-          <Button
-            disabled={savingEmail || email === appState.userEmail}
-            onClick={() => void handleSaveEmail()}
-            className="h-9 px-4 rounded-xl bg-primary hover:bg-primary-hover text-white font-semibold shrink-0 gap-1.5"
-          >
-            {savingEmail ? (
-              <RefreshCcw className="size-3.5 animate-spin" aria-hidden="true" />
-            ) : emailSaved ? (
-              <Check className="size-3.5 text-white" aria-hidden="true" />
-            ) : null}
-            {emailSaved ? "Сохранено" : "Сохранить email"}
-          </Button>
-        </div>
-
-        {emailError && <p className="mt-2 text-micro text-danger">{emailError}</p>}
+        <Button variant="outline" disabled={savingEmail || email.trim() === (appState.userEmail || "")} onClick={() => void saveEmail()} className="h-10 rounded-xl px-4">
+          {savingEmail ? "Сохраняем…" : "Сохранить email"}
+        </Button>
       </section>
 
-      {/* ── 4. Официальная оферта платформы (ИП Медоян А.Г.) ── */}
-      <section className="rounded-[20px] border border-border bg-card p-5 shadow-xs">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <FileText className="size-4 text-primary" aria-hidden="true" />
-              <h2 className="text-body font-bold text-fg-primary">Публичная оферта сервиса BotFlow</h2>
+      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-micro text-fg-tertiary">
+        <span>Подписку можно отключить до следующего списания.</span>
+        <a href="/legal/offer" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-fg-secondary underline decoration-border underline-offset-4 hover:text-primary">
+          Публичная оферта <ExternalLink className="size-3" aria-hidden="true" />
+        </a>
+      </footer>
+
+      {detailsBot && (
+        <div className="fixed inset-0 z-[120] grid place-items-end bg-black/45 p-0 backdrop-blur-[2px] sm:place-items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailsBot(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="bot-details-title" className="w-full max-w-md rounded-t-[24px] border border-border bg-card p-5 shadow-2xl sm:rounded-[24px] sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-micro font-semibold uppercase tracking-widest text-primary">Состав тарифа</p>
+                <h2 id="bot-details-title" className="mt-1 text-xl font-bold text-fg-primary">{detailsBot.name}</h2>
+              </div>
+              <button type="button" aria-label="Закрыть" onClick={() => setDetailsBot(null)} className="rounded-lg p-2 text-fg-tertiary hover:bg-muted hover:text-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><X className="size-4" /></button>
             </div>
-            <p className="text-micro text-fg-secondary leading-relaxed">
-              Официальный договор-оферта на предоставление доступа к платформе создания и обслуживания ботов.
-              Исполнитель: Индивидуальный предприниматель Медоян Арам Гагикович (ИНН 613302383615, ОГРНИП 321619600251571).
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <a
-              href="/legal/offer"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 hover:bg-muted px-3.5 py-2 text-micro font-semibold text-fg-primary transition"
-            >
-              <span>Читать оферту</span>
-              <ExternalLink className="size-3 text-fg-tertiary" aria-hidden="true" />
-            </a>
-            <a
-              href="/api/legal/offer?download=1"
-              download="Оферта_сервиса_ботов_ИП_Медоян.docx"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 hover:bg-primary/20 px-3.5 py-2 text-micro font-semibold text-primary transition"
-            >
-              <Download className="size-3.5" aria-hidden="true" />
-              <span>Скачать .DOCX</span>
-            </a>
-          </div>
+            <div className="mt-5 divide-y divide-border rounded-2xl border border-border px-4">
+              <div className="flex items-center gap-3 py-3.5">
+                <MessageCircle className="size-4 text-[#229ED9]" aria-hidden="true" />
+                <div><p className="text-sm font-semibold text-fg-primary">Telegram</p><p className="text-micro text-fg-tertiary">Платформа вашего бота</p></div>
+                <Check className="ml-auto size-4 text-success" aria-label="Включено" />
+              </div>
+              <div className="flex items-center gap-3 py-3.5">
+                <GitBranch className="size-4 text-primary" aria-hidden="true" />
+                <div><p className="text-sm font-semibold text-fg-primary">Воронка продаж</p><p className="text-micro text-fg-tertiary">Сценарий можно редактировать</p></div>
+                <Check className="ml-auto size-4 text-success" aria-label="Включено" />
+              </div>
+              <div className="flex items-center gap-3 py-3.5 text-fg-tertiary">
+                <CircleHelp className="size-4" aria-hidden="true" />
+                <p className="text-micro leading-relaxed">Другие платформы и типы ботов пока недоступны. Новые варианты появятся здесь, когда их можно будет подключить.</p>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3.5 py-3">
+              <span className="text-micro text-fg-secondary">Стоимость при публикации</span>
+              <strong className="font-mono text-sm tabular-nums text-fg-primary">{formatPrice(detailsBot.subscriptionAmountRub ?? MONTH_PRICE)} / мес</strong>
+            </div>
+            <Button className="mt-4 w-full rounded-xl" onClick={() => { selectBot(detailsBot.id); setActiveTab("build"); setDetailsBot(null); }}>Настроить воронку <ArrowDownRight className="size-4" aria-hidden="true" /></Button>
+          </section>
         </div>
-        <p className="mt-3 border-t border-border/60 pt-3 text-micro text-fg-tertiary leading-relaxed">
-          Оплачивая подписку или подключая бота, вы подтверждаете акцепт публичной оферты и согласие на обработку персональных данных (152-ФЗ).
-          Периодические списания за подписку производятся каждые 30 дней и могут быть отключены в любой момент.
-        </p>
-      </section>
-    </motion.div>
+      )}
+
+      {purchaseOpen && (
+        <PurchaseDialog
+          bot={purchaseBot}
+          amount={purchasePrice}
+          email={email}
+          setEmail={(value) => { setEmail(value); setEmailError(null); }}
+          offerAccepted={offerAccepted}
+          setOfferAccepted={setOfferAccepted}
+          busy={busyBotId !== null}
+          onClose={() => setPurchaseOpen(false)}
+          onPay={() => void startCheckout(purchaseBot ?? undefined)}
+        />
+      )}
+    </motion.main>
   );
 };
+
+interface PurchaseDialogProps {
+  bot: BotConfig | null;
+  amount: number;
+  email: string;
+  setEmail: (value: string) => void;
+  offerAccepted: boolean;
+  setOfferAccepted: (accepted: boolean) => void;
+  busy: boolean;
+  onClose: () => void;
+  onPay: () => void;
+}
+
+function PurchaseDialog({ bot, amount, email, setEmail, offerAccepted, setOfferAccepted, busy, onClose, onPay }: PurchaseDialogProps) {
+  return (
+    <div className="fixed inset-0 z-[130] grid place-items-end bg-black/50 p-0 backdrop-blur-[3px] sm:place-items-center sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="purchase-title" className="w-full max-w-md rounded-t-[24px] border border-border bg-card p-5 shadow-2xl sm:rounded-[24px] sm:p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-micro font-semibold uppercase tracking-widest text-primary">Перед оплатой</p>
+            <h2 id="purchase-title" className="mt-1 text-xl font-bold text-fg-primary">{bot ? `Подключить ${bot.name}` : "Подключить нового бота"}</h2>
+          </div>
+          <button type="button" aria-label="Закрыть" onClick={onClose} className="rounded-lg p-2 text-fg-tertiary hover:bg-muted hover:text-fg-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"><X className="size-4" /></button>
+        </div>
+        <div className="mt-5 flex items-end justify-between rounded-2xl border border-border bg-muted/30 p-4">
+          <div><p className="text-micro text-fg-secondary">Telegram · воронка продаж</p><p className="mt-1 text-micro text-fg-tertiary">Автопродление каждые 30 дней</p></div>
+          <strong className="whitespace-nowrap font-mono text-lg tabular-nums text-fg-primary">{formatPrice(amount)}<span className="font-sans text-xs font-medium text-fg-tertiary"> / мес.</span></strong>
+        </div>
+        <label htmlFor="purchase-email" className="mt-4 block text-sm font-semibold text-fg-primary">Email для чека <span className="font-normal text-fg-tertiary">· можно пропустить</span></label>
+        <input id="purchase-email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" className="mt-2 h-10 w-full rounded-xl border border-border bg-card px-3.5 text-sm text-fg-primary outline-none placeholder:text-fg-tertiary focus:border-primary focus:ring-2 focus:ring-primary/15" />
+        <p className="mt-1.5 text-micro leading-relaxed text-fg-tertiary">Укажете адрес — сохраним его для чеков по будущим оплатам. Оставите поле пустым — email не обязателен.</p>
+        <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-xl border border-border p-3 text-micro leading-relaxed text-fg-secondary">
+          <input type="checkbox" checked={offerAccepted} onChange={(event) => setOfferAccepted(event.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--color-primary)]" />
+          <span>Принимаю <a href="/legal/offer" target="_blank" rel="noreferrer" className="font-semibold text-primary underline">публичную оферту</a> и согласен на автоматическое списание раз в 30 дней. Автопродление можно отключить в любой момент.</span>
+        </label>
+        <Button disabled={!offerAccepted || busy} onClick={onPay} className="mt-4 h-11 w-full gap-2 rounded-xl text-sm font-semibold">
+          {busy ? "Готовим оплату…" : <>Перейти к оплате <CreditCard className="size-4" aria-hidden="true" /></>}
+        </Button>
+      </section>
+    </div>
+  );
+}

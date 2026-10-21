@@ -1284,7 +1284,7 @@ async def create_billing_checkout(request: Request, body: BillingCheckoutRequest
         )
     current_user = await get_current_user(request)
     user = await create_user_if_not_exists(telegram_id=current_user.telegram_id)
-    checkout_email = body.email.strip().lower() if body.email else user.email
+    checkout_email = body.email.strip().lower() if body.email is not None else user.email
     if checkout_email and ("@" not in checkout_email or len(checkout_email) > 320):
         raise HTTPException(status_code=422, detail="Введите корректный email.")
     if body.email and checkout_email != user.email:
