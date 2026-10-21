@@ -419,22 +419,92 @@ async def _toggle_client_bot(
     }
 
 
-def _merged_payment_credentials(
-    bot, incoming: dict | None, provider_changed: bool
-) -> dict:
-    """Apply partial credential changes without ever returning secrets to the client."""
-    existing: dict = {}
-    if not provider_changed and getattr(bot, "payment_creds_enc", None):
-        try:
-            existing = json.loads(crypto.decrypt(bot.payment_creds_enc))
-        except Exception:
-            logger.warning("Не удалось прочитать сохранённые реквизиты бота %s", bot.id)
-    updates = {
-        str(key): value.strip() if isinstance(value, str) else value
-        for key, value in (incoming or {}).items()
-        if value is not None and (not isinstance(value, str) or value.strip())
+def normalize_payment_credentials(provider: str | None, creds: dict | None) -> dict:
+    if not creds:
+        return {}
+    raw = {
+        str(k): v.strip() if isinstance(v, str) else v
+        for k, v in creds.items()
+        if v is not None and (not isinstance(v, str) or v.strip())
     }
-    return {**existing, **updates}
+    p = (provider or "").lower()
+    normalized: dict[str, Any] = {}
+    if p == "yookassa":
+        shop_id = raw.get("shop_id") or raw.get("shopId")
+        secret_key = raw.get("secret_key") or raw.get("secretKey") or raw.get("api_key")
+        if shop_id:
+            val = str(shop_id).strip()
+            normalized["shop_id"] = val
+            normalized["shopId"] = val
+        if secret_key:
+            val = str(secret_key).strip()
+            normalized["secret_key"] = val
+            normalized["secretKey"] = val
+    elif p == "robokassa":
+        login = raw.get("merchant_login") or raw.get("login") or raw.get("MerchantLogin")
+        pass1 = raw.get("password_1") or raw.get("password1") or raw.get("pass1")
+        pass2 = raw.get("password_2") or raw.get("password2") or raw.get("pass2")
+        hash_algo = raw.get("hash_algorithm") or raw.get("hashAlgorithm") or "md5"
+        is_test = raw.get("is_test", raw.get("isTest", True))
+        if login:
+            val = str(login).strip()
+            normalized["merchant_login"] = val
+            normalized["login"] = val
+        if pass1:
+            val = str(pass1).strip()
+            normalized["password_1"] = val
+            normalized["password1"] = val
+        if pass2:
+            val = str(pass2).strip()
+            normalized["password_2"] = val
+            normalized["password2"] = val
+        normalized["hash_algorithm"] = str(hash_algo).strip()
+        normalized["is_test"] = is_test
+    elif p == "prodamus":
+        domain = raw.get("domain") or raw.get("subdomain") or raw.get("url")
+        api_key = raw.get("api_key") or raw.get("secret_key") or raw.get("secretKey") or raw.get("token")
+        if domain:
+            clean_domain = str(domain).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+            normalized["domain"] = clean_domain
+        if api_key:
+            normalized["api_key"] = str(api_key).strip()
+    else:
+        normalized = raw
+    return normalized
+
+
+def _merged_payment_credentials(
+    bot, incoming: dict | None, provider_changed: bool, provider: str | None = None
+) -> dict:
+    """Apply partial or full credential changes without ever returning secrets to the client."""
+    effective_provider = (provider or getattr(bot, "payment_provider", None) or "").lower()
+    incoming_norm = normalize_payment_credentials(effective_provider, incoming)
+
+    if provider_changed or not getattr(bot, "payment_creds_enc", None):
+        return incoming_norm
+
+    # If incoming provides all essential credentials for the provider, replace completely so old keys never shadow!
+    if effective_provider == "yookassa" and "shop_id" in incoming_norm and "secret_key" in incoming_norm:
+        return incoming_norm
+    if effective_provider == "prodamus" and "domain" in incoming_norm and "api_key" in incoming_norm:
+        return incoming_norm
+    if effective_provider == "robokassa" and "merchant_login" in incoming_norm and "password_1" in incoming_norm:
+        existing = {}
+        try:
+            raw = json.loads(crypto.decrypt(bot.payment_creds_enc))
+            existing = normalize_payment_credentials(effective_provider, raw)
+        except Exception:
+            pass
+        return {**existing, **incoming_norm}
+
+    # Partial merge fallback:
+    existing = {}
+    try:
+        raw = json.loads(crypto.decrypt(bot.payment_creds_enc))
+        existing = normalize_payment_credentials(effective_provider, raw)
+    except Exception:
+        logger.warning("Не удалось прочитать сохранённые реквизиты бота %s", bot.id)
+    return {**existing, **incoming_norm}
 
 
 def _subscription_status(user) -> str:
@@ -1472,9 +1542,12 @@ async def create_bot(request: Request, body: BotCreateApiRequest):
                 status_code=409, detail="Этот бот уже добавлен в систему."
             )
         token_enc = crypto.encrypt(body.token)
-    creds_enc = (
-        crypto.encrypt(json.dumps(body.payment_creds)) if body.payment_creds else None
-    )
+    creds_enc = None
+    if body.payment_creds:
+        normalized_creds = normalize_payment_credentials(
+            body.payment_provider, body.payment_creds
+        )
+        creds_enc = crypto.encrypt(json.dumps(normalized_creds)) if normalized_creds else None
 
     bot = await create_bot_config(
         owner_id=target_owner.id,
@@ -1574,7 +1647,7 @@ async def update_bot(bot_id: int, request: Request, body: BotUpdateApiRequest):
             body.payment_provider and body.payment_provider != bot.payment_provider
         )
         merged_credentials = _merged_payment_credentials(
-            bot, body.payment_creds, provider_changed
+            bot, body.payment_creds, provider_changed, effective_provider
         )
         is_valid, validation_message = await validate_payment_credentials(
             effective_provider,

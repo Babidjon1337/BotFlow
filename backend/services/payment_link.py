@@ -322,93 +322,93 @@ async def _create_yookassa_link(
             )
             return data["confirmation"]["confirmation_url"]
 
-        if response.status_code == 400:
-            resp_lower = response.text.lower()
+        resp_lower = response.text.lower()
+        if response.status_code == 400 and "receipt" in resp_lower:
             # 1. Если магазин в ЮKassa требует фискальный чек (54-ФЗ)
-            if "receipt" in resp_lower:
+            logger.warning(
+                "У магазина ЮKassa включена фискализация (54-ФЗ), но чек не был передан (%s). Повторяем с объектом receipt...",
+                response.text[:200],
+            )
+            receipt_payload = dict(payload)
+            receipt_payload["receipt"] = _build_yookassa_receipt(
+                description, amount, telegram_id, bot_config, creds, customer_email=customer_email
+            )
+            receipt_headers = dict(headers)
+            receipt_headers["Idempotence-Key"] = str(uuid.uuid4())
+            receipt_resp = await _safe_http_request(
+                "post",
+                url,
+                json=receipt_payload,
+                headers=receipt_headers,
+                auth=(str(shop_id), str(api_key)),
+            )
+            if receipt_resp.status_code == 200:
+                data = receipt_resp.json()
+                if client_payment:
+                    await set_client_payment_provider_id(client_payment.id, str(data["id"]))
+                logger.info("Счёт ЮKassa с фискализацией успешно создан: order_id=%s", data["id"])
+                return data["confirmation"]["confirmation_url"]
+
+            if (receipt_resp.status_code in (400, 403)) and receipt_payload.get("save_payment_method"):
                 logger.warning(
-                    "У магазина ЮKassa включена фискализация (54-ФЗ), но чек не был передан (%s). Повторяем с объектом receipt...",
-                    response.text[:200],
+                    "ЮKassa с чеком отклонила save_payment_method (%s). Повторяем как разовый платёж с чеком...",
+                    receipt_resp.text[:200],
                 )
-                receipt_payload = dict(payload)
-                receipt_payload["receipt"] = _build_yookassa_receipt(
-                    description, amount, telegram_id, bot_config, creds, customer_email=customer_email
-                )
-                receipt_headers = dict(headers)
+                receipt_payload.pop("save_payment_method", None)
                 receipt_headers["Idempotence-Key"] = str(uuid.uuid4())
-                receipt_resp = await _safe_http_request(
+                retry_resp = await _safe_http_request(
                     "post",
                     url,
                     json=receipt_payload,
                     headers=receipt_headers,
                     auth=(str(shop_id), str(api_key)),
                 )
-                if receipt_resp.status_code == 200:
-                    data = receipt_resp.json()
+                if retry_resp.status_code == 200:
+                    data = retry_resp.json()
                     if client_payment:
                         await set_client_payment_provider_id(client_payment.id, str(data["id"]))
-                    logger.info("Счёт ЮKassa с фискализацией успешно создан: order_id=%s", data["id"])
                     return data["confirmation"]["confirmation_url"]
 
-                if receipt_resp.status_code == 400 and receipt_payload.get("save_payment_method"):
-                    logger.warning(
-                        "ЮKassa с чеком отклонила save_payment_method (%s). Повторяем как разовый платёж с чеком...",
-                        receipt_resp.text[:200],
-                    )
-                    receipt_payload.pop("save_payment_method", None)
-                    receipt_headers["Idempotence-Key"] = str(uuid.uuid4())
-                    retry_resp = await _safe_http_request(
-                        "post",
-                        url,
-                        json=receipt_payload,
-                        headers=receipt_headers,
-                        auth=(str(shop_id), str(api_key)),
-                    )
-                    if retry_resp.status_code == 200:
-                        data = retry_resp.json()
-                        if client_payment:
-                            await set_client_payment_provider_id(client_payment.id, str(data["id"]))
-                        return data["confirmation"]["confirmation_url"]
-
-            # 2. Если магазин отклонил только save_payment_method
-            elif payload.get("save_payment_method"):
-                logger.warning(
-                    "ЮKassa отклонила save_payment_method (%s). Повторяем запрос как разовый платёж...",
-                    response.text[:200],
+        # 2. Если магазин отклонил save_payment_method (400 или 403 Forbidden "This store can't make recurring payments")
+        elif (response.status_code in (400, 403)) and payload.get("save_payment_method"):
+            logger.warning(
+                "ЮKassa отклонила save_payment_method (status=%s: %s). Повторяем запрос как разовый платёж...",
+                response.status_code,
+                response.text[:200],
+            )
+            fallback_payload = dict(payload)
+            fallback_payload.pop("save_payment_method", None)
+            fallback_headers = dict(headers)
+            fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
+            fallback_resp = await _safe_http_request(
+                "post",
+                url,
+                json=fallback_payload,
+                headers=fallback_headers,
+                auth=(str(shop_id), str(api_key)),
+            )
+            if fallback_resp.status_code == 200:
+                data = fallback_resp.json()
+                if client_payment:
+                    await set_client_payment_provider_id(client_payment.id, str(data["id"]))
+                return data["confirmation"]["confirmation_url"]
+            if fallback_resp.status_code == 400 and "receipt" in fallback_resp.text.lower():
+                fallback_payload["receipt"] = _build_yookassa_receipt(
+                    description, amount, telegram_id, bot_config, creds, customer_email=customer_email
                 )
-                fallback_payload = dict(payload)
-                fallback_payload.pop("save_payment_method", None)
-                fallback_headers = dict(headers)
                 fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
-                fallback_resp = await _safe_http_request(
+                retry_resp = await _safe_http_request(
                     "post",
                     url,
                     json=fallback_payload,
                     headers=fallback_headers,
                     auth=(str(shop_id), str(api_key)),
                 )
-                if fallback_resp.status_code == 200:
-                    data = fallback_resp.json()
+                if retry_resp.status_code == 200:
+                    data = retry_resp.json()
                     if client_payment:
                         await set_client_payment_provider_id(client_payment.id, str(data["id"]))
                     return data["confirmation"]["confirmation_url"]
-                if fallback_resp.status_code == 400 and "receipt" in fallback_resp.text.lower():
-                    fallback_payload["receipt"] = _build_yookassa_receipt(
-                        description, amount, telegram_id, bot_config, creds, customer_email=customer_email
-                    )
-                    fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
-                    retry_resp = await _safe_http_request(
-                        "post",
-                        url,
-                        json=fallback_payload,
-                        headers=fallback_headers,
-                        auth=(str(shop_id), str(api_key)),
-                    )
-                    if retry_resp.status_code == 200:
-                        data = retry_resp.json()
-                        if client_payment:
-                            await set_client_payment_provider_id(client_payment.id, str(data["id"]))
-                        return data["confirmation"]["confirmation_url"]
 
         logger.error(f"Ошибка API ЮKassa: {response.text}")
     except Exception as e:
@@ -427,8 +427,8 @@ async def _create_robokassa_link(
     bot_config: BotConfig,
     client_payment: ClientPayment | None,
 ) -> Optional[str]:
-    merchant_login = creds.get("merchant_login")
-    password_1 = creds.get("password1") or creds.get("password_1")
+    merchant_login = creds.get("merchant_login") or creds.get("login")
+    password_1 = creds.get("password_1") or creds.get("password1")
     is_test = creds.get("is_test", True)
 
     if not merchant_login or not password_1:

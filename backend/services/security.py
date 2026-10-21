@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 from cryptography.fernet import Fernet
 
@@ -28,6 +29,16 @@ class CryptoManager:
             data = data.encode()
 
         return self._decrypt_bytes_cached(bytes(data))
+
+    def decrypt_dict(self, data: bytes | str | None) -> dict:
+        """Расшифровывает JSON-словарь из зашифрованных байт (для платежных реквизитов и конфигураций)."""
+        if not data:
+            return {}
+        try:
+            decrypted = self.decrypt(data)
+            return json.loads(decrypted) if decrypted else {}
+        except Exception:
+            return {}
 
 
 crypto = CryptoManager()

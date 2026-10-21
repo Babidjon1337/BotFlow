@@ -35,9 +35,12 @@ class YooKassaProvider(PaymentProvider):
             or creds.get("api_key")
             or ""
         )
-        if bot_config.payment_credentials_enc and (not shop_id or not secret_key):
+        enc = getattr(bot_config, "payment_creds_enc", None) or getattr(
+            bot_config, "payment_credentials_enc", None
+        )
+        if enc and (not shop_id or not secret_key):
             try:
-                decrypted = crypto.decrypt_dict(bot_config.payment_credentials_enc)
+                decrypted = crypto.decrypt_dict(enc)
                 shop_id = shop_id or decrypted.get("shop_id") or decrypted.get("shopId") or ""
                 secret_key = (
                     secret_key
@@ -134,6 +137,23 @@ class YooKassaProvider(PaymentProvider):
                         f"{self.BASE_URL}/payments",
                         json=payload_with_receipt,
                         headers=headers,
+                        auth=(shop_id, secret_key),
+                    )
+
+            if (resp.status_code in (400, 403)) and payload.get("save_payment_method"):
+                logger.warning(
+                    "ЮKassa отклонила save_payment_method (%s). Повторяем как разовый платёж...",
+                    resp.text[:200],
+                )
+                fallback_payload = dict(payload)
+                fallback_payload.pop("save_payment_method", None)
+                fallback_headers = dict(headers)
+                fallback_headers["Idempotence-Key"] = str(uuid.uuid4())
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(
+                        f"{self.BASE_URL}/payments",
+                        json=fallback_payload,
+                        headers=fallback_headers,
                         auth=(shop_id, secret_key),
                     )
 
