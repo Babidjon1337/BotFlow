@@ -69,6 +69,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   // Actions in progress
+  const [refundingPaymentId, setRefundingPaymentId] = useState<string | null>(null);
   const [cancellingPaymentId, setCancellingPaymentId] = useState<string | null>(null);
   const [isRestrictingAccess, setIsRestrictingAccess] = useState(false);
 
@@ -141,6 +142,31 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
     (count, payment) => count + (payment.grants || []).filter((grant) => grant.status !== 'revoked').length,
     0
   );
+
+  const handleRefund = (payment: LeadPaymentDetail) => {
+    showConfirm({
+      title: 'Вернуть деньги через ЮKassa?',
+      message: `ЮKassa вернёт ${formatNumber(payment.amount)} ₽ на исходный способ оплаты. После подтверждения будут отменены подписка и доступ к закрытым чатам.`,
+      confirmText: 'Вернуть деньги',
+      cancelText: 'Назад',
+      onConfirm: async () => {
+        setRefundingPaymentId(payment.id);
+        try {
+          await apiService.refundLeadPayment(botId, lead.id, payment.id);
+          setToastType?.('success');
+          setToastMessage(`ЮKassa подтвердила возврат ${formatNumber(payment.amount)} ₽`);
+          const updated = await apiService.getLeadDetail(botId, lead.id);
+          setDetail(updated);
+          onLeadUpdated?.();
+        } catch (err) {
+          setToastType?.('error');
+          setToastMessage(err instanceof Error ? err.message : 'ЮKassa не подтвердила возврат');
+        } finally {
+          setRefundingPaymentId(null);
+        }
+      },
+    });
+  };
 
   // Handle Cancel Subscription
   const handleCancelSubscription = (payment: LeadPaymentDetail) => {
@@ -467,6 +493,21 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                   <RotateCcw size={12} />
                                 )}
                                 Отменить автосписание
+                              </button>
+                            )}
+                            {p.provider === 'yookassa' && (
+                              <button
+                                type="button"
+                                disabled={refundingPaymentId === p.id}
+                                onClick={() => handleRefund(p)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-danger/30 px-3 py-1.5 text-xs font-semibold text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
+                              >
+                                {refundingPaymentId === p.id ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <RotateCcw size={12} />
+                                )}
+                                Вернуть деньги
                               </button>
                             )}
                           </div>

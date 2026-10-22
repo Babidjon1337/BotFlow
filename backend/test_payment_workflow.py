@@ -13,6 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
 import api_router
 from schemas.api_schemas import BillingCheckoutRequest
 from services import payment_link
+from services.payment_providers import yookassa
 
 
 def test_cashier_credentials_validation_covers_all_supported_providers(monkeypatch):
@@ -76,3 +77,55 @@ def test_billing_checkout_accepts_offer_and_creates_provider_checkout(monkeypatc
 
     assert result["paymentId"] == "pay-123"
     create_checkout.assert_awaited_once()
+
+
+def test_yookassa_full_refund_uses_original_payment_and_idempotency_key(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"id": "refund-123", "status": "succeeded"}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url, **kwargs):
+            captured["url"] = url
+            captured.update(kwargs)
+            return FakeResponse()
+
+    monkeypatch.setattr(yookassa.httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+    bot = SimpleNamespace(
+        payment_credentials={"shop_id": "shop-1", "secret_key": "secret-1"},
+        payment_creds_enc=None,
+    )
+    payment = SimpleNamespace(
+        provider_payment_id="payment-123",
+        amount=1250,
+        currency="RUB",
+    )
+
+    result = asyncio.run(
+        yookassa.YooKassaProvider().refund_payment(
+            bot_config=bot,
+            payment=payment,
+            idempotency_key="refund-local-payment-123",
+        )
+    )
+
+    assert result.success
+    assert result.provider_refund_id == "refund-123"
+    assert captured["url"].endswith("/v3/refunds")
+    assert captured["headers"]["Idempotence-Key"] == "refund-local-payment-123"
+    assert captured["json"] == {
+        "payment_id": "payment-123",
+        "amount": {"value": "1250.00", "currency": "RUB"},
+    }

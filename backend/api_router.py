@@ -3653,10 +3653,16 @@ async def get_lead_detail_endpoint(bot_id: int, lead_id: int, request: Request):
 async def refund_client_payment_endpoint(
     bot_id: int, lead_id: int, payment_id: UUID, request: Request
 ):
-    """Reject local-only refunds until provider refunds are implemented."""
+    """Create a real YooKassa refund, then revoke paid access locally."""
     bot = await get_owned_bot(bot_id, request)
-    from database.models import ClientPayment, async_session
-    from sqlalchemy import select
+    from database.models import ClientPayment, ChatAccessGrant, Lead, Subscription, Tariff, async_session
+    from sqlalchemy import func, select
+    from sqlalchemy.orm.attributes import flag_modified
+    from decimal import Decimal
+
+    grants_to_kick = []
+    lead_telegram_id = None
+    bot_token_enc = bot.bot_token_enc
 
     async with async_session() as session:
         payment = await session.scalar(
@@ -3675,15 +3681,135 @@ async def refund_client_payment_endpoint(
                 status_code=400,
                 detail="Возврат можно оформить только для успешно оплаченного платежа",
             )
-        provider = payment.provider
+        if payment.provider != "yookassa":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Автоматический возврат через {payment.provider} пока не подключён. "
+                    "Для этого платежа оформите возврат в кабинете кассы."
+                ),
+            )
+        if not payment.provider_payment_id:
+            raise HTTPException(
+                status_code=409,
+                detail="У платежа нет идентификатора ЮKassa — автоматический возврат невозможен.",
+            )
 
-    raise HTTPException(
-        status_code=409,
-        detail=(
-            f"Автоматический возврат через {provider} пока не подключён. "
-            "Оформите возврат в кабинете кассы, затем отзовите доступ клиента в его карточке."
-        ),
-    )
+        from services.payment_providers.yookassa import YooKassaProvider
+
+        refund = await YooKassaProvider().refund_payment(
+            bot_config=bot,
+            payment=payment,
+            idempotency_key=f"refund-{payment.id}",
+        )
+        if not refund.success:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    refund.error_message
+                    or "ЮKassa не подтвердила возврат. Доступ и подписка клиента не изменены."
+                ),
+            )
+
+        payment.status = "refunded"
+        snapshot = dict(payment.tariff_snapshot or {})
+        snapshot["refunded_at"] = datetime.now(timezone.utc).isoformat()
+        snapshot["provider_refund_id"] = refund.provider_refund_id
+        payment.tariff_snapshot = snapshot
+        flag_modified(payment, "tariff_snapshot")
+
+        subscriptions = list(
+            await session.scalars(
+                select(Subscription)
+                .where(
+                    Subscription.bot_id == bot.id,
+                    Subscription.lead_id == lead_id,
+                    Subscription.tariff_id == payment.tariff_id,
+                    Subscription.status.in_(("active", "past_due")),
+                )
+                .with_for_update(of=Subscription)
+            )
+        )
+        for subscription in subscriptions:
+            subscription_snapshot = dict(subscription.tariff_snapshot or {})
+            subscription_snapshot["auto_renew"] = False
+            subscription_snapshot["auto_renew_cancelled_at"] = datetime.now(timezone.utc).isoformat()
+            subscription.tariff_snapshot = subscription_snapshot
+            subscription.status = "canceled"
+            subscription.canceled_at = datetime.now(timezone.utc)
+            subscription.last_error = "Отменено после возврата через ЮKassa"
+            flag_modified(subscription, "tariff_snapshot")
+
+        grants_to_kick = list(
+            await session.scalars(
+                select(ChatAccessGrant)
+                .where(ChatAccessGrant.client_payment_id == payment.id)
+                .with_for_update(of=ChatAccessGrant)
+            )
+        )
+        for grant in grants_to_kick:
+            grant.status = "revoked"
+
+        lead = await session.scalar(
+            select(Lead)
+            .where(Lead.id == lead_id, Lead.bot_id == bot.id)
+            .with_for_update(of=Lead)
+        )
+        if lead:
+            lead_telegram_id = lead.telegram_id
+
+        if payment.tariff_id:
+            try:
+                tariff = await session.get(Tariff, UUID(str(payment.tariff_id)))
+                if tariff:
+                    tariff.total_buyers = max(0, tariff.total_buyers - 1)
+                    tariff.total_revenue = max(
+                        Decimal("0.00"),
+                        (tariff.total_revenue or Decimal("0.00")) - payment.amount,
+                    )
+            except ValueError:
+                logger.warning("Некорректный tariff_id при возврате платежа %s", payment.id)
+
+        other_paid = await session.scalar(
+            select(func.count(ClientPayment.id)).where(
+                ClientPayment.lead_id == lead_id,
+                ClientPayment.bot_id == bot.id,
+                ClientPayment.id != payment.id,
+                ClientPayment.status == "succeeded",
+            )
+        )
+        if lead and not other_paid:
+            lead.has_purchased = False
+        await session.commit()
+
+    kicked = 0
+    if grants_to_kick and bot_token_enc and lead_telegram_id:
+        try:
+            from aiogram import Bot
+
+            telegram_bot = Bot(
+                token=crypto.decrypt(bot_token_enc),
+                session=request.app.state.session,
+            )
+            for grant in grants_to_kick:
+                try:
+                    await telegram_bot.ban_chat_member(
+                        chat_id=int(grant.chat_id),
+                        user_id=lead_telegram_id,
+                        until_date=timedelta(seconds=60),
+                    )
+                    kicked += 1
+                except Exception as exc:
+                    logger.warning("Telegram kick on YooKassa refund error: %s", exc)
+        except Exception as exc:
+            logger.warning("Telegram bot on YooKassa refund error: %s", exc)
+
+    return {
+        "status": "ok",
+        "message": "ЮKassa подтвердила возврат. Подписка и доступ отменены.",
+        "providerRefundId": refund.provider_refund_id,
+        "removedFromChats": kicked,
+    }
 
 
 @api_router.post("/api/bots/{bot_id}/leads/{lead_id}/access/revoke")

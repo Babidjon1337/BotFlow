@@ -13,6 +13,7 @@ from services.payment_providers.base import (
     PaymentInitResult,
     PaymentProvider,
     PaymentStatusResult,
+    RefundResult,
     WebhookVerificationResult,
 )
 from services.security import crypto
@@ -396,6 +397,95 @@ class YooKassaProvider(PaymentProvider):
     ) -> bool:
         # YooKassa recurring is merchant-scheduled, cancel is handled locally
         return True
+
+    async def refund_payment(
+        self,
+        bot_config: Any,
+        payment: Any,
+        idempotency_key: str,
+        http_session: Any = None,
+    ) -> RefundResult:
+        """Create a full refund for a succeeded YooKassa payment."""
+        shop_id, secret_key = self._get_credentials(bot_config)
+        if not shop_id or not secret_key:
+            return RefundResult(
+                success=False,
+                status="failed",
+                error_code="missing_credentials",
+                error_message="Учётные данные ЮKassa не настроены для этого бота.",
+            )
+
+        provider_payment_id = getattr(payment, "provider_payment_id", None)
+        if not provider_payment_id:
+            return RefundResult(
+                success=False,
+                status="failed",
+                error_code="missing_payment_id",
+                error_message="У платежа нет идентификатора ЮKassa.",
+            )
+
+        payload = {
+            "payment_id": str(provider_payment_id),
+            "amount": {
+                "value": f"{float(payment.amount):.2f}",
+                "currency": payment.currency or "RUB",
+            },
+        }
+        headers = {
+            "Idempotence-Key": idempotency_key,
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    f"{self.BASE_URL}/refunds",
+                    json=payload,
+                    headers=headers,
+                    auth=(shop_id, secret_key),
+                )
+        except Exception as exc:
+            logger.exception("Сетевая ошибка при возврате YooKassa: %s", exc)
+            return RefundResult(
+                success=False,
+                status="failed",
+                error_code="network_error",
+                error_message=str(exc),
+            )
+
+        try:
+            data = response.json()
+        except ValueError:
+            data = {"error": response.text[:500]}
+
+        if response.status_code != 200:
+            logger.warning("YooKassa refund error %s: %s", response.status_code, response.text[:500])
+            return RefundResult(
+                success=False,
+                status="failed",
+                error_code=str(data.get("code") or f"http_{response.status_code}"),
+                error_message=str(data.get("description") or response.text[:500]),
+                raw_response=data,
+            )
+
+        status = str(data.get("status") or "unknown")
+        if status == "succeeded":
+            return RefundResult(
+                success=True,
+                status=status,
+                provider_refund_id=data.get("id"),
+                raw_response=data,
+            )
+
+        cancellation = data.get("cancellation_details") or {}
+        return RefundResult(
+            success=False,
+            status=status,
+            provider_refund_id=data.get("id"),
+            error_code=cancellation.get("reason") or data.get("code"),
+            error_message=cancellation.get("reason") or data.get("description"),
+            raw_response=data,
+        )
 
     async def check_payment_status(
         self,

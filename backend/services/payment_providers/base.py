@@ -35,6 +35,18 @@ class PaymentStatusResult:
 
 
 @dataclass
+class RefundResult:
+    """Result of a provider refund request for a confirmed client payment."""
+
+    success: bool
+    status: str
+    provider_refund_id: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    raw_response: Optional[dict[str, Any]] = None
+
+
+@dataclass
 class WebhookVerificationResult:
     is_valid: bool
     event_type: str
