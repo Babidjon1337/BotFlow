@@ -17,6 +17,7 @@ import {
   Calendar,
   Send,
   ShieldCheck,
+  ShieldOff,
 } from 'lucide-react';
 import { apiService } from '../../services/api';
 import type {
@@ -68,8 +69,8 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   // Actions in progress
-  const [refundingPaymentId, setRefundingPaymentId] = useState<string | null>(null);
   const [cancellingPaymentId, setCancellingPaymentId] = useState<string | null>(null);
+  const [isRestrictingAccess, setIsRestrictingAccess] = useState(false);
 
   // Available tariffs for invoice
   const [availableTariffs, setAvailableTariffs] = useState<TariffItem[]>([]);
@@ -136,34 +137,10 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
   const selectedTotal = availableTariffs
     .filter((t) => selectedTariffIds.includes(t.id))
     .reduce((sum, t) => sum + Number(t.price || 0), 0);
-
-  // Handle Refund
-  const handleRefund = (payment: LeadPaymentDetail) => {
-    showConfirm({
-      title: 'Оформить возврат средств?',
-      message: `Вы уверены, что хотите вернуть ${formatNumber(payment.amount)} ₽ за тариф «${payment.name}»? Доступ клиента к закрытым чатам и материалам будет отозван.`,
-      confirmText: 'Вернуть средства',
-      cancelText: 'Отмена',
-      onConfirm: async () => {
-        setRefundingPaymentId(payment.id);
-        try {
-          await apiService.refundLeadPayment(botId, lead.id, payment.id);
-          setToastType?.('success');
-          setToastMessage(`Возврат ${formatNumber(payment.amount)} ₽ успешно оформлен`);
-
-          // Refresh lead detail
-          const updated = await apiService.getLeadDetail(botId, lead.id);
-          setDetail(updated);
-          onLeadUpdated?.();
-        } catch (err) {
-          setToastType?.('error');
-          setToastMessage(err instanceof Error ? err.message : 'Не удалось оформить возврат');
-        } finally {
-          setRefundingPaymentId(null);
-        }
-      },
-    });
-  };
+  const activeGrantsCount = allPayments.reduce(
+    (count, payment) => count + (payment.grants || []).filter((grant) => grant.status !== 'revoked').length,
+    0
+  );
 
   // Handle Cancel Subscription
   const handleCancelSubscription = (payment: LeadPaymentDetail) => {
@@ -187,6 +164,31 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
           setToastMessage(err instanceof Error ? err.message : 'Не удалось отменить автосписание');
         } finally {
           setCancellingPaymentId(null);
+        }
+      },
+    });
+  };
+
+  const handleRestrictAccess = () => {
+    showConfirm({
+      title: 'Ограничить доступ клиенту?',
+      message: 'Клиент будет исключён из закрытых чатов по всем покупкам. Деньги и автопродление подписок не изменятся.',
+      confirmText: 'Ограничить доступ',
+      cancelText: 'Назад',
+      onConfirm: async () => {
+        setIsRestrictingAccess(true);
+        try {
+          const result = await apiService.revokeLeadAccess(botId, lead.id);
+          setToastType?.('success');
+          setToastMessage(result.message);
+          const updated = await apiService.getLeadDetail(botId, lead.id);
+          setDetail(updated);
+          onLeadUpdated?.();
+        } catch (err) {
+          setToastType?.('error');
+          setToastMessage(err instanceof Error ? err.message : 'Не удалось ограничить доступ');
+        } finally {
+          setIsRestrictingAccess(false);
         }
       },
     });
@@ -297,6 +299,18 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
             </div>
           </div>
 
+          {activeGrantsCount > 0 && (
+            <button
+              type="button"
+              disabled={isRestrictingAccess}
+              onClick={handleRestrictAccess}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-danger/30 px-3 py-2 text-xs font-semibold text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
+            >
+              {isRestrictingAccess ? <Loader2 size={14} className="animate-spin" /> : <ShieldOff size={14} />}
+              Ограничить доступ к закрытым чатам ({activeGrantsCount})
+            </button>
+          )}
+
           {/* Loading state */}
           {isLoading && (
             <div className="flex items-center justify-center py-8 text-fg-secondary gap-2">
@@ -333,7 +347,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                   {purchasedPayments.map((p) => {
                     const isSucceeded = p.status === 'succeeded';
                     const isRefunded = p.status === 'refunded';
-                    const isSub = p.paymentType === 'subscription';
+                    const isSub = p.paymentType === 'subscription' || p.paymentType === 'recurring';
                     const hasAutoRenew = isSub && p.autoRenew !== false;
 
                     return (
@@ -436,7 +450,7 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                           </div>
                         )}
 
-                        {/* Action buttons (Refund / Cancel Subscription) */}
+                        {/* Subscription actions */}
                         {isSucceeded && (
                           <div className="mt-3.5 pt-2.5 border-t border-border flex flex-wrap items-center justify-end gap-2">
                             {/* Cancel auto-renew if subscription is active */}
@@ -455,21 +469,6 @@ export const LeadDetailModal: React.FC<LeadDetailModalProps> = ({
                                 Отменить автосписание
                               </button>
                             )}
-
-                            {/* Refund button */}
-                            <button
-                              type="button"
-                              disabled={refundingPaymentId === p.id}
-                              onClick={() => handleRefund(p)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-danger/30 text-xs font-semibold text-danger hover:bg-danger-soft transition-colors disabled:opacity-50"
-                            >
-                              {refundingPaymentId === p.id ? (
-                                <Loader2 size={12} className="animate-spin" />
-                              ) : (
-                                <RotateCcw size={12} />
-                              )}
-                              Сделать возврат
-                            </button>
                           </div>
                         )}
                       </div>

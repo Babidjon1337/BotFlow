@@ -46,7 +46,7 @@ export interface PurchasedTariffSummary {
   tariffId: string;
   name: string;
   amount: number;
-  paymentType: 'one_time' | 'subscription';
+  paymentType: 'one_time' | 'subscription' | 'recurring';
   billingPeriod?: string;
   paidAt?: string;
 }
@@ -81,9 +81,10 @@ export interface LeadPaymentDetail {
   status: 'pending' | 'succeeded' | 'refunded' | 'cancelled';
   paidAt?: string | null;
   createdAt?: string | null;
-  paymentType: 'one_time' | 'subscription';
+  paymentType: 'one_time' | 'subscription' | 'recurring';
   billingPeriod?: string;
   autoRenew?: boolean;
+  subscriptionStatus?: string | null;
   deliverables?: Array<{
     id: string;
     type: 'channel' | 'group' | 'file' | 'link';
@@ -1011,6 +1012,15 @@ export const apiService = {
       `/api/bots/${botId}/leads/${leadId}/payments/${paymentId}/cancel-subscription`,
       { method: "POST" }
     );
+  },
+
+  async revokeLeadAccess(botId: string | number, leadId: string | number) {
+    return fetchApi<{
+      status: string;
+      message: string;
+      revokedGrants: number;
+      removedFromChats: number;
+    }>(`/api/bots/${botId}/leads/${leadId}/access/revoke`, { method: "POST" });
   },
 };
 

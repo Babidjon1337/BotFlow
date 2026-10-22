@@ -517,31 +517,38 @@ async def cancel_client_payment_subscription(
         if not payment:
             return None
         snapshot = dict(payment.tariff_snapshot or {})
+        if (
+            snapshot.get("payment_type") not in ("recurring", "subscription")
+            and snapshot.get("paymentType") not in ("recurring", "subscription")
+        ):
+            return payment
         snapshot["auto_renew"] = False
         snapshot["auto_renew_cancelled_at"] = datetime.now(timezone.utc).isoformat()
         payment.tariff_snapshot = snapshot
         flag_modified(payment, "tariff_snapshot")
 
-        try:
-            from database.models import Subscription
-            sub = await session.scalar(
-                select(Subscription).where(
-                    (Subscription.initial_payment_id == payment.id)
-                    | (
-                        (Subscription.bot_id == bot_id)
-                        & (Subscription.lead_id == lead_id)
-                        & (Subscription.tariff_id == payment.tariff_id)
-                    )
-                )
+        from database.models import Subscription
+
+        sub = await session.scalar(
+            select(Subscription)
+            .where(
+                Subscription.bot_id == bot_id,
+                Subscription.lead_id == lead_id,
+                Subscription.tariff_id == payment.tariff_id,
+                Subscription.status.in_(("active", "past_due")),
             )
-            if sub:
-                sub_snapshot = dict(sub.tariff_snapshot or {})
-                sub_snapshot["auto_renew"] = False
-                sub_snapshot["auto_renew_cancelled_at"] = snapshot["auto_renew_cancelled_at"]
-                sub.tariff_snapshot = sub_snapshot
-                flag_modified(sub, "tariff_snapshot")
-        except Exception:
-            pass
+            .order_by(Subscription.created_at.desc())
+            .with_for_update(of=Subscription)
+        )
+        if sub:
+            sub_snapshot = dict(sub.tariff_snapshot or {})
+            sub_snapshot["auto_renew"] = False
+            sub_snapshot["auto_renew_cancelled_at"] = snapshot["auto_renew_cancelled_at"]
+            sub.tariff_snapshot = sub_snapshot
+            sub.status = "canceled"
+            sub.canceled_at = datetime.now(timezone.utc)
+            sub.last_error = "Отменено владельцем бота или клиентом"
+            flag_modified(sub, "tariff_snapshot")
 
         await session.commit()
         await session.refresh(payment)
@@ -577,28 +584,34 @@ async def resume_client_payment_subscription(
         payment.tariff_snapshot = snapshot
         flag_modified(payment, "tariff_snapshot")
 
-        try:
-            from database.models import Subscription
-            sub = await session.scalar(
-                select(Subscription).where(
-                    (Subscription.initial_payment_id == payment.id)
-                    | (
-                        (Subscription.bot_id == bot_id)
-                        & (Subscription.lead_id == lead_id)
-                        & (Subscription.tariff_id == payment.tariff_id)
-                    )
-                )
+        from database.models import Subscription
+
+        sub = await session.scalar(
+            select(Subscription)
+            .where(
+                Subscription.bot_id == bot_id,
+                Subscription.lead_id == lead_id,
+                Subscription.tariff_id == payment.tariff_id,
             )
-            if sub:
-                sub_snapshot = dict(sub.tariff_snapshot or {})
-                sub_snapshot["auto_renew"] = True
-                sub_snapshot.pop("auto_renew_cancelled_at", None)
-                sub_snapshot["auto_renew_resumed_at"] = snapshot["auto_renew_resumed_at"]
-                sub.tariff_snapshot = sub_snapshot
-                sub.status = "active"
-                flag_modified(sub, "tariff_snapshot")
-        except Exception:
-            pass
+            .order_by(Subscription.created_at.desc())
+            .with_for_update(of=Subscription)
+        )
+        if sub:
+            sub_snapshot = dict(sub.tariff_snapshot or {})
+            sub_snapshot["auto_renew"] = True
+            sub_snapshot.pop("auto_renew_cancelled_at", None)
+            sub_snapshot["auto_renew_resumed_at"] = snapshot["auto_renew_resumed_at"]
+            sub.tariff_snapshot = sub_snapshot
+            sub.status = "active"
+            sub.canceled_at = None
+            if sub.next_charge_at and sub.next_charge_at < datetime.now(timezone.utc):
+                sub.next_charge_at = datetime.now(timezone.utc) + compute_recurring_period_delta(
+                    sub_snapshot.get("recurring_period")
+                    or sub_snapshot.get("recurringPeriod")
+                    or sub_snapshot.get("billing_period")
+                    or sub_snapshot.get("billingPeriod")
+                )
+            flag_modified(sub, "tariff_snapshot")
 
         await session.commit()
         await session.refresh(payment)
