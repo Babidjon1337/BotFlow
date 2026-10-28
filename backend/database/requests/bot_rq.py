@@ -18,6 +18,25 @@ async def get_bot_by_id(id: int) -> BotConfig | None:
         )
 
 
+async def get_published_bots_for_webhook_check() -> list[BotConfig]:
+    """Return currently published bots whose Telegram webhook should be live."""
+    async with async_session() as session:
+        result = await session.scalars(
+            select(BotConfig)
+            .where(
+                BotConfig.status == "active",
+                or_(
+                    BotConfig.lifecycle_status == "published",
+                    BotConfig.lifecycle_status.is_(None),
+                ),
+                BotConfig.bot_token_enc.is_not(None),
+                BotConfig.tg_bot_id.is_not(None),
+            )
+            .order_by(BotConfig.id)
+        )
+        return list(result.all())
+
+
 async def get_bot_by_offer_slug(slug: str) -> BotConfig | None:
     """Бот по публичному slug оферты-файла."""
     async with async_session() as session:

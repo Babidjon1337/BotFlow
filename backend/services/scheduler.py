@@ -31,6 +31,7 @@ from database.requests.bot_rq import (
     enforce_non_pro_bot_limits,
     claim_expired_bot_subscription,
     finalize_bot_subscription_expiry,
+    get_published_bots_for_webhook_check,
     get_bot_subscriptions_due_for_renewal,
     get_expired_published_bots,
     get_expired_account_subscription_bots,
@@ -40,7 +41,7 @@ from database.requests.bot_rq import (
 )
 from services.bot_lifecycle import BotLifecycleService
 from database.models import Lead, ClientPayment
-from config import PROXY_URL, SAAS_BOT_BASE_PRICE_RUB, TG_WEBHOOK_URL
+from config import PROXY_URL, SAAS_BOT_BASE_PRICE_RUB, SECRET_KEY, TG_WEBHOOK_URL
 from database.requests.client_payment_rq import get_due_client_payment_delivery_ids
 from services.payment_fulfillment import process_client_payment_fulfillment
 from services.broadcast import run_broadcast_sending
@@ -263,6 +264,67 @@ async def resume_subscription_bots_job():
                 )
 
     await asyncio.gather(*[_process_resume_bot(b) for b in bots])
+
+
+async def reconcile_published_bot_webhooks_job():
+    """Repair missing or changed webhooks for bots that are still published."""
+    bots = await get_published_bots_for_webhook_check()
+    if not bots:
+        return
+
+    from api_router import CLIENT_BOT_ALLOWED_UPDATES
+
+    semaphore = asyncio.Semaphore(5)
+
+    async def _check_and_repair(bot_config):
+        async with semaphore:
+            try:
+                token = crypto.decrypt(bot_config.bot_token_enc)
+                bot = Bot(token=token, session=shared_scheduler_session)
+                expected_url = (
+                    f"{TG_WEBHOOK_URL.rstrip('/')}/webhook/bots/{bot_config.id}"
+                )
+                info = await bot.get_webhook_info()
+                if info.url == expected_url:
+                    return
+
+                from urllib.parse import urlsplit
+
+                actual_path = urlsplit(info.url).path if info.url else None
+                logger.warning(
+                    "Webhook отсутствует или изменён у опубликованного бота %s "
+                    "(actual_path=%s, pending=%s); восстанавливаю",
+                    bot_config.id,
+                    actual_path,
+                    info.pending_update_count,
+                )
+                await bot.set_webhook(
+                    url=expected_url,
+                    secret_token=SECRET_KEY,
+                    allowed_updates=CLIENT_BOT_ALLOWED_UPDATES,
+                    drop_pending_updates=False,
+                )
+                verified = await bot.get_webhook_info()
+                if verified.url == expected_url:
+                    logger.info(
+                        "Webhook автоматически восстановлен для бота %s",
+                        bot_config.id,
+                    )
+                else:
+                    logger.error(
+                        "Telegram не подтвердил восстановление webhook для бота %s",
+                        bot_config.id,
+                    )
+            except Exception as exc:
+                # Do not include the exception text: transport errors can contain
+                # the Telegram API URL, which embeds the bot token.
+                logger.error(
+                    "Проверка webhook бота %s не удалась (%s)",
+                    bot_config.id,
+                    type(exc).__name__,
+                )
+
+    await asyncio.gather(*[_check_and_repair(bot) for bot in bots])
 
 
 async def retry_client_payment_fulfillments_job():
@@ -596,6 +658,16 @@ def start_scheduler():
         max_instances=1,
         coalesce=True,
         id="account-subscription-resume",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        reconcile_published_bot_webhooks_job,
+        trigger="interval",
+        minutes=2,
+        next_run_time=datetime.now(timezone.utc),
+        max_instances=1,
+        coalesce=True,
+        id="published-bot-webhook-health",
         replace_existing=True,
     )
     scheduler.add_job(
