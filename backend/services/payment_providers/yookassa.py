@@ -27,8 +27,23 @@ class YooKassaProvider(PaymentProvider):
     BASE_URL = "https://api.yookassa.ru/v3"
 
     @staticmethod
+    def _credentials_data(bot_config: Any) -> dict[str, Any]:
+        """Read legacy plaintext credentials or decrypt the model's stored credentials."""
+        creds = getattr(bot_config, "payment_credentials", None) or {}
+        if not isinstance(creds, Mapping):
+            creds = {}
+        if creds:
+            return dict(creds)
+        enc = getattr(bot_config, "payment_creds_enc", None) or getattr(
+            bot_config, "payment_credentials_enc", None
+        )
+        if enc:
+            return crypto.decrypt_dict(enc)
+        return {}
+
+    @staticmethod
     def _get_credentials(bot_config: Any) -> tuple[str, str]:
-        creds = bot_config.payment_credentials or {}
+        creds = YooKassaProvider._credentials_data(bot_config)
         shop_id = creds.get("shop_id") or creds.get("shopId") or ""
         secret_key = (
             creds.get("secret_key")
@@ -36,22 +51,6 @@ class YooKassaProvider(PaymentProvider):
             or creds.get("api_key")
             or ""
         )
-        enc = getattr(bot_config, "payment_creds_enc", None) or getattr(
-            bot_config, "payment_credentials_enc", None
-        )
-        if enc and (not shop_id or not secret_key):
-            try:
-                decrypted = crypto.decrypt_dict(enc)
-                shop_id = shop_id or decrypted.get("shop_id") or decrypted.get("shopId") or ""
-                secret_key = (
-                    secret_key
-                    or decrypted.get("secret_key")
-                    or decrypted.get("secretKey")
-                    or decrypted.get("api_key")
-                    or ""
-                )
-            except Exception:
-                pass
         return str(shop_id).strip(), str(secret_key).strip()
 
     async def create_initial_payment(
@@ -148,7 +147,7 @@ class YooKassaProvider(PaymentProvider):
                 logger.warning("ЮKassa требует receipt. Повторяем с фискальным чеком...")
                 from services.payment_link import _build_yookassa_receipt
 
-                creds = bot_config.payment_credentials or {}
+                creds = self._credentials_data(bot_config)
                 payload_with_receipt = dict(payload)
                 payload_with_receipt["receipt"] = _build_yookassa_receipt(
                     description=description,
@@ -255,7 +254,7 @@ class YooKassaProvider(PaymentProvider):
         if lead_email:
             from services.payment_link import _build_yookassa_receipt
 
-            creds = bot_config.payment_credentials or {}
+            creds = self._credentials_data(bot_config)
             payload["receipt"] = _build_yookassa_receipt(
                 description=f"Продление подписки: {tariff_name}",
                 amount=float(attempt.amount),
@@ -313,7 +312,7 @@ class YooKassaProvider(PaymentProvider):
                 logger.warning("ЮKassa требует receipt при рекуррентном списании. Повторяем с чеком...")
                 from services.payment_link import _build_yookassa_receipt
 
-                creds = bot_config.payment_credentials or {}
+                creds = self._credentials_data(bot_config)
                 payload_with_receipt = dict(payload)
                 payload_with_receipt["receipt"] = _build_yookassa_receipt(
                     description=f"Продление подписки: {tariff_name}",
