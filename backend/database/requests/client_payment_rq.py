@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import joinedload
 
@@ -115,7 +116,9 @@ async def create_client_payment(
         lead_id=lead_id,
         invoice_batch_id=invoice_batch_id,
         tariff_id=str(tariff["id"]),
-        tariff_snapshot=dict(tariff),
+        # Tariff values can include Decimal fields from SQLAlchemy Numeric
+        # columns; JSONB's default serializer cannot encode Decimal directly.
+        tariff_snapshot=jsonable_encoder(tariff),
         amount=amount,
         provider=provider.casefold(),
         idempotence_key=str(uuid.uuid4()),
